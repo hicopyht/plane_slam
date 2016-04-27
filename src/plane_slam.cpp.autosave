@@ -18,6 +18,8 @@ void PlaneSlam::planeSlam()
     NonlinearFactorGraph graph; // factor graph
     Values initialEstimate; // initial guess
 
+    PlaneFactor
+
 
     // Add factors for each landmark observation
 //    graph.add();
