@@ -40,11 +40,22 @@ find_package(catkin REQUIRED COMPONENTS
 LIST( APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules )
 
 ## System dependencies are found with CMake's conventions
-# find_package(Boost REQUIRED COMPONENTS system)
+find_package(Boost REQUIRED COMPONENTS system)
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(PCL 1.7 REQUIRED)
-find_package(GTSAM REQUIRED)
+
+# Include GTSAM CMake tools
+find_package(GTSAMCMakeTools)
+include(GtsamBuildTypes) # Load build type flags and default to Debug mode
+include(GtsamTesting)    # Easy functions for creating unit tests and scripts
+include(GtsamMatlabWrap) # Automatic MATLAB wrapper generation
+
+# Ensure that local folder is searched before library folders
+include_directories(BEFORE "${PROJECT_SOURCE_DIR}")
+#
+find_package(GTSAM REQUIRED) # Uses installed package
+include_directories(${GTSAM_INCLUDE_DIR})
 
 
 ################################################
@@ -94,26 +105,38 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIR}
   ${PCL_INCLUDE_DIRS}
+  ${Wrap_INCLUDE_DIR}
+  ${CppUnitLite_INCLUDE_DIR}
+  ${GTSAM_INCLUDE_DIRS}
 )
 
-## Declare a C++ library
-# add_library(plane_segment
-#   src/${PROJECT_NAME}/plane_segment.cpp
-# )
-
-
-## Declare a C++ executable
-add_executable(plane_slam src/plane_slam_node.cpp src/kinect_listener.cpp src/organized_plane_segment.cpp)
-
-## Add cmake target dependencies of the executable
-## same as for the library above
-#add_dependencies(plane_segment ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-add_dependencies(plane_slam ${PROJECT_NAME}_gencfg)
+#Declare a C++ library
+add_library( ${PROJECT_NAME}
+    src/kinect_listener.cpp
+    src/organized_plane_segment.cpp
+    src/plane_slam.cpp
+)
 
 ## Specify libraries to link a library or executable target against
-target_link_libraries(plane_slam
+target_link_libraries( ${PROJECT_NAME}
     ${catkin_LIBRARIES}
     ${EIGEN3_LIBS}
     ${OpenCV_LIBS}
     ${PCL_LIBRARIES}
+    ${CppUnitLite_LIBS}
+    gtsam
+)
+add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_gencfg)
+
+## Declare a C++ executable
+add_executable(plane_slam_node src/plane_slam_node.cpp)
+
+## Add cmake target dependencies of the executable
+## same as for the library above
+#add_dependencies(plane_segment ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(plane_slam_node ${PROJECT_NAME}_gencfg)
+
+## Specify libraries to link a library or executable target against
+target_link_libraries(plane_slam_node
+    ${PROJECT_NAME}
 )

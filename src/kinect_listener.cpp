@@ -15,6 +15,8 @@ KinectListener::KinectListener() :
   , prttcp_ (new pcl::DefaultPointRepresentation<PointType>)
   , camera_parameters_()
   , organized_plane_segment_()
+  , is_initialized( false )
+  , plane_slam_( new PlaneSlam() )
 {
     nh_.setCallbackQueue(&my_callback_queue_);
 
@@ -142,6 +144,17 @@ void KinectListener::processCloud( PointCloudTypePtr &input )
     organizedPlaneSegment( input, organized_planes );
     organized_dura = time.toc();
     time.tic();
+
+    // Do slam
+    if(!is_initialized)
+    {
+//        plane_slam_->initialize();
+        is_initialized = true;
+    }
+    else
+    {
+
+    }
 
     // display
     pcl_viewer_->removeAllPointClouds();

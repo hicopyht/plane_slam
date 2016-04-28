@@ -25,6 +25,7 @@
 #include <plane_slam/OrganizedSegmentConfig.h>
 #include "organized_plane_segment.h"
 #include "utils.h"
+#include "plane_slam.h"
 
 using namespace std;
 
@@ -147,6 +148,10 @@ private:
     double ransac_distance_threshold_;
     int ransac_max_iterations_;
     int ransac_min_points_size_;
+
+    //
+    bool is_initialized;
+    PlaneSlam* plane_slam_;
 };
 
 #endif // KINECT_LISTENER_H

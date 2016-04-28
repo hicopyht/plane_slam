@@ -1,6 +1,7 @@
 #ifndef PLANE_SLAM_H
 #define PLANE_SLAM_H
 
+#include <ros/ros.h>
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/geometry/OrientedPlane3.h>
 #include <gtsam/inference/Key.h>
@@ -22,23 +23,19 @@ class PlaneSlam
 public:
     PlaneSlam();
 
-    void initialize(const Pose3 &pose, const std::vector<Eigen::VectorXd> &plane_coeffs,
+    void initialize(const Pose3 &init_pose, const std::vector<Eigen::VectorXd> &plane_coeffs,
                     const std::vector<Eigen::MatrixXd> &covariances);
 
-    void planeSlam(const Pose3 &odom, const std::vector<Eigen::VectorXd> &plane_coeffs,
+    Pose3 planeSlam(const Pose3 &rel_pose, const std::vector<Eigen::VectorXd> &plane_coeffs,
                    const std::vector<Eigen::MatrixXd> &covariances);
 
 private:
-
+    //
     ISAM2Params isam2_parameters_;
     ISAM2* isam2_;
-
-    // Create a Factor Graph and Values to hold the new data
-    NonlinearFactorGraph graph_; // factor graph
-    Values initial_estimate_; // initial guess
-
+    //
     bool first_pose_;
-    vector<Pose3> odom_poses_;
+    Values poses_;
     int pose_count_;
     int landmakr_count_;
 };
