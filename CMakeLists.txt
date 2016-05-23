@@ -74,6 +74,7 @@ include_directories(${GTSAM_INCLUDE_DIR})
 
 ## Generate dynamic reconfigure parameters in the 'cfg' folder
 generate_dynamic_reconfigure_options(
+  cfg/PlaneSlam.cfg
   cfg/PlaneSegment.cfg
   cfg/OrganizedSegment.cfg
 )

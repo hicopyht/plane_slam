@@ -3,6 +3,7 @@
 
 KinectListener::KinectListener() :
     private_nh_("~")
+  , plane_slam_config_server_( ros::NodeHandle( "PlaneSlam" ) )
   , plane_segment_config_server_( ros::NodeHandle( "PlaneSegment" ) )
   , organized_segment_config_server_( ros::NodeHandle( "OrganizedSegment" ) )
   , tf_listener_( nh_, ros::Duration(10.0) )
@@ -25,11 +26,12 @@ KinectListener::KinectListener() :
     private_nh_.param<bool>("use_reconfigure", use_reconfigure, true);
     if(use_reconfigure)
     {
+        plane_slam_config_callback_ = boost::bind(&KinectListener::planeSlamReconfigCallback, this, _1, _2);
+        plane_slam_config_server_.setCallback(plane_slam_config_callback_);
         plane_segment_config_callback_ = boost::bind(&KinectListener::planeSegmentReconfigCallback, this, _1, _2);
         plane_segment_config_server_.setCallback(plane_segment_config_callback_);
         organized_segment_config_callback_ = boost::bind(&KinectListener::organizedSegmentReconfigCallback, this, _1, _2);
         organized_segment_config_server_.setCallback(organized_segment_config_callback_);
-
     }
 
     private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
@@ -89,6 +91,21 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
                                 const sensor_msgs::CameraInfoConstPtr& cam_info_msg)
 {
     printf("no cloud msg: %d\n", visual_img_msg->header.seq);
+
+    // get transform
+    tf::StampedTransform trans;
+    try{
+        tf_listener_.lookupTransform(visual_img_msg->header.frame_id, odom_frame_, ros::Time(0), trans);
+    }catch (tf::TransformException &ex)
+    {
+        ROS_ERROR("%s",ex.what());
+        return;
+    }
+    gtsam::Rot3 rot3 = gtsam::Rot3::Quaternion( trans.getRotation().w(), trans.getRotation().x(),
+                                                trans.getRotation().y(), trans.getRotation().z() );
+    gtsam::Pose3 odom_pose(rot3, gtsam::Point3(trans.getOrigin()));
+
+    //
     getCameraParameter( cam_info_msg, camera_parameters_);
     PointCloudTypePtr cloud_in ( new PointCloudType );
     // Get Mat Image
@@ -97,13 +114,14 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
     // Get PointCloud
     cloud_in = image2PointCloud( visual_image, depth_image, camera_parameters_);
 
+    //
     if(!loop_one_message_)
-        processCloud( cloud_in );
+        processCloud( cloud_in, odom_pose );
     else
         while(loop_one_message_ && ros::ok())
         {
             ros::Duration(0.2).sleep();
-            processCloud( cloud_in );
+            processCloud( cloud_in, odom_pose );
         }
 }
 
@@ -113,25 +131,61 @@ void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img
 {
     printf("cloud msg: %d\n", visual_img_msg->header.seq);
 
+    // get transform
+    tf::StampedTransform trans;
+    try{
+        tf_listener_.lookupTransform(visual_img_msg->header.frame_id, odom_frame_, ros::Time(0), trans);
+    }catch (tf::TransformException &ex)
+    {
+        ROS_ERROR("%s",ex.what());
+        return;
+    }
+    gtsam::Rot3 rot3 = gtsam::Rot3::Quaternion( trans.getRotation().w(), trans.getRotation().x(),
+                                                trans.getRotation().y(), trans.getRotation().z() );
+    gtsam::Pose3 odom_pose(rot3, gtsam::Point3(trans.getOrigin()));
+
+    //
     getCameraParameter( cam_info_msg, camera_parameters_);
 
+    //
     PointCloudTypePtr cloud_in ( new PointCloudType );
     pcl::fromROSMsg( *point_cloud, *cloud_in);
 
+    //
     if(!loop_one_message_)
-        processCloud( cloud_in );
+        processCloud( cloud_in, odom_pose );
     else
         while(loop_one_message_ && ros::ok())
         {
             ros::Duration(0.2).sleep();
-            processCloud( cloud_in );
+            processCloud( cloud_in, odom_pose );
         }
 }
 
-void KinectListener::processCloud( PointCloudTypePtr &input )
+void KinectListener::processCloud( const PointCloudTypePtr &input, gtsam::Pose3 &odom_pose )
 {
+    static gtsam::Pose3 last_pose = odom_pose;
+
     std::vector<PlaneType> organized_planes;
 
+    PointCloudTypePtr cloud_in( new PointCloudType );
+    // if use downsample cloud
+    cloud_size_type_ = cloud_size_type_config_;
+    if( cloud_size_type_ == QVGA)
+    {
+        cout << GREEN << "QVGA" << RESET << endl;
+        downsampleOrganizedCloud( input, cloud_in, camera_parameters_, (int)QVGA);
+    }
+    else if( cloud_size_type_ == QQVGA)
+    {
+        cout << GREEN << "QQVGA" << RESET << endl;
+        downsampleOrganizedCloud( input, cloud_in, camera_parameters_, (int)QQVGA);
+    }
+    else
+    {
+        cout << GREEN << "VGA" << RESET << endl;
+        cloud_in = input; // copy pointer
+    }
 
     double start_time = pcl::getTime();
     pcl::console::TicToc time;
@@ -141,19 +195,20 @@ void KinectListener::processCloud( PointCloudTypePtr &input )
     float total_dura = 0;
 
     // Plane Segment
-    organizedPlaneSegment( input, organized_planes );
+    organizedPlaneSegment( cloud_in, organized_planes );
     organized_dura = time.toc();
     time.tic();
 
     // Do slam
     if(!is_initialized)
     {
-//        plane_slam_->initialize();
+        plane_slam_->initialize( odom_pose, organized_planes );
         is_initialized = true;
     }
     else
     {
-
+        gtsam::Pose3 rel_pose = last_pose.inverse().compose( odom_pose );
+        plane_slam_->planeSlam( rel_pose, organized_planes );
     }
 
     // display
@@ -162,10 +217,10 @@ void KinectListener::processCloud( PointCloudTypePtr &input )
     if(display_input_cloud_)
     {
 //        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> rgba_color(frame_current.point_cloud, 255, 255, 255);
-        pcl_viewer_->addPointCloud( input, "rgba_cloud" );
+        pcl_viewer_->addPointCloud( cloud_in, "rgba_cloud" );
         pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "rgba_cloud");
     }
-    displayPlanes( input, organized_planes, "organized_plane", viewer_v1_ );
+    displayPlanes( cloud_in, organized_planes, "organized_plane", viewer_v1_ );
     pcl_viewer_->spinOnce(1);
 
     display_dura = time.toc();
@@ -199,13 +254,27 @@ void KinectListener::organizedPlaneSegment(PointCloudTypePtr &input, std::vector
         plane.coefficients[1] = coef.values[1];
         plane.coefficients[2] = coef.values[2];
         plane.coefficients[3] = coef.values[3];
+        plane.covariances = Eigen::Matrix4d::Zero();
+        plane.covariances(0, 0) = pow(plane.coefficients[0]*1e-2, 2);
+        plane.covariances(1, 1) = pow(plane.coefficients[1]*1e-2, 2);
+        plane.covariances(2, 2) = pow(plane.coefficients[2]*1e-2, 2);
+        plane.covariances(3, 3) = pow(plane.coefficients[3]*1e-2, 2);
         planes.push_back( plane );
     }
 }
 
+void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &config, uint32_t level)
+{
+    map_frame_ = config.map_frame;
+    base_frame_ = config.base_frame;
+    odom_frame_ = config.odom_frame;
+
+    cout << GREEN <<"Common Slam Config." << RESET << endl;
+}
 
 void KinectListener::planeSegmentReconfigCallback(plane_slam::PlaneSegmentConfig &config, uint32_t level)
 {
+    cloud_size_type_config_ = config.cloud_size_type;
     plane_segment_method_ = config.segment_method;
     display_input_cloud_ = config.display_input_cloud;
     display_line_cloud_ = config.display_line_cloud;
@@ -279,15 +348,7 @@ void KinectListener::displayLinesAndNormals( const PointCloudTypePtr &input,
 
 void KinectListener::pclViewerLineRegion( const PointCloudTypePtr &input, PlaneFromLineSegment::LineType &line, const std::string &id, int viewpoint)
 {
-    PointCloudTypePtr cloud (new PointCloudType );
-
-    for(int i = 0; i < line.inliers.size(); i++)
-    {
-        cloud->points.push_back( input->points[line.inliers[i]] );
-    }
-    cloud->is_dense = false;
-    cloud->height = 1;
-    cloud->width = cloud->points.size();
+    PointCloudTypePtr cloud = getPointCloudFromIndices( input, line.inliers );
 
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color(cloud, rng.uniform(0.0, 255.0), rng.uniform(0.0, 255.0), rng.uniform(0.0, 255.0));
     pcl_viewer_->addPointCloud(cloud, color, id, viewpoint);
@@ -299,7 +360,10 @@ void KinectListener::pclViewerNormal( const PointCloudTypePtr &input, PlaneFromL
 {
     PlaneType plane;
     plane.centroid = normal.centroid;
-    plane.coefficients = normal.coefficients;
+    plane.coefficients[0] = normal.coefficients[0];
+    plane.coefficients[1] = normal.coefficients[1];
+    plane.coefficients[2] = normal.coefficients[2];
+    plane.coefficients[3] = normal.coefficients[3];
     plane.inlier = normal.inliers;
 
     pclViewerPlane( input, plane, id, viewpoint);
@@ -331,19 +395,66 @@ void KinectListener::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &
     // add a sphere
 //    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point", viewpoint);
     // add inlier
-    PointCloudTypePtr cloud (new PointCloudType );
-
-    for(int i = 0; i < plane.inlier.size(); i++)
-    {
-        cloud->points.push_back( input->points[plane.inlier[i]] );
-    }
-    cloud->is_dense = false;
-    cloud->height = 1;
-    cloud->width = cloud->points.size();
+    PointCloudTypePtr cloud = getPointCloudFromIndices( input, plane.inlier );
 
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color(cloud, r, g, b);
     pcl_viewer_->addPointCloud(cloud, color, id+"_inlier", viewpoint);
     pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_inlier", viewpoint);
+}
+
+PointCloudTypePtr KinectListener::getPointCloudFromIndices( const PointCloudTypePtr &input,
+                                             pcl::PointIndices &indices)
+{
+    PointCloudTypePtr output (new PointCloudType );
+    for(int i = 0; i < indices.indices.size(); i++)
+    {
+        output->points.push_back( input->points[ indices.indices[i] ]);
+    }
+    output->is_dense = false;
+    output->height = 1;
+    output->width = output->points.size();
+    return output;
+}
+
+PointCloudTypePtr KinectListener::getPointCloudFromIndices( const PointCloudTypePtr &input,
+                                             std::vector<int> &indices)
+{
+    PointCloudTypePtr output (new PointCloudType );
+    for(int i = 0; i < indices.size(); i++)
+    {
+        output->points.push_back( input->points[ indices[i] ]);
+    }
+    output->is_dense = false;
+    output->height = 1;
+    output->width = output->points.size();
+    return output;
+}
+
+void KinectListener::downsampleOrganizedCloud(const PointCloudTypePtr &input, PointCloudTypePtr &output,
+                                            CAMERA_INTRINSIC_PARAMETERS &out_camera, int size_type)
+{
+    int skip = pow(2, size_type);
+    int width = input->width / skip;
+    int height = input->height / skip;
+    output->width = width;
+    output->height = height;
+    output->is_dense = false;
+    output->points.resize( width * height);
+    for( size_t i = 0, y = 0; i < height; i++, y+=skip)
+    {
+        for( size_t j = 0, x = 0; j < width; j++, x+=skip)
+        {
+            output->points[i*width + j] = input->points[input->width*y + x];
+        }
+    }
+
+    out_camera.width = width;
+    out_camera.height = height;
+    out_camera.cx = width / 2 - 0.5;
+    out_camera.cy = height / 2 - 0.5;
+    out_camera.fx = 525.0 / skip;
+    out_camera.fy = 525.0 / skip;
+    out_camera.scale = 1.0;
 }
 
 void KinectListener::getCameraParameter(const sensor_msgs::CameraInfoConstPtr &cam_info_msg,

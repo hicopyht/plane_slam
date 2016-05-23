@@ -15,6 +15,8 @@
 #include <gtsam/nonlinear/Values.h>
 #include <gtsam/nonlinear/ISAM2.h>
 
+#include "utils.h"
+
 using namespace std;
 using namespace gtsam;
 
@@ -23,11 +25,9 @@ class PlaneSlam
 public:
     PlaneSlam();
 
-    void initialize(const Pose3 &init_pose, const std::vector<Eigen::VectorXd> &plane_coeffs,
-                    const std::vector<Eigen::MatrixXd> &covariances);
+    void initialize(Pose3 &init_pose, std::vector<PlaneType> &planes);
 
-    Pose3 planeSlam(const Pose3 &rel_pose, const std::vector<Eigen::VectorXd> &plane_coeffs,
-                   const std::vector<Eigen::MatrixXd> &covariances);
+    Pose3 planeSlam(Pose3 &rel_pose, std::vector<PlaneType> &planes);
 
 private:
     //

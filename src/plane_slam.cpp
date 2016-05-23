@@ -13,8 +13,7 @@ PlaneSlam::PlaneSlam() :
     isam2_ = new ISAM2(isam2_parameters_);
 }
 
-void PlaneSlam::initialize(const Pose3 &init_pose, const std::vector<Eigen::VectorXd> &plane_coeffs,
-                           const std::vector<Eigen::MatrixXd> &covariances)
+void PlaneSlam::initialize(Pose3 &init_pose, std::vector<PlaneType> &planes)
 {
     // Create a Factor Graph and Values to hold the new data
     NonlinearFactorGraph graph; // factor graph
@@ -33,19 +32,23 @@ void PlaneSlam::initialize(const Pose3 &init_pose, const std::vector<Eigen::Vect
 
     // Add new observation
     landmakr_count_ = 0;
-    for(int i = 0; i < plane_coeffs.size(); i++)
+    for(int i = 0; i < planes.size(); i++)
     {
-        noiseModel::Gaussian::shared_ptr obs_noise = noiseModel::Gaussian::Covariance(covariances[i]);
-        graph.push_back(OrientedPlane3Factor(plane_coeffs[i], obs_noise, Symbol('x', 0), Symbol('l', i)));
+        PlaneType &plane = planes[i];
+        noiseModel::Gaussian::shared_ptr obs_noise = noiseModel::Gaussian::Covariance( plane.covariances );
+        graph.push_back(OrientedPlane3Factor(plane.coefficients, obs_noise, Symbol('x', 0), Symbol('l', i)));
         landmakr_count_ ++;
     }
     isam2_->update(graph, initial_estimate);
     //
     first_pose_ = false;
+
+    cout << GREEN << "Initialize plane slam, register first observation." << endl;
+    init_pose.print(" - Initial pose: ");
+    cout << RESET << endl;
 }
 
-Pose3 PlaneSlam::planeSlam(const Pose3 &rel_pose, const std::vector<Eigen::VectorXd> &plane_coeffs,
-                          const std::vector<Eigen::MatrixXd> &covariances)
+Pose3 PlaneSlam::planeSlam(Pose3 &rel_pose, std::vector<PlaneType> &planes)
 {
     if(first_pose_)
     {
@@ -86,6 +89,10 @@ Pose3 PlaneSlam::planeSlam(const Pose3 &rel_pose, const std::vector<Eigen::Vecto
     Pose3 current_estimate = isam2_->calculateEstimate(pose_key).cast<Pose3>();
     poses_.insert( pose_key, current_estimate);
     current_estimate.print("Current estimate:");
+
+    cout << GREEN << "Do slam, pose count: " << pose_count_ << endl;
+    current_estimate.print( " - Current_pose: ");
+    cout << RESET << endl;
 
     return current_estimate;
 }

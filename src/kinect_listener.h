@@ -21,6 +21,7 @@
 #include <pcl/visualization/pcl_visualizer.h>
 //
 #include <plane_from_line/plane_from_line_segment.h>
+#include <plane_slam/PlaneSlamConfig.h>
 #include <plane_slam/PlaneSegmentConfig.h>
 #include <plane_slam/OrganizedSegmentConfig.h>
 #include "organized_plane_segment.h"
@@ -45,11 +46,12 @@ typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image,
 
 class KinectListener
 {
-    enum { LINE_BADED = 0, RANSAC = 1, ORGANSIZED = 2, REGION_GROW = 3, ALL_METHOD = 4};
+    enum { VGA = 0, QVGA = 1, QQVGA = 2};
+    enum { LINE_BADED = 0, ORGANSIZED = 1};
 public:
     KinectListener();
 
-    void processCloud( PointCloudTypePtr &input );
+    void processCloud( const PointCloudTypePtr &input, gtsam::Pose3 &odom_pose );
 
     void organizedPlaneSegment(PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
@@ -64,9 +66,20 @@ protected:
                         const sensor_msgs::PointCloud2ConstPtr& point_cloud,
                         const sensor_msgs::CameraInfoConstPtr& cam_info_msg);
 
+    void planeSlamReconfigCallback( plane_slam::PlaneSlamConfig &config, uint32_t level);
+
     void planeSegmentReconfigCallback( plane_slam::PlaneSegmentConfig &config, uint32_t level);
 
     void organizedSegmentReconfigCallback( plane_slam::OrganizedSegmentConfig &config, uint32_t level);
+
+    PointCloudTypePtr getPointCloudFromIndices( const PointCloudTypePtr &input,
+                                                 pcl::PointIndices &indices);
+
+    PointCloudTypePtr getPointCloudFromIndices( const PointCloudTypePtr &input,
+                                                 std::vector<int> &indices);
+
+    void downsampleOrganizedCloud(const PointCloudTypePtr &input, PointCloudTypePtr &output,
+                                  CAMERA_INTRINSIC_PARAMETERS &out_camera, int size_type);
 
     void getCameraParameter(const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
                             CAMERA_INTRINSIC_PARAMETERS &camera);
@@ -98,6 +111,8 @@ private:
     ros::CallbackQueue my_callback_queue_;
     ros::AsyncSpinner* async_spinner_;
     //
+    dynamic_reconfigure::Server<plane_slam::PlaneSlamConfig> plane_slam_config_server_;
+    dynamic_reconfigure::Server<plane_slam::PlaneSlamConfig>::CallbackType plane_slam_config_callback_;
     dynamic_reconfigure::Server<plane_slam::PlaneSegmentConfig> plane_segment_config_server_;
     dynamic_reconfigure::Server<plane_slam::PlaneSegmentConfig>::CallbackType plane_segment_config_callback_;
     dynamic_reconfigure::Server<plane_slam::OrganizedSegmentConfig> organized_segment_config_server_;
@@ -131,7 +146,14 @@ private:
     //
     CAMERA_INTRINSIC_PARAMETERS camera_parameters_;
 
+    // Plane slam
+    string map_frame_;
+    string base_frame_;
+    string odom_frame_;
+
     // Plane segment
+    int cloud_size_type_;
+    int cloud_size_type_config_;
     int plane_segment_method_;
     bool display_input_cloud_;
     bool display_line_cloud_;
