@@ -71,7 +71,9 @@ Pose3 PlaneSlam::planeSlam(const Pose3 &rel_pose, const std::vector<Eigen::Vecto
     initial_estimate.insert( pose_key, new_pose );
     pose_count_ ++;
 
-    // Match local landmark with map landmarks
+    // Transform modeled landmakr to pose frame
+
+    // Match modelled landmark with measurement
 
     // Add factor to exist landmark
 

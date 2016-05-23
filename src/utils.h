@@ -54,6 +54,7 @@ struct Frame
 };
 
 /*
+ * \brief Plane parameters
   N*P + d = 0
   */
 struct PlaneType
@@ -61,8 +62,14 @@ struct PlaneType
     PointType centroid;
     Eigen::Vector4f coefficients;
     std::vector<int> inlier;
+    PointCloudType cloud;
 };
 
+struct PlanePair
+{
+    int iobs;
+    int ilm;
+};
 
 //the following are UBUNTU/LINUX ONLY terminal color
 #define RESET "\033[0m"
