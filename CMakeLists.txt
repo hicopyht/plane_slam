@@ -56,6 +56,9 @@ include_directories(BEFORE "${PROJECT_SOURCE_DIR}")
 #
 find_package(GTSAM REQUIRED) # Uses installed package
 include_directories(${GTSAM_INCLUDE_DIR})
+#
+# Find TBB
+find_package(TBB)
 
 
 ################################################
@@ -116,6 +119,7 @@ add_library( ${PROJECT_NAME}
     src/kinect_listener.cpp
     src/organized_plane_segment.cpp
     src/plane_slam.cpp
+    src/utils.cpp
 )
 
 ## Specify libraries to link a library or executable target against

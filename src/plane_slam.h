@@ -29,10 +29,18 @@ public:
 
     Pose3 planeSlam(Pose3 &rel_pose, std::vector<PlaneType> &planes);
 
+    void matchPlanes( std::vector<OrientedPlane3> &predicted_observations,
+                      std::vector<OrientedPlane3> &observations,
+                      std::vector<PlanePair> &pairs);
+
 private:
     //
     ISAM2Params isam2_parameters_;
     ISAM2* isam2_;
+    //
+    // Create a Factor Graph and Values to hold the new data
+    NonlinearFactorGraph graph_; // factor graph
+    Values initial_estimate_; // initial guess
     //
     bool first_pose_;
     Values poses_;

@@ -61,7 +61,7 @@ struct PlaneType
 {
     PointType centroid;
     Eigen::Vector4d coefficients;
-    Eigen::Matrix4d covariances;
+    Eigen::Vector3d sigmas;
     std::vector<int> inlier;
     PointCloudType cloud;
 };
@@ -71,6 +71,9 @@ struct PlanePair
     int iobs;
     int ilm;
 };
+
+void matrixTF2Eigen(const tf::Matrix3x3 &t, Eigen::Matrix3d &e);
+Eigen::Matrix3d matrixTF2Eigen(const tf::Matrix3x3 &t);
 
 
 //the following are UBUNTU/LINUX ONLY terminal color

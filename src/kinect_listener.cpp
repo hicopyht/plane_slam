@@ -53,6 +53,8 @@ KinectListener::KinectListener() :
     pcl_viewer_->setCameraPosition(0.0, 0.0, -0.4, 0, 0, 0.6, 0, -1, 0);
     pcl_viewer_->setShowFPS(true);
 
+    pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("estimate_pose", 10);
+
     // config subscribers
     if(!topic_point_cloud_.empty()) // pointcloud2
     {
@@ -95,7 +97,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
     // get transform
     tf::StampedTransform trans;
     try{
-        tf_listener_.lookupTransform(visual_img_msg->header.frame_id, odom_frame_, ros::Time(0), trans);
+        tf_listener_.lookupTransform(odom_frame_, visual_img_msg->header.frame_id, ros::Time(0), trans);
     }catch (tf::TransformException &ex)
     {
         ROS_ERROR("%s",ex.what());
@@ -104,6 +106,17 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
     gtsam::Rot3 rot3 = gtsam::Rot3::Quaternion( trans.getRotation().w(), trans.getRotation().x(),
                                                 trans.getRotation().y(), trans.getRotation().z() );
     gtsam::Pose3 odom_pose(rot3, gtsam::Point3(trans.getOrigin()));
+
+//    // print pose info
+//    cout << CYAN;
+//    cout << " trans pose: " << endl;
+//    Eigen::Matrix3d m33 = matrixTF2Eigen( trans.getBasis() );
+//    cout << "     R : " << m33 << endl;
+//    cout << "     T : " << trans.getOrigin()[0] << ", " << trans.getOrigin()[1] << ", "
+//                        <<  trans.getOrigin()[2] << endl;
+//    cout << YELLOW;
+//    odom_pose.print( " odom pose: ");
+//    cout << RESET << endl;
 
     //
     getCameraParameter( cam_info_msg, camera_parameters_);
@@ -134,7 +147,7 @@ void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img
     // get transform
     tf::StampedTransform trans;
     try{
-        tf_listener_.lookupTransform(visual_img_msg->header.frame_id, odom_frame_, ros::Time(0), trans);
+        tf_listener_.lookupTransform(odom_frame_, visual_img_msg->header.frame_id, ros::Time(0), trans);
     }catch (tf::TransformException &ex)
     {
         ROS_ERROR("%s",ex.what());
@@ -143,6 +156,18 @@ void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img
     gtsam::Rot3 rot3 = gtsam::Rot3::Quaternion( trans.getRotation().w(), trans.getRotation().x(),
                                                 trans.getRotation().y(), trans.getRotation().z() );
     gtsam::Pose3 odom_pose(rot3, gtsam::Point3(trans.getOrigin()));
+
+//    // print pose info
+//    cout << CYAN;
+//    cout << " trans pose: " << endl;
+//    Eigen::Matrix3d m33 = matrixTF2Eigen( trans.getBasis() );
+//    cout << "     R : " << m33 << endl;
+//    cout << "     T : " << trans.getOrigin()[0] << ", " << trans.getOrigin()[1] << ", "
+//                        <<  trans.getOrigin()[2] << endl;
+//    cout << YELLOW;
+//    odom_pose.print( " odom pose: ");
+//    cout << RESET << endl;
+
 
     //
     getCameraParameter( cam_info_msg, camera_parameters_);
@@ -199,6 +224,8 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, gtsam::Pose3 
     organized_dura = time.toc();
     time.tic();
 
+    cout << GREEN << " planes: " << organized_planes.size() << RESET << endl;
+
     // Do slam
     if(!is_initialized)
     {
@@ -207,8 +234,9 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, gtsam::Pose3 
     }
     else
     {
-        gtsam::Pose3 rel_pose = last_pose.inverse().compose( odom_pose );
-        plane_slam_->planeSlam( rel_pose, organized_planes );
+        gtsam::Pose3 rel_pose = last_pose.inverse() * odom_pose ;
+        gtsam::Pose3 estmated_pose = plane_slam_->planeSlam( rel_pose, organized_planes );
+        publishPose( estmated_pose );
     }
 
     // display
@@ -254,11 +282,13 @@ void KinectListener::organizedPlaneSegment(PointCloudTypePtr &input, std::vector
         plane.coefficients[1] = coef.values[1];
         plane.coefficients[2] = coef.values[2];
         plane.coefficients[3] = coef.values[3];
-        plane.covariances = Eigen::Matrix4d::Zero();
-        plane.covariances(0, 0) = pow(plane.coefficients[0]*1e-2, 2);
-        plane.covariances(1, 1) = pow(plane.coefficients[1]*1e-2, 2);
-        plane.covariances(2, 2) = pow(plane.coefficients[2]*1e-2, 2);
-        plane.covariances(3, 3) = pow(plane.coefficients[3]*1e-2, 2);
+        plane.sigmas[0] = 1e-4;
+        plane.sigmas[1] = 1e-4;
+        plane.sigmas[2] = 1e-4;
+//        plane.covariances(0, 0) = pow(plane.coefficients[0]*1e-2, 2);
+//        plane.covariances(1, 1) = pow(plane.coefficients[1]*1e-2, 2);
+//        plane.covariances(2, 2) = pow(plane.coefficients[2]*1e-2, 2);
+//        plane.covariances(3, 3) = pow(plane.coefficients[3]*1e-2, 2);
         planes.push_back( plane );
     }
 }
@@ -299,6 +329,19 @@ void KinectListener::organizedSegmentReconfigCallback(plane_slam::OrganizedSegme
     cout << GREEN <<"Organized Segment Config." << RESET << endl;
 }
 
+void KinectListener::publishPose( gtsam::Pose3 &pose)
+{
+    geometry_msgs::PoseStamped msg;
+    msg.header.frame_id = "/world";
+    msg.header.stamp = ros::Time::now();
+    msg.pose.position.x = pose.x();
+    msg.pose.position.y = pose.y();
+    msg.pose.position.z = pose.z();
+    gtsam::Vector3 rpy = pose.rotation().rpy();
+    msg.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw( rpy[0], rpy[1], rpy[2] );
+
+    pose_publisher_.publish( msg );
+}
 
 void KinectListener::displayPlanes( const PointCloudTypePtr &input, std::vector<PlaneType> &planes, const std::string &prefix, int viewport)
 {

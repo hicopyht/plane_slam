@@ -84,6 +84,8 @@ protected:
     void getCameraParameter(const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
                             CAMERA_INTRINSIC_PARAMETERS &camera);
 
+    void publishPose( gtsam::Pose3 &pose);
+
     void displayPlanes( const PointCloudTypePtr &input, std::vector<PlaneType> &planes, const std::string &prefix, int viewport);
 
     void displayLinesAndNormals( const PointCloudTypePtr &input,
@@ -132,6 +134,8 @@ private:
     //
     message_filters::Synchronizer<CloudSyncPolicy>* cloud_sync_;
     message_filters::Synchronizer<NoCloudSyncPolicy>* no_cloud_sync_;
+    //
+    ros::Publisher pose_publisher_;
     //
     tf::TransformListener tf_listener_;
     //
