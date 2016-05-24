@@ -70,6 +70,9 @@ struct PlanePair
 {
     int iobs;
     int ilm;
+
+    PlanePair() : iobs(-1), ilm(-1) {}
+    PlanePair(int _iobs, int _ilm) : iobs(_iobs), ilm(_ilm) {}
 };
 
 void matrixTF2Eigen(const tf::Matrix3x3 &t, Eigen::Matrix3d &e);

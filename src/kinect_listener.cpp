@@ -262,7 +262,7 @@ void KinectListener::organizedPlaneSegment(PointCloudTypePtr &input, std::vector
 {
     // copy input cloud
     PointCloudTypePtr cloud_in ( new PointCloudType );
-    pcl::copyPointCloud( *input, *cloud_in);
+    pcl::copyPointCloud( *input, *cloud_in );
     // segment planes
     OrganizedPlaneSegmentResult result;
     organized_plane_segment_.segment( cloud_in, result);
@@ -282,9 +282,9 @@ void KinectListener::organizedPlaneSegment(PointCloudTypePtr &input, std::vector
         plane.coefficients[1] = coef.values[1];
         plane.coefficients[2] = coef.values[2];
         plane.coefficients[3] = coef.values[3];
-        plane.sigmas[0] = 1e-4;
-        plane.sigmas[1] = 1e-4;
-        plane.sigmas[2] = 1e-4;
+        plane.sigmas[0] = pow(plane.coefficients[0]*1e-2, 2);
+        plane.sigmas[1] = pow(plane.coefficients[1]*1e-2, 2);
+        plane.sigmas[2] = pow(plane.coefficients[3]*1e-2, 2);
 //        plane.covariances(0, 0) = pow(plane.coefficients[0]*1e-2, 2);
 //        plane.covariances(1, 1) = pow(plane.coefficients[1]*1e-2, 2);
 //        plane.covariances(2, 2) = pow(plane.coefficients[2]*1e-2, 2);
@@ -298,6 +298,7 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     map_frame_ = config.map_frame;
     base_frame_ = config.base_frame;
     odom_frame_ = config.odom_frame;
+    plane_slam_->setPlaneMatchThreshold( config.plane_match_threshold );
 
     cout << GREEN <<"Common Slam Config." << RESET << endl;
 }

@@ -33,6 +33,11 @@ public:
                       std::vector<OrientedPlane3> &observations,
                       std::vector<PlanePair> &pairs);
 
+    void getPredictedObservation( Pose3 &pose, std::vector<OrientedPlane3> &predicted_observations );
+
+    inline void setPlaneMatchThreshold( double threshold) { plane_match_threshold_ = threshold; }
+    inline double getPlaneMatchThreshold() const { return plane_match_threshold_; }
+
 private:
     //
     ISAM2Params isam2_parameters_;
@@ -45,7 +50,10 @@ private:
     bool first_pose_;
     Values poses_;
     int pose_count_;
-    int landmakr_count_;
+    int landmark_count_;
+
+    // Parameters
+    double plane_match_threshold_;
 };
 
 #endif // PLANE_SLAM_H
