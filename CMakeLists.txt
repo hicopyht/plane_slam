@@ -80,6 +80,7 @@ generate_dynamic_reconfigure_options(
   cfg/PlaneSlam.cfg
   cfg/PlaneSegment.cfg
   cfg/OrganizedSegment.cfg
+  cfg/LineBasedSegment.cfg
 )
 
 ###################################

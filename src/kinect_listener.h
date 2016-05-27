@@ -24,6 +24,7 @@
 #include <plane_slam/PlaneSlamConfig.h>
 #include <plane_slam/PlaneSegmentConfig.h>
 #include <plane_slam/OrganizedSegmentConfig.h>
+#include <plane_slam/LineBasedSegmentConfig.h>
 #include "organized_plane_segment.h"
 #include "utils.h"
 #include "plane_slam.h"
@@ -53,6 +54,9 @@ public:
 
     void processCloud( const PointCloudTypePtr &input, gtsam::Pose3 &odom_pose );
 
+    void lineBasedPlaneSegment(PointCloudTypePtr &input,
+                               std::vector<PlaneType> &planes);
+
     void organizedPlaneSegment(PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
 
@@ -66,13 +70,15 @@ protected:
                         const sensor_msgs::PointCloud2ConstPtr& point_cloud,
                         const sensor_msgs::CameraInfoConstPtr& cam_info_msg);
 
-    bool getOdomPose( gtsam::Pose3 &odom_pose, const std::string &camera_frame );
+    void setlineBasedPlaneSegmentParameters();
 
     void planeSlamReconfigCallback( plane_slam::PlaneSlamConfig &config, uint32_t level);
 
     void planeSegmentReconfigCallback( plane_slam::PlaneSegmentConfig &config, uint32_t level);
 
     void organizedSegmentReconfigCallback( plane_slam::OrganizedSegmentConfig &config, uint32_t level);
+
+    void lineBasedSegmentReconfigCallback( plane_slam::LineBasedSegmentConfig &config, uint32_t level);
 
     PointCloudTypePtr getPointCloudFromIndices( const PointCloudTypePtr &input,
                                                  pcl::PointIndices &indices);
@@ -81,10 +87,10 @@ protected:
                                                  std::vector<int> &indices);
 
     void downsampleOrganizedCloud(const PointCloudTypePtr &input, PointCloudTypePtr &output,
-                                  CAMERA_INTRINSIC_PARAMETERS &out_camera, int size_type);
+                                  PlaneFromLineSegment::CAMERA_PARAMETERS &out_camera, int size_type);
 
     void getCameraParameter(const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
-                            CAMERA_INTRINSIC_PARAMETERS &camera);
+                            PlaneFromLineSegment::CAMERA_PARAMETERS &camera);
 
     void publishPose( gtsam::Pose3 &pose);
 
@@ -104,7 +110,9 @@ protected:
     void pclViewerPlane( const PointCloudTypePtr &input, PlaneType &plane, const std::string &id, int viewpoint);
 
     pcl::PointCloud<pcl::PointXYZRGBA>::Ptr image2PointCloud( const cv::Mat &rgb_img, const cv::Mat &depth_img,
-                                                            const CAMERA_INTRINSIC_PARAMETERS& camera );
+                                                            const PlaneFromLineSegment::CAMERA_PARAMETERS& camera );
+
+    bool getOdomPose( gtsam::Pose3 &odom_pose, const std::string &camera_frame );
 
     inline bool isValidPoint(const PointType &p)
     {
@@ -123,6 +131,8 @@ private:
     dynamic_reconfigure::Server<plane_slam::PlaneSegmentConfig>::CallbackType plane_segment_config_callback_;
     dynamic_reconfigure::Server<plane_slam::OrganizedSegmentConfig> organized_segment_config_server_;
     dynamic_reconfigure::Server<plane_slam::OrganizedSegmentConfig>::CallbackType organized_segment_config_callback_;
+    dynamic_reconfigure::Server<plane_slam::LineBasedSegmentConfig> line_based_segment_config_server_;
+    dynamic_reconfigure::Server<plane_slam::LineBasedSegmentConfig>::CallbackType line_based_segment_config_callback_;
 
     // subscribers
     int subscriber_queue_size_;
@@ -151,9 +161,6 @@ private:
     cv::RNG rng;
     PointRepresentationConstPtr prttcp_;
 
-    //
-    CAMERA_INTRINSIC_PARAMETERS camera_parameters_;
-
     // Plane slam
     string map_frame_;
     string base_frame_;
@@ -174,12 +181,39 @@ private:
     // Organized Muit Plane segment parameters
     OrganizedPlaneSegment organized_plane_segment_;
 
-    // RANSAC segment parameters
-    int ransac_method_type_;
-    double ransac_points_left_persentage_;
-    double ransac_distance_threshold_;
-    int ransac_max_iterations_;
-    int ransac_min_points_size_;
+    //
+    // Plane segment based line segment
+    PlaneFromLineSegment::CAMERA_PARAMETERS camera_parameters_;
+    PlaneFromLineSegment plane_from_line_segment_;
+    bool is_update_line_based_parameters_;
+    // LineBased segment
+    bool use_horizontal_line_;
+    bool use_verticle_line_;
+    unsigned y_skip_;
+    unsigned x_skip_;
+    float line_point_min_distance_;
+    bool use_depth_noise_model_;
+    float scan_rho_constant_error_;
+    float scan_rho_distance_error_;
+    float scan_rho_quadratic_error_;
+    unsigned slide_window_size_;
+    unsigned line_min_inliers_;
+    float line_fitting_threshold_;
+    int normals_per_line_;
+    bool normal_use_depth_dependent_smoothing_;
+    float normal_max_depth_change_factor_;
+    unsigned normal_smoothing_size_;
+    float normal_min_inliers_percentage_;
+    float normal_maximum_curvature_;
+    //
+    int plane_segment_criterion_;
+    float k_curvature_;
+    float k_inlier_;
+    unsigned min_inliers_;
+    float distance_threshold_;
+    float neighbor_threshold_;
+    bool optimize_coefficients_;
+    bool project_points_;
 
     //
     bool is_initialized;

@@ -6,6 +6,7 @@ KinectListener::KinectListener() :
   , plane_slam_config_server_( ros::NodeHandle( "PlaneSlam" ) )
   , plane_segment_config_server_( ros::NodeHandle( "PlaneSegment" ) )
   , organized_segment_config_server_( ros::NodeHandle( "OrganizedSegment" ) )
+  , line_based_segment_config_server_( ros::NodeHandle( "LineBasedSegment" ) )
   , tf_listener_( nh_, ros::Duration(10.0) )
   , pcl_viewer_( new pcl::visualization::PCLVisualizer("3D Viewer"))
   , viewer_v1_(1)
@@ -32,6 +33,8 @@ KinectListener::KinectListener() :
         plane_segment_config_server_.setCallback(plane_segment_config_callback_);
         organized_segment_config_callback_ = boost::bind(&KinectListener::organizedSegmentReconfigCallback, this, _1, _2);
         organized_segment_config_server_.setCallback(organized_segment_config_callback_);
+        line_based_segment_config_callback_ = boost::bind(&KinectListener::lineBasedSegmentReconfigCallback, this, _1, _2);
+        line_based_segment_config_server_.setCallback(line_based_segment_config_callback_);
     }
 
     private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
@@ -176,14 +179,28 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, gtsam::Pose3 
     double start_time = pcl::getTime();
     pcl::console::TicToc time;
     time.tic();
-    float organized_dura = 0;
+    float segment_dura = 0;
     float display_dura = 0;
     float total_dura = 0;
 
     // Plane Segment
-    organizedPlaneSegment( cloud_in, organized_planes );
-    organized_dura = time.toc();
-    time.tic();
+    if( plane_segment_method_ == ORGANSIZED)
+    {
+        organizedPlaneSegment( cloud_in, organized_planes );
+        segment_dura = time.toc();
+        time.tic();
+    }
+    else if( plane_segment_method_ == LINE_BADED )
+    {
+        lineBasedPlaneSegment( cloud_in, organized_planes );
+        segment_dura = time.toc();
+        time.tic();
+    }
+    else
+    {
+        cout << RED << "[Error]: Invalid segmentation method error." << RESET << endl;
+        exit(0);
+    }
 
     cout << GREEN << " planes: " << organized_planes.size() << RESET << endl;
 
@@ -227,26 +244,86 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, gtsam::Pose3 
     display_dura = time.toc();
     total_dura = (pcl::getTime() - start_time) * 1000;
 
-    ROS_INFO("Total time: %f, segment %f, display %f \n", total_dura, organized_dura, display_dura);
+    ROS_INFO("Total time: %f, segment %f, display %f \n", total_dura, segment_dura, display_dura);
     cout << "----------------------------------- END -------------------------------------" << endl;
 }
 
-bool KinectListener::getOdomPose( gtsam::Pose3 &odom_pose, const std::string &camera_frame)
+void KinectListener::setlineBasedPlaneSegmentParameters()
 {
-    // get transform
-    tf::StampedTransform trans;
-    try{
-        tf_listener_.lookupTransform(odom_frame_, camera_frame, ros::Time(0), trans);
-    }catch (tf::TransformException &ex)
-    {
-        ROS_ERROR("%s",ex.what());
-        return false;
-    }
-    gtsam::Rot3 rot3 = gtsam::Rot3::Quaternion( trans.getRotation().w(), trans.getRotation().x(),
-                                                trans.getRotation().y(), trans.getRotation().z() );
-    odom_pose = gtsam::Pose3(rot3, gtsam::Point3(trans.getOrigin()));
+    //
+    plane_from_line_segment_.setUseHorizontalLines( use_horizontal_line_ );
+    plane_from_line_segment_.setUseVerticleLines( use_verticle_line_ );
+    plane_from_line_segment_.setYskip( y_skip_ );
+    plane_from_line_segment_.setXSkip( x_skip_ );
+    plane_from_line_segment_.setLinePointMinDistance( line_point_min_distance_ );
+    plane_from_line_segment_.setUseDepthNoiseModel( use_depth_noise_model_ );
+    plane_from_line_segment_.setRhoConstantError( scan_rho_constant_error_ );
+    plane_from_line_segment_.setRhoDistanceError( scan_rho_distance_error_ );
+    plane_from_line_segment_.setRhoQuadraticError( scan_rho_quadratic_error_ );
+    plane_from_line_segment_.setSlideWindowSize( slide_window_size_ );
+    plane_from_line_segment_.setLineMinInliers( line_min_inliers_ );
+    plane_from_line_segment_.setLineFittingThreshold( line_fitting_threshold_ );
+    //
+    plane_from_line_segment_.setNormalsPerLine( normals_per_line_ );
+    plane_from_line_segment_.setNormalUseDepthSmoothing( normal_use_depth_dependent_smoothing_ );
+    plane_from_line_segment_.setNormalDepthChangeFactor( normal_max_depth_change_factor_ );
+    plane_from_line_segment_.setNormalSmoothingSize( normal_smoothing_size_ );
+    plane_from_line_segment_.setNormalMinInliersPercentage( normal_min_inliers_percentage_ );
+    plane_from_line_segment_.setNormalMaximumCurvature( normal_maximum_curvature_ );
+    //
+    plane_from_line_segment_.setPlaneSegmentCriterion( plane_segment_criterion_ );
+    plane_from_line_segment_.setCriterionBothParameters( k_curvature_, k_inlier_ );
+    plane_from_line_segment_.setMinInliers( min_inliers_ );
+    plane_from_line_segment_.setDistanceThreshold( distance_threshold_ );
+    plane_from_line_segment_.setNeighborThreshold( neighbor_threshold_ );
+    plane_from_line_segment_.setOptimizeCoefficients( optimize_coefficients_ );
+    plane_from_line_segment_.setProjectPoints( project_points_ );
+}
 
-    return true;
+void KinectListener::lineBasedPlaneSegment(PointCloudTypePtr &input,
+                                         std::vector<PlaneType> &planes)
+{
+    static int last_size_type = VGA;
+
+    PointCloudTypePtr cloud_in (new PointCloudType);
+    pcl::copyPointCloud( *input, *cloud_in);
+
+    //
+    if( is_update_line_based_parameters_ )
+    {
+        setlineBasedPlaneSegmentParameters();
+        is_update_line_based_parameters_ = false;
+    }
+
+    if (!plane_from_line_segment_.isInitialized() || cloud_size_type_ != last_size_type)
+    {
+        last_size_type = cloud_size_type_;
+        plane_from_line_segment_.setCameraParameters( camera_parameters_ );
+        cout << "Initialize line base segment." << endl;
+    }
+
+    //
+    std::vector<PlaneFromLineSegment::NormalType> line_based_planes;
+    plane_from_line_segment_.setInputCloud( cloud_in );
+    plane_from_line_segment_.segment( line_based_planes );
+
+    // convert format
+    for( int i = 0; i < line_based_planes.size(); i++)
+    {
+        PlaneFromLineSegment::NormalType &normal = line_based_planes[i];
+        PlaneType plane;
+        plane.centroid = normal.centroid;
+        plane.coefficients[0] = normal.coefficients[0];
+        plane.coefficients[1] = normal.coefficients[1];
+        plane.coefficients[2] = normal.coefficients[2];
+        plane.coefficients[3] = normal.coefficients[3];
+        plane.sigmas[0] = fabs(normal.coefficients[0]*0.1);
+        plane.sigmas[1] = fabs(normal.coefficients[1]*0.1);
+        plane.sigmas[2] = fabs(normal.coefficients[3]*0.1);
+        plane.inlier = normal.inliers;
+        //
+        planes.push_back( plane );
+    }
 }
 
 void KinectListener::organizedPlaneSegment(PointCloudTypePtr &input, std::vector<PlaneType> &planes)
@@ -317,6 +394,44 @@ void KinectListener::organizedSegmentReconfigCallback(plane_slam::OrganizedSegme
     organized_plane_segment_.project_bounding_points_ = config.organized_project_bounding_points;
 
     cout << GREEN <<"Organized Segment Config." << RESET << endl;
+}
+
+void KinectListener::lineBasedSegmentReconfigCallback( plane_slam::LineBasedSegmentConfig &config, uint32_t level)
+{
+    //
+    use_horizontal_line_ = config.use_horizontal_line;
+    use_verticle_line_ = config.use_verticle_line;
+    y_skip_ = config.y_skip;
+    x_skip_ = config.x_skip;
+    line_point_min_distance_ = config.line_point_min_distance;
+    use_depth_noise_model_ = config.use_depth_noise_model;
+    scan_rho_constant_error_ = config.scan_rho_constant_error;
+    scan_rho_distance_error_ = config.scan_rho_distance_error;
+    scan_rho_quadratic_error_ = config.scan_rho_quadratic_error;
+    slide_window_size_ = config.slide_window_size;
+    line_min_inliers_ = config.line_min_inliers;
+    line_fitting_threshold_ = config.line_fitting_threshold;
+    //
+    normals_per_line_ = config.normals_per_line;
+    normal_use_depth_dependent_smoothing_ = config.normal_use_depth_dependent_smoothing;
+    normal_max_depth_change_factor_ = config.normal_max_depth_change_factor;
+    normal_smoothing_size_ = config.normal_smoothing_size;
+    normal_min_inliers_percentage_ = config.normal_min_inliers_percentage;
+    normal_maximum_curvature_ = config.normal_maximum_curvature;
+    //
+    plane_segment_criterion_ = config.plane_segment_criterion;
+    k_curvature_ = config.k_curvature;
+    k_inlier_ = config.k_inlier;
+    min_inliers_ = config.min_inliers;
+    distance_threshold_ = config.distance_threshold;
+    neighbor_threshold_ = config.neighbor_threshold;
+    optimize_coefficients_ = config.optimize_coefficients;
+    project_points_ = config.project_points;
+    //
+
+    cout << GREEN <<"Line Based Segment Config." << RESET << endl;
+
+    is_update_line_based_parameters_ = true;
 }
 
 void KinectListener::publishPose( gtsam::Pose3 &pose)
@@ -485,7 +600,7 @@ PointCloudTypePtr KinectListener::getPointCloudFromIndices( const PointCloudType
 }
 
 void KinectListener::downsampleOrganizedCloud(const PointCloudTypePtr &input, PointCloudTypePtr &output,
-                                            CAMERA_INTRINSIC_PARAMETERS &out_camera, int size_type)
+                                            PlaneFromLineSegment::CAMERA_PARAMETERS &out_camera, int size_type)
 {
     int skip = pow(2, size_type);
     int width = input->width / skip;
@@ -512,7 +627,7 @@ void KinectListener::downsampleOrganizedCloud(const PointCloudTypePtr &input, Po
 }
 
 void KinectListener::getCameraParameter(const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
-                                      CAMERA_INTRINSIC_PARAMETERS &camera)
+                                      PlaneFromLineSegment::CAMERA_PARAMETERS &camera)
 {
     /* Intrinsic camera matrix for the raw (distorted) images.
          [fx  0 cx]
@@ -529,7 +644,7 @@ void KinectListener::getCameraParameter(const sensor_msgs::CameraInfoConstPtr &c
 }
 
 pcl::PointCloud<pcl::PointXYZRGBA>::Ptr KinectListener::image2PointCloud( const cv::Mat &rgb_img, const cv::Mat &depth_img,
-                                                                        const CAMERA_INTRINSIC_PARAMETERS& camera )
+                                                                        const PlaneFromLineSegment::CAMERA_PARAMETERS& camera )
 {
     pcl::PointCloud<pcl::PointXYZRGBA>::Ptr cloud ( new pcl::PointCloud<pcl::PointXYZRGBA> );
     cloud->is_dense = false;
@@ -584,4 +699,22 @@ pcl::PointCloud<pcl::PointXYZRGBA>::Ptr KinectListener::image2PointCloud( const 
     }
 
     return cloud;
+}
+
+bool KinectListener::getOdomPose( gtsam::Pose3 &odom_pose, const std::string &camera_frame)
+{
+    // get transform
+    tf::StampedTransform trans;
+    try{
+        tf_listener_.lookupTransform(odom_frame_, camera_frame, ros::Time(0), trans);
+    }catch (tf::TransformException &ex)
+    {
+        ROS_ERROR("%s",ex.what());
+        return false;
+    }
+    gtsam::Rot3 rot3 = gtsam::Rot3::Quaternion( trans.getRotation().w(), trans.getRotation().x(),
+                                                trans.getRotation().y(), trans.getRotation().z() );
+    odom_pose = gtsam::Pose3(rot3, gtsam::Point3(trans.getOrigin()));
+
+    return true;
 }
