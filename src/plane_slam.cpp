@@ -1,74 +1,276 @@
 #include "plane_slam.h"
 
-PlaneSlam::PlaneSlam()
-{
+/*
+ * Useage:
+ * 1. call function 'initialize' to register first observation.
+ * 2. call function 'planeSlam' to process every observation.
+ * 3. publishPath() to publish estimate path
+ */
 
+PlaneSlam::PlaneSlam() :
+    private_nh_("~")
+  , isam2_parameters_()
+  , graph_()
+  , initial_estimate_()
+  , first_pose_(true)
+  , poses_()
+  , pose_count_( 0 )
+  , landmark_count_( 0 )
+  , plane_match_threshold_( 0.1 )
+{
+    isam2_parameters_.relinearizeThreshold = 0.05;
+    isam2_parameters_.relinearizeSkip = 1;
+    isam2_parameters_.print("ISAM2 parameters:");
+    isam2_ = new ISAM2(isam2_parameters_);
+
+    //
+    path_publisher_ = nh_.advertise<nav_msgs::Path>("camera_path", 10);
+    marker_publisher_ = nh_.advertise<visualization_msgs::Marker>("visualization_marker", 10);
 }
 
-void PlaneSlam::planeSlam()
+void PlaneSlam::initialize(Pose3 &init_pose, std::vector<PlaneType> &planes)
 {
+    if(planes.size() == 0)
+        return;
 
-    ISAM2Params parameters;
-    parameters.relinearizeThreshold = 0.05;
-    parameters.relinearizeSkip = 1;
-    parameters.print("ISAM2 parameters:");
-    ISAM2 isam(parameters);
-
-    // Create a Factor Graph and Values to hold the new data
-    NonlinearFactorGraph graph; // factor graph
-    Values initialEstimate; // initial guess
-
-
-    // Add factors for each landmark observation
-//    graph.add();
-
-    // Add odometry factor
+    // Add a prior factor
+    pose_count_ = 0;
+    Key x0 = Symbol('x', 0);
+    Vector pose_sigmas(6);
+    pose_sigmas << init_pose.translation().vector()*0.2, init_pose.rotation().rpy() * 0.1;
+    noiseModel::Diagonal::shared_ptr poseNoise = noiseModel::Diagonal::Sigmas( pose_sigmas ); // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
+    graph_.push_back( PriorFactor<Pose3>( x0, init_pose, poseNoise ) );
 
     // Add an initial guess for the current pose
+    initial_estimate_.insert<Pose3>( x0, init_pose );
+    poses_.insert( x0, init_pose );
+    pose_count_++;
 
-    // If first pose, add a pose prior
+    // Add a prior landmark
+    Key l0 = Symbol('l', 0);
+    OrientedPlane3 lm0(planes[0].coefficients);
+    OrientedPlane3 glm0 = lm0.transform(init_pose.inverse());
+    noiseModel::Diagonal::shared_ptr lm_noise = noiseModel::Diagonal::Sigmas( (Vector(2) << planes[0].sigmas[0], planes[0].sigmas[1]).finished() );
+    graph_.push_back( OrientedPlane3DirectionPrior( l0, glm0.planeCoefficients(), lm_noise) );
 
-    // If first observed landmark, add a landmark prior
 
-    // do incrementally update, if not first pose
-
-
-    /*
-    // If this is the first iteration, add a prior on the first pose to set the coordinate frame
-    // and a prior on the first landmark to set the scale
-    // Also, as iSAM solves incrementally, we must wait until each is observed at least twice before
-    // adding it to iSAM.
-    if( i == 0)
+    landmark_count_ = 0;
+    for(int i = 0; i < planes.size(); i++)
     {
-      // Add a prior on pose x0
-      noiseModel::Diagonal::shared_ptr poseNoise = noiseModel::Diagonal::Sigmas((Vector(6) << Vector3::Constant(0.3),Vector3::Constant(0.1))); // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
-      graph.push_back(PriorFactor<Pose3>(Symbol('x', 0), poses[0], poseNoise));
+        PlaneType &plane = planes[i];
+        Key ln = Symbol('l', i);
 
-      // Add a prior on landmark l0
-      noiseModel::Isotropic::shared_ptr pointNoise = noiseModel::Isotropic::Sigma(3, 0.1);
-      graph.push_back(PriorFactor<Point3>(Symbol('l', 0), points[0], pointNoise)); // add directly to graph
+        // Add observation factor
+        noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( plane.sigmas );
+        graph_.push_back( OrientedPlane3Factor(plane.coefficients, obs_noise, x0, ln) );
 
-      // Add initial guesses to all observed landmarks
-      // Intentionally initialize the variables off from the ground truth
-      for (size_t j = 0; j < points.size(); ++j)
-        initialEstimate.insert(Symbol('l', j), points[j].compose(Point3(-0.25, 0.20, 0.15)));
+        // Add initial guesses to all observed landmarks
+        cout << "Key: " << ln << endl;
+        OrientedPlane3 lmn( plane.coefficients );
+        initial_estimate_.insert<OrientedPlane3>( ln, lmn.transform(init_pose.inverse()) );
 
-    } else {
-      // Update iSAM with the new factors
-      isam.update(graph, initialEstimate);
-      // Each call to iSAM2 update(*) performs one iteration of the iterative nonlinear solver.
-      // If accuracy is desired at the expense of time, update(*) can be called additional times
-      // to perform multiple optimizer iterations every step.
-      isam.update();
-      Values currentEstimate = isam.calculateEstimate();
-      cout << "****************************************************" << endl;
-      cout << "Frame " << i << ": " << endl;
-      currentEstimate.print("Current estimate: ");
-
-      // Clear the factor graph and values for the next iteration
-      graph.resize(0);
-      initialEstimate.clear();
+        //
+        landmark_count_ ++;
     }
-    */
+    isam2_->update(graph_, initial_estimate_);
+    // Clear the factor graph and values for the next iteration
+    graph_.resize(0);
+    initial_estimate_.clear();
+    //
+    first_pose_ = false;
+
+    cout << GREEN << "Initialize plane slam, register first observation." << endl;
+    initial_estimate_.print(" - Initial estimate: ");
+    cout << RESET << endl;
+}
+
+Pose3 PlaneSlam::planeSlam(Pose3 &rel_pose, std::vector<PlaneType> &planes)
+{    
+    if(first_pose_)
+    {
+        ROS_ERROR("You should call initialize() before doing slam.");
+        exit(1);
+    }
+
+    // convert to gtsam plane type
+    std::vector<OrientedPlane3> observations;
+    for( int i = 0; i < planes.size(); i++)
+    {
+        observations.push_back( OrientedPlane3(planes[i].coefficients) );
+    }
+
+    // Add odometry factors
+    Vector odom_sigmas(6);
+    odom_sigmas << rel_pose.translation().vector()*0.2, rel_pose.rotation().rpy() * 0.1;
+    noiseModel::Diagonal::shared_ptr odometry_noise =
+            noiseModel::Diagonal::Sigmas( odom_sigmas );
+    cout << GREEN << "odom noise dim: " << odometry_noise->dim() << RESET << endl;
+    Key pose_key = Symbol('x', pose_count_);
+    Key last_key = Symbol('x', pose_count_-1);
+    graph_.push_back(BetweenFactor<Pose3>(last_key, pose_key, rel_pose, odometry_noise));
+    // Add pose guess
+    Pose3 new_pose = poses_.at<Pose3>( last_key );
+    new_pose.compose( rel_pose );
+    initial_estimate_.insert<Pose3>( pose_key, new_pose );
+    pose_count_ ++;
+
+//    //
+//    cout << RED;
+//    rel_pose.print(" rel pose: ");
+//    cout << RESET << endl;
+//    //
+//    cout << GREEN;
+//    new_pose.print(" new pose: ");
+//    cout << RESET << endl;
+
+    // Transform modeled landmakr to pose frame
+    std::vector<OrientedPlane3> predicted_observations;
+    getPredictedObservation( new_pose, predicted_observations );
+
+    // Match modelled landmark with measurement
+    std::vector<PlanePair> pairs;
+    matchPlanes( predicted_observations, observations, pairs);
+
+    // Add factor to exist landmark
+    Eigen::VectorXd unpairs = Eigen::VectorXd::Ones( planes.size() );
+    for( int i = 0; i < pairs.size(); i++)
+    {
+        PlanePair &pair = pairs[i];
+        PlaneType &obs = planes[pair.iobs];
+        unpairs[pair.iobs] = 0;
+        Key ln = Symbol('l', pair.ilm);
+        noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( obs.sigmas );
+        graph_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
+    }
+    cout << GREEN << " find pairs: " << pairs.size() << RESET << endl;
+
+    // Add new landmark
+    for( int i = 0; i < unpairs.size(); i++ )
+    {
+        if( unpairs[i] )
+        {
+            // Add factor
+            PlaneType &obs = planes[i];
+            Key ln = Symbol('l', landmark_count_);
+            noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( obs.sigmas );
+            graph_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
+
+            // Add initial guess
+            OrientedPlane3 lmn( obs.coefficients );
+            initial_estimate_.insert<OrientedPlane3>( ln, lmn.transform( new_pose.inverse() ) );
+
+            //
+            landmark_count_ ++;
+        }
+    }
+
+    cout << GREEN << " lm number: " << landmark_count_ << RESET << endl;
+
+    // Update graph
+    cout << "update " << endl;
+    isam2_->update(graph_, initial_estimate_);
+    // isam2->update(); // call additionally
+
+    // Update pose
+    cout << pose_count_ << " get current est " << endl;
+    Pose3 current_estimate = isam2_->calculateEstimate( pose_key ).cast<Pose3>();
+    poses_.insert( pose_key, current_estimate);
+
+    // Print estimate pose:
+    cout << BLUE;
+    current_estimate.print("Current estimate:");
+    cout << RESET << endl;
+
+    // Clear the factor graph and values for the next iteration
+    graph_.resize(0);
+    initial_estimate_.clear();
+
+    return current_estimate;
+}
+
+// simple euclidian distance
+void PlaneSlam::matchPlanes( std::vector<OrientedPlane3> &predicted_observations,
+                             std::vector<OrientedPlane3> &observations,
+                             std::vector<PlanePair> &pairs)
+{
+    for( int i = 0; i < observations.size(); i++)
+    {
+        OrientedPlane3 &obs = observations[i];
+        for( int l = 0; l < predicted_observations.size(); l++)
+        {
+            OrientedPlane3 &lm = predicted_observations[l];
+            Vector3 error = obs.errorVector( lm );
+            double d = error.dot( error );
+            cout << YELLOW << "  - " << i << "*" << l << ": " << d << RESET << endl;
+            if( d < plane_match_threshold_)
+            {
+                pairs.push_back( PlanePair(i, l) );
+            }
+        }
+    }
+}
+
+// get predicted landmarks
+void PlaneSlam::getPredictedObservation( Pose3 &pose, std::vector<OrientedPlane3> &predicted_observations )
+{
+    Values values = isam2_->calculateBestEstimate();
+
+    for(int i = 0; i < landmark_count_; i++)
+    {
+        Key ln = Symbol('l', i);
+        OrientedPlane3 predicted = values.at(ln).cast<OrientedPlane3>();
+        predicted_observations.push_back( predicted.transform( pose ) );
+    }
+}
+
+void PlaneSlam::publishPath()
+{
+
+    // get trajectory
+    Values values = isam2_->calculateBestEstimate();
+    std::vector<Pose3> poses;
+
+    for(int i = 0; i < pose_count_; i++)
+    {
+        Key xn = Symbol('x', i);
+        Pose3 pose = values.at(xn).cast<Pose3>();
+        poses.push_back( pose );
+    }
+
+    // publish trajectory
+    nav_msgs::Path path;
+    path.header.frame_id = "/world";
+    path.header.stamp = ros::Time::now();
+    for(int i = 0; i < poses.size(); i++)
+    {
+        Pose3 &pose = poses[i];
+        geometry_msgs::PoseStamped p;
+        p.pose.position.x = pose.x();
+        p.pose.position.y = pose.y();
+        p.pose.position.z = pose.z();
+        Eigen::Vector4d quater = pose.rotation().quaternion();
+        p.pose.orientation.w = quater[0];
+        p.pose.orientation.x = quater[1];
+        p.pose.orientation.y = quater[2];
+        p.pose.orientation.z = quater[3];
+        path.poses.push_back( p );
+    }
+    path_publisher_.publish( path );
+    cout << GREEN << "Publisher path, p = " << poses.size() << RESET << endl;
+}
+
+void PlaneSlam::getLandmarks( std::vector<PlaneType> &planes )
+{
+    // get landmarks
+    Values values = isam2_->calculateBestEstimate();
+
+    for(int i = 0; i < landmark_count_; i++)
+    {
+        Key ln = Symbol('l', i);
+        OrientedPlane3 oplane = values.at(ln).cast<OrientedPlane3>();
+        PlaneType plane;
+        plane.coefficients = oplane.planeCoefficients();
+        planes.push_back( plane );
+    }
 
 }

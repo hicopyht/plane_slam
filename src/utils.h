@@ -54,14 +54,29 @@ struct Frame
 };
 
 /*
+ * \brief Plane parameters
   N*P + d = 0
   */
 struct PlaneType
 {
     PointType centroid;
-    Eigen::Vector4f coefficients;
+    Eigen::Vector4d coefficients;
+    Eigen::Vector3d sigmas;
     std::vector<int> inlier;
+    PointCloudType cloud;
 };
+
+struct PlanePair
+{
+    int iobs;
+    int ilm;
+
+    PlanePair() : iobs(-1), ilm(-1) {}
+    PlanePair(int _iobs, int _ilm) : iobs(_iobs), ilm(_ilm) {}
+};
+
+void matrixTF2Eigen(const tf::Matrix3x3 &t, Eigen::Matrix3d &e);
+Eigen::Matrix3d matrixTF2Eigen(const tf::Matrix3x3 &t);
 
 
 //the following are UBUNTU/LINUX ONLY terminal color

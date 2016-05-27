@@ -21,10 +21,12 @@
 #include <pcl/visualization/pcl_visualizer.h>
 //
 #include <plane_from_line/plane_from_line_segment.h>
+#include <plane_slam/PlaneSlamConfig.h>
 #include <plane_slam/PlaneSegmentConfig.h>
 #include <plane_slam/OrganizedSegmentConfig.h>
 #include "organized_plane_segment.h"
 #include "utils.h"
+#include "plane_slam.h"
 
 using namespace std;
 
@@ -44,11 +46,12 @@ typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image,
 
 class KinectListener
 {
-    enum { LINE_BADED = 0, RANSAC = 1, ORGANSIZED = 2, REGION_GROW = 3, ALL_METHOD = 4};
+    enum { VGA = 0, QVGA = 1, QQVGA = 2};
+    enum { LINE_BADED = 0, ORGANSIZED = 1};
 public:
     KinectListener();
 
-    void processCloud( PointCloudTypePtr &input );
+    void processCloud( const PointCloudTypePtr &input, gtsam::Pose3 &odom_pose );
 
     void organizedPlaneSegment(PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
@@ -63,12 +66,27 @@ protected:
                         const sensor_msgs::PointCloud2ConstPtr& point_cloud,
                         const sensor_msgs::CameraInfoConstPtr& cam_info_msg);
 
+    void planeSlamReconfigCallback( plane_slam::PlaneSlamConfig &config, uint32_t level);
+
     void planeSegmentReconfigCallback( plane_slam::PlaneSegmentConfig &config, uint32_t level);
 
     void organizedSegmentReconfigCallback( plane_slam::OrganizedSegmentConfig &config, uint32_t level);
 
+    PointCloudTypePtr getPointCloudFromIndices( const PointCloudTypePtr &input,
+                                                 pcl::PointIndices &indices);
+
+    PointCloudTypePtr getPointCloudFromIndices( const PointCloudTypePtr &input,
+                                                 std::vector<int> &indices);
+
+    void downsampleOrganizedCloud(const PointCloudTypePtr &input, PointCloudTypePtr &output,
+                                  CAMERA_INTRINSIC_PARAMETERS &out_camera, int size_type);
+
     void getCameraParameter(const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
                             CAMERA_INTRINSIC_PARAMETERS &camera);
+
+    void publishPose( gtsam::Pose3 &pose);
+
+    void displayLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix = "landmark", int viewport = 1);
 
     void displayPlanes( const PointCloudTypePtr &input, std::vector<PlaneType> &planes, const std::string &prefix, int viewport);
 
@@ -97,6 +115,8 @@ private:
     ros::CallbackQueue my_callback_queue_;
     ros::AsyncSpinner* async_spinner_;
     //
+    dynamic_reconfigure::Server<plane_slam::PlaneSlamConfig> plane_slam_config_server_;
+    dynamic_reconfigure::Server<plane_slam::PlaneSlamConfig>::CallbackType plane_slam_config_callback_;
     dynamic_reconfigure::Server<plane_slam::PlaneSegmentConfig> plane_segment_config_server_;
     dynamic_reconfigure::Server<plane_slam::PlaneSegmentConfig>::CallbackType plane_segment_config_callback_;
     dynamic_reconfigure::Server<plane_slam::OrganizedSegmentConfig> organized_segment_config_server_;
@@ -117,6 +137,8 @@ private:
     message_filters::Synchronizer<CloudSyncPolicy>* cloud_sync_;
     message_filters::Synchronizer<NoCloudSyncPolicy>* no_cloud_sync_;
     //
+    ros::Publisher pose_publisher_;
+    //
     tf::TransformListener tf_listener_;
     //
     pcl::visualization::PCLVisualizer* pcl_viewer_;
@@ -130,12 +152,21 @@ private:
     //
     CAMERA_INTRINSIC_PARAMETERS camera_parameters_;
 
+    // Plane slam
+    string map_frame_;
+    string base_frame_;
+    string odom_frame_;
+
     // Plane segment
+    int cloud_size_type_;
+    int cloud_size_type_config_;
     int plane_segment_method_;
     bool display_input_cloud_;
     bool display_line_cloud_;
     bool display_normal_;
     bool display_plane_;
+    bool display_landmarks_;
+    bool display_path_;
     bool loop_one_message_;
 
     // Organized Muit Plane segment parameters
@@ -147,6 +178,10 @@ private:
     double ransac_distance_threshold_;
     int ransac_max_iterations_;
     int ransac_min_points_size_;
+
+    //
+    bool is_initialized;
+    PlaneSlam* plane_slam_;
 };
 
 #endif // KINECT_LISTENER_H
