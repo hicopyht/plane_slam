@@ -56,6 +56,7 @@ KinectListener::KinectListener() :
     pcl_viewer_->setCameraPosition(0.0, 0.0, -0.4, 0, 0, 0.6, 0, -1, 0);
     pcl_viewer_->setShowFPS(true);
 
+    true_path_publisher_ = nh_.advertise<nav_msgs::Path>("true_path", 10);
     pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("estimate_pose", 10);
 
     // config subscribers
@@ -98,7 +99,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
     printf("no cloud msg: %d\n", depth_img_msg->header.seq);
 
     // Get odom pose
-    gtsam::Pose3 odom_pose;
+    tf::Transform odom_pose;
     if( !getOdomPose( odom_pose, depth_img_msg->header.frame_id ) )
         return;
 
@@ -129,7 +130,7 @@ void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img
     printf("cloud msg: %d\n", point_cloud->header.seq);
 
     // Get odom pose
-    gtsam::Pose3 odom_pose;
+    tf::Transform odom_pose;
     if( !getOdomPose( odom_pose, point_cloud->header.frame_id ) )
         return;
 
@@ -151,9 +152,16 @@ void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img
         }
 }
 
-void KinectListener::processCloud( const PointCloudTypePtr &input, gtsam::Pose3 &odom_pose )
+void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform &odom_pose )
 {
-    static gtsam::Pose3 last_pose = odom_pose;
+    static tf::Transform last_pose = odom_pose;
+    geometry_msgs::PoseStamped pstamped;
+    pstamped.pose.position.x = odom_pose.getOrigin().x();
+    pstamped.pose.position.y = odom_pose.getOrigin().y();
+    pstamped.pose.position.z = odom_pose.getOrigin().z();
+    tf::quaternionTFToMsg( odom_pose.getRotation(), pstamped.pose.orientation );
+    true_poses_.push_back( pstamped );
+    publishTruePath();
 
     std::vector<PlaneType> organized_planes;
 
@@ -211,16 +219,21 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, gtsam::Pose3 
     // Do slam
     if(!is_initialized)
     {
-        plane_slam_->initialize( odom_pose, organized_planes );
+        gtsam::Pose3 init_pose;
+        plane_slam_->tfToPose3( odom_pose, init_pose);
+        plane_slam_->initialize( init_pose, organized_planes );
         is_initialized = true;
     }
     else
     {
-        gtsam::Pose3 rel_pose = last_pose.inverse() * odom_pose ;
-        gtsam::Pose3 estmated_pose = plane_slam_->planeSlam( rel_pose, organized_planes );
+        gtsam::Pose3 pose3;
+        plane_slam_->tfToPose3( odom_pose, pose3 );
+        gtsam::Pose3 estmated_pose = plane_slam_->planeSlam( pose3, organized_planes );
         publishPose( estmated_pose );
         if(display_path_)
             plane_slam_->publishPath();
+        if(display_odom_path_)
+            plane_slam_->publishOdomPath();
 
         // visualize landmark
         std::vector<PlaneType> landmarks;
@@ -363,6 +376,9 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     base_frame_ = config.base_frame;
     odom_frame_ = config.odom_frame;
     plane_slam_->setPlaneMatchThreshold( config.plane_match_threshold );
+    display_landmarks_ = config.display_landmarks;
+    display_path_ = config.display_path;
+    display_odom_path_ = config.display_odom_path;
 
     cout << GREEN <<"Common Slam Config." << RESET << endl;
 }
@@ -374,8 +390,6 @@ void KinectListener::planeSegmentReconfigCallback(plane_slam::PlaneSegmentConfig
     display_input_cloud_ = config.display_input_cloud;
     display_line_cloud_ = config.display_line_cloud;
     display_plane_ = config.display_plane;
-    display_landmarks_ = config.display_landmarks;
-    display_path_ = config.display_path;
     loop_one_message_ = config.loop_one_message;
 
     cout << GREEN <<"Common Segment Config." << RESET << endl;
@@ -701,7 +715,7 @@ pcl::PointCloud<pcl::PointXYZRGBA>::Ptr KinectListener::image2PointCloud( const 
     return cloud;
 }
 
-bool KinectListener::getOdomPose( gtsam::Pose3 &odom_pose, const std::string &camera_frame)
+bool KinectListener::getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame)
 {
     // get transform
     tf::StampedTransform trans;
@@ -712,9 +726,26 @@ bool KinectListener::getOdomPose( gtsam::Pose3 &odom_pose, const std::string &ca
         ROS_ERROR("%s",ex.what());
         return false;
     }
-    gtsam::Rot3 rot3 = gtsam::Rot3::Quaternion( trans.getRotation().w(), trans.getRotation().x(),
-                                                trans.getRotation().y(), trans.getRotation().z() );
-    odom_pose = gtsam::Pose3(rot3, gtsam::Point3(trans.getOrigin()));
+    odom_pose.setOrigin( trans.getOrigin() );
+    odom_pose.setRotation( trans.getRotation() );
+
+//    Eigen::Matrix3d m33 = matrixTF2Eigen( trans.getBasis() );
+//    gtsam::Rot3 rot3(m33);
+//    gtsam::Point3 point3;
+//    point3[0] = trans.getOrigin()[0];
+//    point3[1] = trans.getOrigin()[1];
+//    point3[2] = trans.getOrigin()[2];
+//    odom_pose = gtsam::Pose3( rot3, gtsam::Point3(trans.getOrigin()) );
 
     return true;
+}
+
+void KinectListener::publishTruePath()
+{
+    nav_msgs::Path path;
+    path.header.frame_id = "/world";
+    path.header.stamp = ros::Time::now();
+    path.poses = true_poses_;
+    true_path_publisher_.publish( path );
+    cout << GREEN << "Publish true path, p = " << true_poses_.size() << RESET << endl;
 }

@@ -77,6 +77,8 @@ struct PlanePair
 
 void matrixTF2Eigen(const tf::Matrix3x3 &t, Eigen::Matrix3d &e);
 Eigen::Matrix3d matrixTF2Eigen(const tf::Matrix3x3 &t);
+void matrixEigen2TF( const Eigen::Matrix3d &e, tf::Matrix3x3 &t);
+tf::Matrix3x3 matrixEigen2TF(const Eigen::Matrix3d &m33);
 
 
 //the following are UBUNTU/LINUX ONLY terminal color

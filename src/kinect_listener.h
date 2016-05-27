@@ -52,7 +52,7 @@ class KinectListener
 public:
     KinectListener();
 
-    void processCloud( const PointCloudTypePtr &input, gtsam::Pose3 &odom_pose );
+    void processCloud( const PointCloudTypePtr &input, tf::Transform &odom_pose );
 
     void lineBasedPlaneSegment(PointCloudTypePtr &input,
                                std::vector<PlaneType> &planes);
@@ -112,7 +112,9 @@ protected:
     pcl::PointCloud<pcl::PointXYZRGBA>::Ptr image2PointCloud( const cv::Mat &rgb_img, const cv::Mat &depth_img,
                                                             const PlaneFromLineSegment::CAMERA_PARAMETERS& camera );
 
-    bool getOdomPose( gtsam::Pose3 &odom_pose, const std::string &camera_frame );
+    bool getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame );
+
+    void publishTruePath();
 
     inline bool isValidPoint(const PointType &p)
     {
@@ -149,6 +151,7 @@ private:
     message_filters::Synchronizer<CloudSyncPolicy>* cloud_sync_;
     message_filters::Synchronizer<NoCloudSyncPolicy>* no_cloud_sync_;
     //
+    ros::Publisher true_path_publisher_;
     ros::Publisher pose_publisher_;
     //
     tf::TransformListener tf_listener_;
@@ -176,6 +179,7 @@ private:
     bool display_plane_;
     bool display_landmarks_;
     bool display_path_;
+    bool display_odom_path_;
     bool loop_one_message_;
 
     // Organized Muit Plane segment parameters
@@ -218,6 +222,7 @@ private:
     //
     bool is_initialized;
     PlaneSlam* plane_slam_;
+    std::vector<geometry_msgs::PoseStamped> true_poses_;
 };
 
 #endif // KINECT_LISTENER_H

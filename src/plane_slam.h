@@ -2,6 +2,9 @@
 #define PLANE_SLAM_H
 
 #include <ros/ros.h>
+#include <tf/transform_listener.h>
+#include <tf_conversions/tf_eigen.h>
+//
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/geometry/OrientedPlane3.h>
 #include <gtsam/inference/Key.h>
@@ -64,7 +67,13 @@ public:
 
     void publishPath();
 
+    void publishOdomPath();
+
     void getLandmarks( std::vector<PlaneType> &planes );
+
+    void tfToPose3( tf::Transform &trans, gtsam::Pose3 &pose );
+
+    void pose3ToTF( gtsam::Pose3 &pose, tf::Transform &trans );
 
     inline void setPlaneMatchThreshold( double threshold) { plane_match_threshold_ = threshold; }
     inline double getPlaneMatchThreshold() const { return plane_match_threshold_; }
@@ -75,10 +84,14 @@ private:
     ros::NodeHandle private_nh_;
     ros::Publisher path_publisher_;
     ros::Publisher marker_publisher_;
-
+    ros::Publisher odom_path_publisher_;
+    //
+    Pose3 odom_pose_;
+    std::vector<Pose3> odom_poses_;
     //
     ISAM2Params isam2_parameters_;
     ISAM2* isam2_;
+    Pose3 last_estimate_pose_;
     //
     // Create a Factor Graph and Values to hold the new data
     NonlinearFactorGraph graph_; // factor graph

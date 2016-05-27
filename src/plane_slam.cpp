@@ -20,11 +20,12 @@ PlaneSlam::PlaneSlam() :
 {
     isam2_parameters_.relinearizeThreshold = 0.05;
     isam2_parameters_.relinearizeSkip = 1;
-    isam2_parameters_.print("ISAM2 parameters:");
-    isam2_ = new ISAM2(isam2_parameters_);
+    isam2_parameters_.print( "ISAM2 parameters:" );
+    isam2_ = new ISAM2( isam2_parameters_ );
 
     //
     path_publisher_ = nh_.advertise<nav_msgs::Path>("camera_path", 10);
+    odom_path_publisher_ = nh_.advertise<nav_msgs::Path>("odom_path", 10);
     marker_publisher_ = nh_.advertise<visualization_msgs::Marker>("visualization_marker", 10);
 }
 
@@ -53,6 +54,10 @@ void PlaneSlam::initialize(Pose3 &init_pose, std::vector<PlaneType> &planes)
     noiseModel::Diagonal::shared_ptr lm_noise = noiseModel::Diagonal::Sigmas( (Vector(2) << planes[0].sigmas[0], planes[0].sigmas[1]).finished() );
     graph_.push_back( OrientedPlane3DirectionPrior( l0, glm0.planeCoefficients(), lm_noise) );
 
+    // Add odom pose to path
+    odom_pose_ = init_pose;
+    odom_poses_.clear();
+    odom_poses_.push_back( odom_pose_ );
 
     landmark_count_ = 0;
     for(int i = 0; i < planes.size(); i++)
@@ -67,12 +72,13 @@ void PlaneSlam::initialize(Pose3 &init_pose, std::vector<PlaneType> &planes)
         // Add initial guesses to all observed landmarks
         cout << "Key: " << ln << endl;
         OrientedPlane3 lmn( plane.coefficients );
-        initial_estimate_.insert<OrientedPlane3>( ln, lmn.transform(init_pose.inverse()) );
+        initial_estimate_.insert<OrientedPlane3>( ln, lmn.transform( init_pose.inverse() ) );
 
         //
         landmark_count_ ++;
     }
-    isam2_->update(graph_, initial_estimate_);
+    isam2_->update( graph_, initial_estimate_ );
+    last_estimate_pose_ = init_pose;
     // Clear the factor graph and values for the next iteration
     graph_.resize(0);
     initial_estimate_.clear();
@@ -84,13 +90,15 @@ void PlaneSlam::initialize(Pose3 &init_pose, std::vector<PlaneType> &planes)
     cout << RESET << endl;
 }
 
-Pose3 PlaneSlam::planeSlam(Pose3 &rel_pose, std::vector<PlaneType> &planes)
-{    
+Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, std::vector<PlaneType> &planes)
+{
     if(first_pose_)
     {
         ROS_ERROR("You should call initialize() before doing slam.");
         exit(1);
     }
+    // calculate relative pose
+    Pose3 rel_pose = odom_pose_.inverse() * odom_pose;
 
     // convert to gtsam plane type
     std::vector<OrientedPlane3> observations;
@@ -109,10 +117,13 @@ Pose3 PlaneSlam::planeSlam(Pose3 &rel_pose, std::vector<PlaneType> &planes)
     Key last_key = Symbol('x', pose_count_-1);
     graph_.push_back(BetweenFactor<Pose3>(last_key, pose_key, rel_pose, odometry_noise));
     // Add pose guess
-    Pose3 new_pose = poses_.at<Pose3>( last_key );
-    new_pose.compose( rel_pose );
+    Pose3 new_pose = last_estimate_pose_ * rel_pose;
     initial_estimate_.insert<Pose3>( pose_key, new_pose );
     pose_count_ ++;
+
+    // Add odom_pose
+    odom_pose_ = odom_pose;
+    odom_poses_.push_back( odom_pose_ );
 
 //    //
 //    cout << RED;
@@ -184,6 +195,7 @@ Pose3 PlaneSlam::planeSlam(Pose3 &rel_pose, std::vector<PlaneType> &planes)
     // Clear the factor graph and values for the next iteration
     graph_.resize(0);
     initial_estimate_.clear();
+    last_estimate_pose_ = current_estimate;
 
     return current_estimate;
 }
@@ -259,6 +271,30 @@ void PlaneSlam::publishPath()
     cout << GREEN << "Publisher path, p = " << poses.size() << RESET << endl;
 }
 
+void PlaneSlam::publishOdomPath()
+{
+    // publish trajectory
+    nav_msgs::Path path;
+    path.header.frame_id = "/world";
+    path.header.stamp = ros::Time::now();
+    for(int i = 0; i < odom_poses_.size(); i++)
+    {
+        Pose3 &pose = odom_poses_[i];
+        geometry_msgs::PoseStamped p;
+        p.pose.position.x = pose.x();
+        p.pose.position.y = pose.y();
+        p.pose.position.z = pose.z();
+        Eigen::Vector4d quater = pose.rotation().quaternion();
+        p.pose.orientation.w = quater[0];
+        p.pose.orientation.x = quater[1];
+        p.pose.orientation.y = quater[2];
+        p.pose.orientation.z = quater[3];
+        path.poses.push_back( p );
+    }
+    odom_path_publisher_.publish( path );
+    cout << GREEN << "Publisher odom path, p = " << odom_poses_.size() << RESET << endl;
+}
+
 void PlaneSlam::getLandmarks( std::vector<PlaneType> &planes )
 {
     // get landmarks
@@ -273,4 +309,24 @@ void PlaneSlam::getLandmarks( std::vector<PlaneType> &planes )
         planes.push_back( plane );
     }
 
+}
+
+void PlaneSlam::tfToPose3( tf::Transform &trans, gtsam::Pose3 &pose )
+{
+    Eigen::Matrix3d m33 = matrixTF2Eigen( trans.getBasis() );
+    gtsam::Rot3 rot3(m33);
+    gtsam::Point3 point3;
+    tf::Vector3 origin = trans.getOrigin();
+    point3[0] = origin.getX();
+    point3[1] = origin.getY();
+    point3[2] = origin.getZ();
+    pose = gtsam::Pose3( rot3, point3 );
+}
+
+void PlaneSlam::pose3ToTF( gtsam::Pose3 &pose, tf::Transform &trans )
+{
+    trans.setOrigin( tf::Vector3( pose.x(), pose.y(), pose.z()) );
+    tf::Matrix3x3 m33;
+    matrixEigen2TF( pose.rotation().matrix(), m33 );
+    trans.setBasis( m33 );
 }
