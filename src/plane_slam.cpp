@@ -1,7 +1,15 @@
 #include "plane_slam.h"
 
+/*
+ * Useage:
+ * 1. call function 'initialize' to register first observation.
+ * 2. call function 'planeSlam' to process every observation.
+ * 3. publishPath() to publish estimate path
+ */
+
 PlaneSlam::PlaneSlam() :
-    isam2_parameters_()
+    private_nh_("~")
+  , isam2_parameters_()
   , graph_()
   , initial_estimate_()
   , first_pose_(true)
@@ -14,6 +22,10 @@ PlaneSlam::PlaneSlam() :
     isam2_parameters_.relinearizeSkip = 1;
     isam2_parameters_.print("ISAM2 parameters:");
     isam2_ = new ISAM2(isam2_parameters_);
+
+    //
+    path_publisher_ = nh_.advertise<nav_msgs::Path>("camera_path", 10);
+    marker_publisher_ = nh_.advertise<visualization_msgs::Marker>("visualization_marker", 10);
 }
 
 void PlaneSlam::initialize(Pose3 &init_pose, std::vector<PlaneType> &planes)
@@ -76,7 +88,7 @@ Pose3 PlaneSlam::planeSlam(Pose3 &rel_pose, std::vector<PlaneType> &planes)
 {    
     if(first_pose_)
     {
-        ROS_ERROR("You should initialize the map before doing slam.");
+        ROS_ERROR("You should call initialize() before doing slam.");
         exit(1);
     }
 
@@ -176,6 +188,7 @@ Pose3 PlaneSlam::planeSlam(Pose3 &rel_pose, std::vector<PlaneType> &planes)
     return current_estimate;
 }
 
+// simple euclidian distance
 void PlaneSlam::matchPlanes( std::vector<OrientedPlane3> &predicted_observations,
                              std::vector<OrientedPlane3> &observations,
                              std::vector<PlanePair> &pairs)
@@ -197,6 +210,7 @@ void PlaneSlam::matchPlanes( std::vector<OrientedPlane3> &predicted_observations
     }
 }
 
+// get predicted landmarks
 void PlaneSlam::getPredictedObservation( Pose3 &pose, std::vector<OrientedPlane3> &predicted_observations )
 {
     Values values = isam2_->calculateBestEstimate();
@@ -207,4 +221,56 @@ void PlaneSlam::getPredictedObservation( Pose3 &pose, std::vector<OrientedPlane3
         OrientedPlane3 predicted = values.at(ln).cast<OrientedPlane3>();
         predicted_observations.push_back( predicted.transform( pose ) );
     }
+}
+
+void PlaneSlam::publishPath()
+{
+
+    // get trajectory
+    Values values = isam2_->calculateBestEstimate();
+    std::vector<Pose3> poses;
+
+    for(int i = 0; i < pose_count_; i++)
+    {
+        Key xn = Symbol('x', i);
+        Pose3 pose = values.at(xn).cast<Pose3>();
+        poses.push_back( pose );
+    }
+
+    // publish trajectory
+    nav_msgs::Path path;
+    path.header.frame_id = "/world";
+    path.header.stamp = ros::Time::now();
+    for(int i = 0; i < poses.size(); i++)
+    {
+        Pose3 &pose = poses[i];
+        geometry_msgs::PoseStamped p;
+        p.pose.position.x = pose.x();
+        p.pose.position.y = pose.y();
+        p.pose.position.z = pose.z();
+        Eigen::Vector4d quater = pose.rotation().quaternion();
+        p.pose.orientation.w = quater[0];
+        p.pose.orientation.x = quater[1];
+        p.pose.orientation.y = quater[2];
+        p.pose.orientation.z = quater[3];
+        path.poses.push_back( p );
+    }
+    path_publisher_.publish( path );
+    cout << GREEN << "Publisher path, p = " << poses.size() << RESET << endl;
+}
+
+void PlaneSlam::getLandmarks( std::vector<PlaneType> &planes )
+{
+    // get landmarks
+    Values values = isam2_->calculateBestEstimate();
+
+    for(int i = 0; i < landmark_count_; i++)
+    {
+        Key ln = Symbol('l', i);
+        OrientedPlane3 oplane = values.at(ln).cast<OrientedPlane3>();
+        PlaneType plane;
+        plane.coefficients = oplane.planeCoefficients();
+        planes.push_back( plane );
+    }
+
 }

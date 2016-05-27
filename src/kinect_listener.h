@@ -86,6 +86,8 @@ protected:
 
     void publishPose( gtsam::Pose3 &pose);
 
+    void displayLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix = "landmark", int viewport = 1);
+
     void displayPlanes( const PointCloudTypePtr &input, std::vector<PlaneType> &planes, const std::string &prefix, int viewport);
 
     void displayLinesAndNormals( const PointCloudTypePtr &input,
@@ -163,6 +165,8 @@ private:
     bool display_line_cloud_;
     bool display_normal_;
     bool display_plane_;
+    bool display_landmarks_;
+    bool display_path_;
     bool loop_one_message_;
 
     // Organized Muit Plane segment parameters

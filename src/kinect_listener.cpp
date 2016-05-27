@@ -226,6 +226,10 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, gtsam::Pose3 
 
     cout << GREEN << " planes: " << organized_planes.size() << RESET << endl;
 
+    // display
+    pcl_viewer_->removeAllPointClouds();
+    pcl_viewer_->removeAllShapes();
+
     // Do slam
     if(!is_initialized)
     {
@@ -237,18 +241,26 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, gtsam::Pose3 
         gtsam::Pose3 rel_pose = last_pose.inverse() * odom_pose ;
         gtsam::Pose3 estmated_pose = plane_slam_->planeSlam( rel_pose, organized_planes );
         publishPose( estmated_pose );
+        if(display_path_)
+            plane_slam_->publishPath();
+
+        // visualize landmark
+        std::vector<PlaneType> landmarks;
+        plane_slam_->getLandmarks( landmarks );
+        // project and recalculate contour
+        // display
+        if(display_landmarks_)
+            displayLandmarks( landmarks, "landmark", viewer_v3_ );
     }
 
     // display
-    pcl_viewer_->removeAllPointClouds();
-    pcl_viewer_->removeAllShapes();
     if(display_input_cloud_)
     {
 //        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> rgba_color(frame_current.point_cloud, 255, 255, 255);
-        pcl_viewer_->addPointCloud( cloud_in, "rgba_cloud" );
-        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "rgba_cloud");
+        pcl_viewer_->addPointCloud( cloud_in, "rgba_cloud", viewer_v1_ );
+        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "rgba_cloud", viewer_v1_);
     }
-    displayPlanes( cloud_in, organized_planes, "organized_plane", viewer_v1_ );
+    displayPlanes( cloud_in, organized_planes, "organized_plane", viewer_v2_ );
     pcl_viewer_->spinOnce(1);
 
     display_dura = time.toc();
@@ -282,8 +294,8 @@ void KinectListener::organizedPlaneSegment(PointCloudTypePtr &input, std::vector
         plane.coefficients[1] = coef.values[1];
         plane.coefficients[2] = coef.values[2];
         plane.coefficients[3] = coef.values[3];
-        plane.sigmas[0] = pow(plane.coefficients[0]*1e-2, 2);
-        plane.sigmas[1] = pow(plane.coefficients[1]*1e-2, 2);
+        plane.sigmas[0] = pow(plane.coefficients[0]*1e-1, 2);
+        plane.sigmas[1] = pow(plane.coefficients[1]*1e-1, 2);
         plane.sigmas[2] = pow(plane.coefficients[3]*1e-2, 2);
 //        plane.covariances(0, 0) = pow(plane.coefficients[0]*1e-2, 2);
 //        plane.covariances(1, 1) = pow(plane.coefficients[1]*1e-2, 2);
@@ -310,6 +322,8 @@ void KinectListener::planeSegmentReconfigCallback(plane_slam::PlaneSegmentConfig
     display_input_cloud_ = config.display_input_cloud;
     display_line_cloud_ = config.display_line_cloud;
     display_plane_ = config.display_plane;
+    display_landmarks_ = config.display_landmarks;
+    display_path_ = config.display_path;
     loop_one_message_ = config.loop_one_message;
 
     cout << GREEN <<"Common Segment Config." << RESET << endl;
@@ -342,6 +356,27 @@ void KinectListener::publishPose( gtsam::Pose3 &pose)
     msg.pose.orientation = tf::createQuaternionMsgFromRollPitchYaw( rpy[0], rpy[1], rpy[2] );
 
     pose_publisher_.publish( msg );
+}
+
+void KinectListener::displayLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix, int viewport)
+{
+    if(display_landmarks_)
+    {
+        for(int i = 0; i < landmarks.size(); i++)
+        {
+            const PlaneType & plane = landmarks[i];
+            pcl::ModelCoefficients coeff;
+            coeff.values.resize( 4 );
+            coeff.values[0] = plane.coefficients[0];
+            coeff.values[1] = plane.coefficients[1];
+            coeff.values[2] = plane.coefficients[2];
+            coeff.values[3] = plane.coefficients[3];
+            //
+            stringstream ss;
+            ss << prefix << "_" << i;
+            pcl_viewer_->addPlane( coeff, 1.0, 1.0, 1.0, ss.str(), viewport);
+        }
+    }
 }
 
 void KinectListener::displayPlanes( const PointCloudTypePtr &input, std::vector<PlaneType> &planes, const std::string &prefix, int viewport)

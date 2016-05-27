@@ -15,10 +15,37 @@
 #include <gtsam/nonlinear/Values.h>
 #include <gtsam/nonlinear/ISAM2.h>
 
+#include <nav_msgs/Path.h>
+#include <visualization_msgs/Marker.h>
+
 #include "utils.h"
 
 using namespace std;
 using namespace gtsam;
+
+///*
+// * \brief Plane parameters
+//  N*P + d = 0
+//  */
+//struct PlaneType
+//{
+//    PointType centroid;
+//    Eigen::Vector4d coefficients;
+//    Eigen::Vector3d sigmas;
+//    std::vector<int> inlier;
+//    PointCloudType cloud;
+//};
+
+//struct PlanePair
+//{
+//    int iobs;
+//    int ilm;
+
+//    PlanePair() : iobs(-1), ilm(-1) {}
+//    PlanePair(int _iobs, int _ilm) : iobs(_iobs), ilm(_ilm) {}
+//};
+
+
 
 class PlaneSlam
 {
@@ -35,10 +62,20 @@ public:
 
     void getPredictedObservation( Pose3 &pose, std::vector<OrientedPlane3> &predicted_observations );
 
+    void publishPath();
+
+    void getLandmarks( std::vector<PlaneType> &planes );
+
     inline void setPlaneMatchThreshold( double threshold) { plane_match_threshold_ = threshold; }
     inline double getPlaneMatchThreshold() const { return plane_match_threshold_; }
 
 private:
+    //
+    ros::NodeHandle nh_;
+    ros::NodeHandle private_nh_;
+    ros::Publisher path_publisher_;
+    ros::Publisher marker_publisher_;
+
     //
     ISAM2Params isam2_parameters_;
     ISAM2* isam2_;
