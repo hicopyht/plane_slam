@@ -273,13 +273,9 @@ void KinectListener::organizedPlaneSegment(PointCloudTypePtr &input, std::vector
         plane.coefficients[1] = coef.values[1];
         plane.coefficients[2] = coef.values[2];
         plane.coefficients[3] = coef.values[3];
-        plane.sigmas[0] = pow(plane.coefficients[0]*1e-1, 2);
-        plane.sigmas[1] = pow(plane.coefficients[1]*1e-1, 2);
-        plane.sigmas[2] = pow(plane.coefficients[3]*1e-2, 2);
-//        plane.covariances(0, 0) = pow(plane.coefficients[0]*1e-2, 2);
-//        plane.covariances(1, 1) = pow(plane.coefficients[1]*1e-2, 2);
-//        plane.covariances(2, 2) = pow(plane.coefficients[2]*1e-2, 2);
-//        plane.covariances(3, 3) = pow(plane.coefficients[3]*1e-2, 2);
+        plane.sigmas[0] = fabs(plane.coefficients[0]*0.1);
+        plane.sigmas[1] = fabs(plane.coefficients[1]*0.1);
+        plane.sigmas[2] = fabs(plane.coefficients[3]*0.1);
         planes.push_back( plane );
     }
 }
