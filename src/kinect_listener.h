@@ -66,6 +66,8 @@ protected:
                         const sensor_msgs::PointCloud2ConstPtr& point_cloud,
                         const sensor_msgs::CameraInfoConstPtr& cam_info_msg);
 
+    bool getOdomPose( gtsam::Pose3 &odom_pose, const std::string &camera_frame );
+
     void planeSlamReconfigCallback( plane_slam::PlaneSlamConfig &config, uint32_t level);
 
     void planeSegmentReconfigCallback( plane_slam::PlaneSegmentConfig &config, uint32_t level);

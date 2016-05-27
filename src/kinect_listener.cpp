@@ -92,33 +92,14 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
                                 const sensor_msgs::ImageConstPtr& depth_img_msg,
                                 const sensor_msgs::CameraInfoConstPtr& cam_info_msg)
 {
-    printf("no cloud msg: %d\n", visual_img_msg->header.seq);
+    printf("no cloud msg: %d\n", depth_img_msg->header.seq);
 
-    // get transform
-    tf::StampedTransform trans;
-    try{
-        tf_listener_.lookupTransform(odom_frame_, visual_img_msg->header.frame_id, ros::Time(0), trans);
-    }catch (tf::TransformException &ex)
-    {
-        ROS_ERROR("%s",ex.what());
+    // Get odom pose
+    gtsam::Pose3 odom_pose;
+    if( !getOdomPose( odom_pose, depth_img_msg->header.frame_id ) )
         return;
-    }
-    gtsam::Rot3 rot3 = gtsam::Rot3::Quaternion( trans.getRotation().w(), trans.getRotation().x(),
-                                                trans.getRotation().y(), trans.getRotation().z() );
-    gtsam::Pose3 odom_pose(rot3, gtsam::Point3(trans.getOrigin()));
 
-//    // print pose info
-//    cout << CYAN;
-//    cout << " trans pose: " << endl;
-//    Eigen::Matrix3d m33 = matrixTF2Eigen( trans.getBasis() );
-//    cout << "     R : " << m33 << endl;
-//    cout << "     T : " << trans.getOrigin()[0] << ", " << trans.getOrigin()[1] << ", "
-//                        <<  trans.getOrigin()[2] << endl;
-//    cout << YELLOW;
-//    odom_pose.print( " odom pose: ");
-//    cout << RESET << endl;
-
-    //
+    // Get camera parameter
     getCameraParameter( cam_info_msg, camera_parameters_);
     PointCloudTypePtr cloud_in ( new PointCloudType );
     // Get Mat Image
@@ -142,37 +123,17 @@ void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img
                                 const sensor_msgs::PointCloud2ConstPtr& point_cloud,
                                 const sensor_msgs::CameraInfoConstPtr& cam_info_msg)
 {
-    printf("cloud msg: %d\n", visual_img_msg->header.seq);
+    printf("cloud msg: %d\n", point_cloud->header.seq);
 
-    // get transform
-    tf::StampedTransform trans;
-    try{
-        tf_listener_.lookupTransform(odom_frame_, visual_img_msg->header.frame_id, ros::Time(0), trans);
-    }catch (tf::TransformException &ex)
-    {
-        ROS_ERROR("%s",ex.what());
+    // Get odom pose
+    gtsam::Pose3 odom_pose;
+    if( !getOdomPose( odom_pose, point_cloud->header.frame_id ) )
         return;
-    }
-    gtsam::Rot3 rot3 = gtsam::Rot3::Quaternion( trans.getRotation().w(), trans.getRotation().x(),
-                                                trans.getRotation().y(), trans.getRotation().z() );
-    gtsam::Pose3 odom_pose(rot3, gtsam::Point3(trans.getOrigin()));
 
-//    // print pose info
-//    cout << CYAN;
-//    cout << " trans pose: " << endl;
-//    Eigen::Matrix3d m33 = matrixTF2Eigen( trans.getBasis() );
-//    cout << "     R : " << m33 << endl;
-//    cout << "     T : " << trans.getOrigin()[0] << ", " << trans.getOrigin()[1] << ", "
-//                        <<  trans.getOrigin()[2] << endl;
-//    cout << YELLOW;
-//    odom_pose.print( " odom pose: ");
-//    cout << RESET << endl;
-
-
-    //
+    // Get camera parameter
     getCameraParameter( cam_info_msg, camera_parameters_);
 
-    //
+    // To pcl pointcloud
     PointCloudTypePtr cloud_in ( new PointCloudType );
     pcl::fromROSMsg( *point_cloud, *cloud_in);
 
@@ -268,6 +229,24 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, gtsam::Pose3 
 
     ROS_INFO("Total time: %f, segment %f, display %f \n", total_dura, organized_dura, display_dura);
     cout << "----------------------------------- END -------------------------------------" << endl;
+}
+
+bool KinectListener::getOdomPose( gtsam::Pose3 &odom_pose, const std::string &camera_frame)
+{
+    // get transform
+    tf::StampedTransform trans;
+    try{
+        tf_listener_.lookupTransform(odom_frame_, camera_frame, ros::Time(0), trans);
+    }catch (tf::TransformException &ex)
+    {
+        ROS_ERROR("%s",ex.what());
+        return false;
+    }
+    gtsam::Rot3 rot3 = gtsam::Rot3::Quaternion( trans.getRotation().w(), trans.getRotation().x(),
+                                                trans.getRotation().y(), trans.getRotation().z() );
+    odom_pose = gtsam::Pose3(rot3, gtsam::Point3(trans.getOrigin()));
+
+    return true;
 }
 
 void KinectListener::organizedPlaneSegment(PointCloudTypePtr &input, std::vector<PlaneType> &planes)
