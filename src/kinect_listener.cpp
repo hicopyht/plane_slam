@@ -284,6 +284,10 @@ void KinectListener::setlineBasedPlaneSegmentParameters()
     plane_from_line_segment_.setNormalMinInliersPercentage( normal_min_inliers_percentage_ );
     plane_from_line_segment_.setNormalMaximumCurvature( normal_maximum_curvature_ );
     //
+    plane_from_line_segment_.setRemoveDuplicateCandidate( remove_duplicate_candidate_ );
+    plane_from_line_segment_.setDuplicateCandidateThreshold( duplicate_candidate_normal_thresh_,
+                                                             duplicate_candidate_distance_thresh_ );
+    //
     plane_from_line_segment_.setPlaneSegmentCriterion( plane_segment_criterion_ );
     plane_from_line_segment_.setCriterionBothParameters( k_curvature_, k_inlier_ );
     plane_from_line_segment_.setMinInliers( min_inliers_ );
@@ -432,6 +436,10 @@ void KinectListener::lineBasedSegmentReconfigCallback( plane_slam::LineBasedSegm
     normal_smoothing_size_ = config.normal_smoothing_size;
     normal_min_inliers_percentage_ = config.normal_min_inliers_percentage;
     normal_maximum_curvature_ = config.normal_maximum_curvature;
+    //
+    remove_duplicate_candidate_ = config.remove_duplicate_candidate;
+    duplicate_candidate_normal_thresh_ = config.duplicate_candidate_normal_thresh;
+    duplicate_candidate_distance_thresh_ = config.duplicate_candidate_distance_thresh;
     //
     plane_segment_criterion_ = config.plane_segment_criterion;
     k_curvature_ = config.k_curvature;

@@ -208,17 +208,22 @@ void PlaneSlam::matchPlanes( std::vector<OrientedPlane3> &predicted_observations
     for( int i = 0; i < observations.size(); i++)
     {
         OrientedPlane3 &obs = observations[i];
+        double min_d = 1e2;
+        int min_index = 1;
         for( int l = 0; l < predicted_observations.size(); l++)
         {
             OrientedPlane3 &lm = predicted_observations[l];
             Vector3 error = obs.errorVector( lm );
             double d = error.dot( error );
             cout << YELLOW << "  - " << i << "*" << l << ": " << d << RESET << endl;
-            if( d < plane_match_threshold_)
+            if( d < plane_match_threshold_ && d < min_d)
             {
-                pairs.push_back( PlanePair(i, l) );
+                min_d = d;
+                min_index = l;
             }
         }
+        if( min_index >= 0)
+            pairs.push_back( PlanePair(i, min_index) );
     }
 }
 

@@ -210,6 +210,10 @@ private:
     float normal_min_inliers_percentage_;
     float normal_maximum_curvature_;
     //
+    bool remove_duplicate_candidate_;
+    float duplicate_candidate_normal_thresh_;
+    float duplicate_candidate_distance_thresh_;
+    //
     int plane_segment_criterion_;
     float k_curvature_;
     float k_inlier_;
