@@ -209,7 +209,7 @@ void PlaneSlam::matchPlanes( std::vector<OrientedPlane3> &predicted_observations
     {
         OrientedPlane3 &obs = observations[i];
         double min_d = 1e2;
-        int min_index = 1;
+        int min_index = -1;
         for( int l = 0; l < predicted_observations.size(); l++)
         {
             OrientedPlane3 &lm = predicted_observations[l];
@@ -222,7 +222,7 @@ void PlaneSlam::matchPlanes( std::vector<OrientedPlane3> &predicted_observations
                 min_index = l;
             }
         }
-        if( min_index >= 0)
+        if( min_index >= 0 )
             pairs.push_back( PlanePair(i, min_index) );
     }
 }
