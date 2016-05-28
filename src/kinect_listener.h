@@ -173,10 +173,16 @@ private:
     int cloud_size_type_;
     int cloud_size_type_config_;
     int plane_segment_method_;
+
     bool display_input_cloud_;
     bool display_line_cloud_;
     bool display_normal_;
+    bool display_normal_arrow_;
     bool display_plane_;
+    bool display_plane_arrow_;
+    bool display_plane_inlier_;
+    bool display_plane_projected_inlier_;
+    bool display_plane_hull_;
     bool display_landmarks_;
     bool display_path_;
     bool display_odom_path_;

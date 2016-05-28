@@ -63,7 +63,10 @@ struct PlaneType
     Eigen::Vector4d coefficients;
     Eigen::Vector3d sigmas;
     std::vector<int> inlier;
-    PointCloudType cloud;
+    PointCloudTypePtr cloud;
+    PointCloudTypePtr cloud_hull;
+
+    PlaneType() : cloud( new PointCloudType), cloud_hull( new PointCloudType) {}
 };
 
 struct PlanePair

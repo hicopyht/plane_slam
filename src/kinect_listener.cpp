@@ -154,7 +154,7 @@ void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img
 
 void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform &odom_pose )
 {
-    static tf::Transform last_pose = odom_pose;
+//    static tf::Transform last_pose = odom_pose;
     geometry_msgs::PoseStamped pstamped;
     pstamped.pose.position.x = odom_pose.getOrigin().x();
     pstamped.pose.position.y = odom_pose.getOrigin().y();
@@ -163,7 +163,7 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
     true_poses_.push_back( pstamped );
     publishTruePath();
 
-    std::vector<PlaneType> organized_planes;
+    std::vector<PlaneType> segment_planes;
 
     PointCloudTypePtr cloud_in( new PointCloudType );
     // if use downsample cloud
@@ -188,19 +188,21 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
     pcl::console::TicToc time;
     time.tic();
     float segment_dura = 0;
+    float hull_dura = 0;
+    float slam_dura = 0;
     float display_dura = 0;
     float total_dura = 0;
 
     // Plane Segment
     if( plane_segment_method_ == ORGANSIZED)
     {
-        organizedPlaneSegment( cloud_in, organized_planes );
+        organizedPlaneSegment( cloud_in, segment_planes );
         segment_dura = time.toc();
         time.tic();
     }
     else if( plane_segment_method_ == LINE_BADED )
     {
-        lineBasedPlaneSegment( cloud_in, organized_planes );
+        lineBasedPlaneSegment( cloud_in, segment_planes );
         segment_dura = time.toc();
         time.tic();
     }
@@ -210,7 +212,12 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
         exit(0);
     }
 
-    cout << GREEN << " planes: " << organized_planes.size() << RESET << endl;
+    cout << GREEN << " planes: " << segment_planes.size() << RESET << endl;
+
+    // extract Hull
+//    plane_slam_->extractPlaneHulls( cloud_in, segment_planes );
+    hull_dura = time.toc();
+    time.tic();
 
     // display
     pcl_viewer_->removeAllPointClouds();
@@ -221,14 +228,14 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
     {
         gtsam::Pose3 init_pose;
         plane_slam_->tfToPose3( odom_pose, init_pose);
-        plane_slam_->initialize( init_pose, organized_planes );
+        plane_slam_->initialize( init_pose, segment_planes );
         is_initialized = true;
     }
     else
     {
         gtsam::Pose3 pose3;
         plane_slam_->tfToPose3( odom_pose, pose3 );
-        gtsam::Pose3 estmated_pose = plane_slam_->planeSlam( pose3, organized_planes );
+        gtsam::Pose3 estmated_pose = plane_slam_->planeSlam( pose3, segment_planes );
         publishPose( estmated_pose );
         if(display_path_)
             plane_slam_->publishPath();
@@ -243,6 +250,8 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
         if(display_landmarks_)
             displayLandmarks( landmarks, "landmark", viewer_v3_ );
     }
+    slam_dura = time.toc();
+    time.tic();
 
     // display
     if(display_input_cloud_)
@@ -251,13 +260,14 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
         pcl_viewer_->addPointCloud( cloud_in, "rgba_cloud", viewer_v1_ );
         pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "rgba_cloud", viewer_v1_);
     }
-    displayPlanes( cloud_in, organized_planes, "organized_plane", viewer_v2_ );
+    displayPlanes( cloud_in, segment_planes, "segment_plane", viewer_v2_ );
     pcl_viewer_->spinOnce(1);
 
     display_dura = time.toc();
     total_dura = (pcl::getTime() - start_time) * 1000;
 
-    ROS_INFO("Total time: %f, segment %f, display %f \n", total_dura, segment_dura, display_dura);
+    ROS_INFO("Total time: %f, segment: %f, hull: %f, slam: %f, display: %f \n",
+             total_dura, segment_dura, hull_dura, slam_dura, display_dura);
     cout << "----------------------------------- END -------------------------------------" << endl;
 }
 
@@ -393,7 +403,13 @@ void KinectListener::planeSegmentReconfigCallback(plane_slam::PlaneSegmentConfig
     plane_segment_method_ = config.segment_method;
     display_input_cloud_ = config.display_input_cloud;
     display_line_cloud_ = config.display_line_cloud;
+    display_normal_ = config.display_normal;
+    display_normal_arrow_ = config.display_normal_arrow;
     display_plane_ = config.display_plane;
+    display_plane_arrow_ = config.display_plane_arrow;
+    display_plane_inlier_ = config.display_plane_inlier;
+    display_plane_projected_inlier_ = config.display_plane_projected_inlier;
+    display_plane_hull_ = config.display_plane_hull;
     loop_one_message_ = config.loop_one_message;
 
     cout << GREEN <<"Common Segment Config." << RESET << endl;
@@ -547,17 +563,62 @@ void KinectListener::pclViewerLineRegion( const PointCloudTypePtr &input, PlaneF
 
 }
 
+//void KinectListener::pclViewerNormal( const PointCloudTypePtr &input, PlaneFromLineSegment::NormalType &normal, const std::string &id, int viewpoint)
+//{
+//    PlaneType plane;
+//    plane.centroid = normal.centroid;
+//    plane.coefficients[0] = normal.coefficients[0];
+//    plane.coefficients[1] = normal.coefficients[1];
+//    plane.coefficients[2] = normal.coefficients[2];
+//    plane.coefficients[3] = normal.coefficients[3];
+//    plane.inlier = normal.inliers;
+
+//    pclViewerPlane( input, plane, id, viewpoint);
+//}
+
 void KinectListener::pclViewerNormal( const PointCloudTypePtr &input, PlaneFromLineSegment::NormalType &normal, const std::string &id, int viewpoint)
 {
-    PlaneType plane;
-    plane.centroid = normal.centroid;
-    plane.coefficients[0] = normal.coefficients[0];
-    plane.coefficients[1] = normal.coefficients[1];
-    plane.coefficients[2] = normal.coefficients[2];
-    plane.coefficients[3] = normal.coefficients[3];
-    plane.inlier = normal.inliers;
+    double r = rng.uniform(0.0, 255.0);
+    double g = rng.uniform(0.0, 255.0);
+    double b = rng.uniform(0.0, 255.0);
 
-    pclViewerPlane( input, plane, id, viewpoint);
+    if( display_normal_arrow_ )
+    {
+        // add a line
+        PointType p1, p2;
+        p1 = normal.centroid;
+        // check centroid
+        if( p1.z == 0)
+        {
+            Eigen::Vector4f cen;
+            pcl::compute3DCentroid( *input, normal.inliers, cen);
+            p1.x = cen[0];
+            p1.y = cen[1];
+            p1.z = cen[2];
+        }
+
+        p2.x = p1.x + normal.coefficients[0]*0.2;
+        p2.y = p1.y + normal.coefficients[1]*0.2;
+        p2.z = p1.z + normal.coefficients[2]*0.2;
+        pcl_viewer_->addArrow(p2, p1, r/255.0, g/255.0, b/255.0, false, id+"_arrow", viewpoint);
+    // add a sphere
+//    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point", viewpoint);
+    }
+    // add inlier
+    PointCloudTypePtr cloud (new PointCloudType );
+
+    for(int i = 0; i < normal.inliers.size(); i++)
+    {
+        cloud->points.push_back( input->points[normal.inliers[i]] );
+    }
+    cloud->is_dense = false;
+    cloud->height = 1;
+    cloud->width = cloud->points.size();
+
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color(cloud, r, g, b);
+    pcl_viewer_->addPointCloud(cloud, color, id+"_inlier", viewpoint);
+    pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_inlier", viewpoint);
+
 }
 
 void KinectListener::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &plane, const std::string &id, int viewpoint)
@@ -566,31 +627,78 @@ void KinectListener::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &
     double g = rng.uniform(0.0, 255.0);
     double b = rng.uniform(0.0, 255.0);
 
-    // add a line
-    PointType p1, p2;
-    p1 = plane.centroid;
-    // check centroid
-    if( p1.z == 0)
+    // inlier
+    if( display_plane_inlier_ && display_plane_projected_inlier_ )
     {
-        Eigen::Vector4f cen;
-        pcl::compute3DCentroid( *input, plane.inlier, cen);
-        p1.x = cen[0];
-        p1.y = cen[1];
-        p1.z = cen[2];
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color( plane.cloud, r, g, b);
+        pcl_viewer_->addPointCloud( plane.cloud, color, id+"_inlier", viewpoint);
+        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, id+"_inlier", viewpoint);
+
+        if( display_plane_arrow_ )
+        {
+            // add a line
+            PointType p1, p2;
+            p1 = plane.centroid;
+            // check centroid
+            if( p1.z == 0)
+            {
+                Eigen::Vector4f cen;
+                pcl::compute3DCentroid( *plane.cloud, cen );
+                p1.x = cen[0];
+                p1.y = cen[1];
+                p1.z = cen[2];
+            }
+
+            p2.x = p1.x + plane.coefficients[0]*0.2;
+            p2.y = p1.y + plane.coefficients[1]*0.2;
+            p2.z = p1.z + plane.coefficients[2]*0.2;
+            pcl_viewer_->addArrow(p2, p1, r, g, b, false, id+"_arrow", viewpoint);
+            // add a sphere
+        //    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point", viewpoint);
+        }
+    }
+    else if( display_plane_inlier_ )
+    {
+        PointCloudTypePtr cloud = getPointCloudFromIndices( input, plane.inlier );
+
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color(cloud, r, g, b);
+        pcl_viewer_->addPointCloud(cloud, color, id+"_inlier", viewpoint);
+        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, id+"_inlier", viewpoint);
+
+        if( display_plane_arrow_ )
+        {
+            // add a line
+            PointType p1, p2;
+            p1 = plane.centroid;
+            // check centroid
+            if( p1.z == 0)
+            {
+                Eigen::Vector4f cen;
+                pcl::compute3DCentroid( *cloud, cen);
+                p1.x = cen[0];
+                p1.y = cen[1];
+                p1.z = cen[2];
+            }
+
+            p2.x = p1.x + plane.coefficients[0]*0.2;
+            p2.y = p1.y + plane.coefficients[1]*0.2;
+            p2.z = p1.z + plane.coefficients[2]*0.2;
+            pcl_viewer_->addArrow(p2, p1, r, g, b, false, id+"_arrow", viewpoint);
+            // add a sphere
+        //    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point", viewpoint);
+        }
     }
 
-    p2.x = p1.x + plane.coefficients[0]*0.2;
-    p2.y = p1.y + plane.coefficients[1]*0.2;
-    p2.z = p1.z + plane.coefficients[2]*0.2;
-    pcl_viewer_->addArrow(p2, p1, r, g, b, false, id+"_arrow", viewpoint);
-    // add a sphere
-//    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point", viewpoint);
-    // add inlier
-    PointCloudTypePtr cloud = getPointCloudFromIndices( input, plane.inlier );
-
-    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color(cloud, r, g, b);
-    pcl_viewer_->addPointCloud(cloud, color, id+"_inlier", viewpoint);
-    pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_inlier", viewpoint);
+    // hull
+    if( display_plane_hull_ )
+    {
+        r = rng.uniform(0.0, 255.0);
+        g = rng.uniform(0.0, 255.0);
+        b = rng.uniform(0.0, 255.0);
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color_hull( plane.cloud_hull, r, g, b);
+        pcl_viewer_->addPointCloud( plane.cloud_hull, color_hull, id+"_hull", viewpoint );
+        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_hull", viewpoint);
+    }
 }
 
 PointCloudTypePtr KinectListener::getPointCloudFromIndices( const PointCloudTypePtr &input,

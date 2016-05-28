@@ -20,7 +20,11 @@
 
 #include <nav_msgs/Path.h>
 #include <visualization_msgs/Marker.h>
-
+//
+#include <pcl/filters/passthrough.h>
+#include <pcl/filters/project_inliers.h>
+#include <pcl/surface/concave_hull.h>
+//
 #include "utils.h"
 
 using namespace std;
@@ -70,6 +74,16 @@ public:
     void publishOdomPath();
 
     void getLandmarks( std::vector<PlaneType> &planes );
+
+    void extractPlaneHulls(const PointCloudTypePtr &input, std::vector<PlaneType> &planes);
+
+    void projectPoints ( const PointCloudTypePtr &input, const std::vector<int> &inliers,
+                         const Eigen::Vector4f &model_coefficients, PointCloudType &projected_points );
+
+//    void projectPoints( const PointCloudTypePtr &input, std::vector<int> &inliers,
+//                        Eigen::Vector4d &coeffs, PointCloudTypePtr &output);
+
+    void cloudHull( const PointCloudTypePtr &cloud, PointCloudTypePtr &cloud_hull);
 
     void tfToPose3( tf::Transform &trans, gtsam::Pose3 &pose );
 

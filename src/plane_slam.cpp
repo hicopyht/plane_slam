@@ -316,6 +316,95 @@ void PlaneSlam::getLandmarks( std::vector<PlaneType> &planes )
 
 }
 
+void PlaneSlam::extractPlaneHulls(const PointCloudTypePtr &input, std::vector<PlaneType> &planes)
+{
+    for(int i = 0; i < planes.size(); i++)
+    {
+        PlaneType &plane = planes[i];
+        // projected cloud
+        Eigen::Vector4f model_coefficients;
+        model_coefficients[0] = plane.coefficients[0];
+        model_coefficients[1] = plane.coefficients[1];
+        model_coefficients[2] = plane.coefficients[2];
+        model_coefficients[3] = plane.coefficients[3];
+        projectPoints( input, plane.inlier, model_coefficients, *(plane.cloud) );
+        // hull
+        cloudHull( plane.cloud, plane.cloud_hull );
+    }
+}
+
+void PlaneSlam::projectPoints ( const PointCloudTypePtr &input, const std::vector<int> &inliers,
+                                const Eigen::Vector4f &model_coefficients, PointCloudType &projected_points )
+{
+    projected_points.header = input->header;
+    projected_points.is_dense = input->is_dense;
+
+    Eigen::Vector4f mc (model_coefficients[0], model_coefficients[1], model_coefficients[2], 0);
+
+    // normalize the vector perpendicular to the plane...
+    mc.normalize ();
+    // ... and store the resulting normal as a local copy of the model coefficients
+    Eigen::Vector4f tmp_mc = model_coefficients;
+    tmp_mc[0] = mc[0];
+    tmp_mc[1] = mc[1];
+    tmp_mc[2] = mc[2];
+
+    // Allocate enough space and copy the basics
+    projected_points.points.resize (inliers.size ());
+    projected_points.width    = static_cast<uint32_t> (inliers.size ());
+    projected_points.height   = 1;
+
+    typedef typename pcl::traits::fieldList<PointType>::type FieldList;
+    // Iterate over each point
+    for (size_t i = 0; i < inliers.size (); ++i)
+        // Iterate over each dimension
+        pcl::for_each_type <FieldList> (pcl::NdConcatenateFunctor <PointType, PointType> (input->points[inliers[i]], projected_points.points[i]));
+
+    // Iterate through the 3d points and calculate the distances from them to the plane
+    for (size_t i = 0; i < inliers.size (); ++i)
+    {
+        // Calculate the distance from the point to the plane
+        Eigen::Vector4f p (input->points[inliers[i]].x,
+                            input->points[inliers[i]].y,
+                            input->points[inliers[i]].z,
+                            1);
+        // use normalized coefficients to calculate the scalar projection
+        float distance_to_plane = tmp_mc.dot (p);
+
+        pcl::Vector4fMap pp = projected_points.points[i].getVector4fMap ();
+        pp.matrix () = p - mc * distance_to_plane;        // mc[3] = 0, therefore the 3rd coordinate is safe
+    }
+}
+
+//void PlaneSlam::projectPoints( const PointCloudTypePtr &input, std::vector<int> &inliers,
+//                               Eigen::Vector4d &coeffs, PointCloudTypePtr &output)
+//{
+//    pcl::ProjectInliers<PointType> proj;
+//    proj.setModelType ( pcl::SACMODEL_PLANE );
+//    pcl::PointIndicesPtr indices;
+//    for(int i = 0; i < inliers.size(); i++)
+//    {
+//        indices->indices.push_back( inliers[i] );
+//    }
+//    proj.setIndices ( indices );
+//    proj.setInputCloud ( input );
+//    pcl::ModelCoefficientsPtr coefficients( new pcl::ModelCoefficients );
+//    coefficients->values.push_back( (float)(coeffs[0]) );
+//    coefficients->values.push_back( (float)(coeffs[1]) );
+//    coefficients->values.push_back( (float)(coeffs[2]) );
+//    coefficients->values.push_back( (float)(coeffs[3]) );
+//    proj.setModelCoefficients ( coefficients );
+//    proj.filter ( *output );
+//}
+
+void PlaneSlam::cloudHull( const PointCloudTypePtr &cloud, PointCloudTypePtr &cloud_hull)
+{
+    pcl::ConcaveHull<PointType> chull;
+    chull.setInputCloud ( cloud );
+    chull.setAlpha ( 0.2 );
+    chull.reconstruct ( *cloud_hull );
+}
+
 void PlaneSlam::tfToPose3( tf::Transform &trans, gtsam::Pose3 &pose )
 {
     Eigen::Matrix3d m33 = matrixTF2Eigen( trans.getBasis() );
