@@ -9,6 +9,7 @@ KinectListener::KinectListener() :
   , line_based_segment_config_server_( ros::NodeHandle( "LineBasedSegment" ) )
   , tf_listener_( nh_, ros::Duration(10.0) )
   , pcl_viewer_( new pcl::visualization::PCLVisualizer("3D Viewer"))
+  , map_viewer_( new pcl::visualization::PCLVisualizer("Map Viewer"))
   , viewer_v1_(1)
   , viewer_v2_(2)
   , viewer_v3_(3)
@@ -55,6 +56,11 @@ KinectListener::KinectListener() :
     pcl_viewer_->initCameraParameters();
     pcl_viewer_->setCameraPosition(0.0, 0.0, -0.4, 0, 0, 0.6, 0, -1, 0);
     pcl_viewer_->setShowFPS(true);
+
+    map_viewer_->addCoordinateSystem(0.5);
+    map_viewer_->initCameraParameters();
+    map_viewer_->setCameraPosition( 0, 3.0, 3.0, -3.0, 0, 0, -1, -1, 0 );
+    map_viewer_->setShowFPS(true);
 
     true_path_publisher_ = nh_.advertise<nav_msgs::Path>("true_path", 10);
     pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("estimate_pose", 10);
@@ -222,6 +228,8 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
     // display
     pcl_viewer_->removeAllPointClouds();
     pcl_viewer_->removeAllShapes();
+    map_viewer_->removeAllPointClouds();
+    map_viewer_->removeAllShapes();
 
     // Do slam
     if(!is_initialized)
@@ -238,17 +246,16 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
         gtsam::Pose3 estmated_pose = plane_slam_->planeSlam( pose3, segment_planes );
         publishPose( estmated_pose );
         if(display_path_)
-            plane_slam_->publishPath();
+            plane_slam_->publishEstimatedPath();
         if(display_odom_path_)
             plane_slam_->publishOdomPath();
 
         // visualize landmark
-        std::vector<PlaneType> landmarks;
-        plane_slam_->getLandmarks( landmarks );
+        std::vector<PlaneType> landmarks = plane_slam_->getLandmarks();
         // project and recalculate contour
         // display
         if(display_landmarks_)
-            displayLandmarks( landmarks, "landmark", viewer_v3_ );
+            displayLandmarks( landmarks, "landmark");
     }
     slam_dura = time.toc();
     time.tic();
@@ -262,6 +269,7 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
     }
     displayPlanes( cloud_in, segment_planes, "segment_plane", viewer_v2_ );
     pcl_viewer_->spinOnce(1);
+    map_viewer_->spinOnce(1);
 
     display_dura = time.toc();
     total_dura = (pcl::getTime() - start_time) * 1000;
@@ -351,7 +359,7 @@ void KinectListener::lineBasedPlaneSegment(PointCloudTypePtr &input,
         plane.inlier = normal.inliers;
         plane.boundary_inlier = normal.boundary_inlier;
         plane.hull_inlier = normal.hull_inlier;
-        plane_slam_->projectPoints( input, plane.inlier, plane.coefficients, *(plane.cloud) );
+        plane_slam_->projectPoints( *input, plane.inlier, plane.coefficients, *(plane.cloud) );
         getPointCloudFromIndices( input, plane.boundary_inlier, plane.cloud_boundary );
         getPointCloudFromIndices( input, plane.hull_inlier, plane.cloud_hull );
         //
@@ -395,10 +403,16 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     map_frame_ = config.map_frame;
     base_frame_ = config.base_frame;
     odom_frame_ = config.odom_frame;
-    plane_slam_->setPlaneMatchThreshold( config.plane_match_threshold );
-    display_landmarks_ = config.display_landmarks;
+    plane_slam_->setPlaneMatchThreshold( config.plane_match_direction_threshold, config.plane_match_distance_threshold);
+    plane_slam_->setPlaneInlierLeafSize( config.plane_inlier_leaf_size );
+    plane_slam_->setPlaneHullAlpha( config.plane_hull_alpha );
     display_path_ = config.display_path;
     display_odom_path_ = config.display_odom_path;
+    display_landmarks_ = config.display_landmarks;
+    display_landmark_inlier_ = config.display_landmark_inlier;
+    display_landmark_arrow_ = config.display_landmark_arrow;
+    display_landmark_boundary_ = config.display_landmark_boundary;
+    display_landmark_hull_ = config.display_landmark_hull;
 
     cout << GREEN <<"Common Slam Config." << RESET << endl;
 }
@@ -494,8 +508,9 @@ void KinectListener::publishPose( gtsam::Pose3 &pose)
     pose_publisher_.publish( msg );
 }
 
-void KinectListener::displayLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix, int viewport)
+void KinectListener::displayLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix)
 {
+
     if(display_landmarks_)
     {
         for(int i = 0; i < landmarks.size(); i++)
@@ -510,7 +525,8 @@ void KinectListener::displayLandmarks( const std::vector<PlaneType> &landmarks, 
             //
             stringstream ss;
             ss << prefix << "_" << i;
-            pcl_viewer_->addPlane( coeff, 1.0, 1.0, 1.0, ss.str(), viewport);
+//            map_viewer_->addPlane( coeff, 1.0, 1.0, 1.0, ss.str());
+            pclViewerLandmark( plane, ss.str() );
         }
     }
 }
@@ -559,6 +575,79 @@ void KinectListener::displayLinesAndNormals( const PointCloudTypePtr &input,
             pclViewerNormal( input, normals[j], ss.str(), viewport );
         }
     }
+}
+
+void KinectListener::pclViewerLandmark( const PlaneType &plane, const std::string &id )
+{
+    double r = rng.uniform(0.0, 255.0);
+    double g = rng.uniform(0.0, 255.0);
+    double b = rng.uniform(0.0, 255.0);
+
+    // inlier
+    if( display_landmark_inlier_ )
+    {
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color( plane.cloud, r, g, b);
+        map_viewer_->addPointCloud( plane.cloud, color, id+"_inlier" );
+        map_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, id+"_inlier" );
+
+        if( display_landmark_arrow_ )
+        {
+            // add a line
+            PointType p1, p2;
+            p1 = plane.centroid;
+            // check centroid
+            if( p1.z == 0)
+            {
+                Eigen::Vector4f cen;
+                pcl::compute3DCentroid( *plane.cloud, cen );
+                p1.x = cen[0];
+                p1.y = cen[1];
+                p1.z = cen[2];
+            }
+
+            p2.x = p1.x + plane.coefficients[0]*0.2;
+            p2.y = p1.y + plane.coefficients[1]*0.2;
+            p2.z = p1.z + plane.coefficients[2]*0.2;
+            map_viewer_->addArrow(p2, p1, r, g, b, false, id+"_arrow" );
+            // add a sphere
+        //    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point" );
+        }
+    }
+
+    // boundary
+    if( display_landmark_boundary_ )
+    {
+        r = rng.uniform(0.0, 255.0);
+        g = rng.uniform(0.0, 255.0);
+        b = rng.uniform(0.0, 255.0);
+
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color_boundary( plane.cloud_boundary, r, g, b);
+        map_viewer_->addPointCloud( plane.cloud_boundary, color_boundary, id+"_boundary" );
+        map_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_boundary" );
+    }
+
+    // hull
+    if( display_landmark_hull_ )
+    {
+        r = rng.uniform(0.0, 1.0);
+        g = rng.uniform(0.0, 1.0);
+        b = rng.uniform(0.0, 1.0);
+
+        const int num = plane.cloud_hull->size();
+        if( num >= 3)
+        {
+            for(int i = 1; i < num; i++)
+            {
+                stringstream ss;
+                ss << id << "_hull_line_" << i;
+                map_viewer_->addLine(plane.cloud_hull->points[i-1], plane.cloud_hull->points[i], r, g, b, ss.str() );
+            }
+            stringstream ss;
+            ss << id << "_hull_line_0";
+            map_viewer_->addLine(plane.cloud_hull->points[0], plane.cloud_hull->points[num-1], r, g, b, ss.str() );
+        }
+    }
+
 }
 
 void KinectListener::pclViewerLineRegion( const PointCloudTypePtr &input, PlaneFromLineSegment::LineType &line, const std::string &id, int viewpoint)

@@ -86,6 +86,13 @@ Eigen::Matrix3d matrixTF2Eigen(const tf::Matrix3x3 &t);
 void matrixEigen2TF( const Eigen::Matrix3d &e, tf::Matrix3x3 &t);
 tf::Matrix3x3 matrixEigen2TF(const Eigen::Matrix3d &m33);
 
+PointType transformPoint (const PointType &point,
+                     const Eigen::Matrix4d &transform);
+
+void transformPointCloud (const PointCloudType &cloud_in,
+                          PointCloudType &cloud_out,
+                          const Eigen::Matrix4d &transform);
+
 
 //the following are UBUNTU/LINUX ONLY terminal color
 #define RESET "\033[0m"

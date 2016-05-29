@@ -102,7 +102,7 @@ protected:
 
     void publishPose( gtsam::Pose3 &pose);
 
-    void displayLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix = "landmark", int viewport = 1);
+    void displayLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix = "landmark");
 
     void displayPlanes( const PointCloudTypePtr &input, std::vector<PlaneType> &planes, const std::string &prefix, int viewport);
 
@@ -110,6 +110,8 @@ protected:
                                  std::vector<PlaneFromLineSegment::LineType> &lines,
                                  std::vector<PlaneFromLineSegment::NormalType> &normals,
                                  int viewport);
+
+    void pclViewerLandmark( const PlaneType &plane, const std::string &id );
 
     void pclViewerLineRegion( const PointCloudTypePtr &input, PlaneFromLineSegment::LineType &line, const std::string &id, int viewpoint);
 
@@ -171,11 +173,20 @@ private:
     int viewer_v4_;
     cv::RNG rng;
     PointRepresentationConstPtr prttcp_;
+    //
+    pcl::visualization::PCLVisualizer* map_viewer_;
 
     // Plane slam
     string map_frame_;
     string base_frame_;
     string odom_frame_;
+    bool display_path_;
+    bool display_odom_path_;
+    bool display_landmarks_;
+    bool display_landmark_inlier_;
+    bool display_landmark_arrow_;
+    bool display_landmark_boundary_;
+    bool display_landmark_hull_;
 
     // Plane segment
     int cloud_size_type_;
@@ -192,9 +203,6 @@ private:
     bool display_plane_projected_inlier_;
     bool display_plane_boundary_;
     bool display_plane_hull_;
-    bool display_landmarks_;
-    bool display_path_;
-    bool display_odom_path_;
     bool loop_one_message_;
 
     // Organized Muit Plane segment parameters

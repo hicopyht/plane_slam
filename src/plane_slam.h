@@ -1,5 +1,6 @@
 #ifndef PLANE_SLAM_H
 #define PLANE_SLAM_H
+// texture 11431
 
 #include <ros/ros.h>
 #include <tf/transform_listener.h>
@@ -22,6 +23,7 @@
 #include <visualization_msgs/Marker.h>
 //
 #include <pcl/filters/passthrough.h>
+#include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/project_inliers.h>
 #include <pcl/surface/concave_hull.h>
 //
@@ -69,18 +71,40 @@ public:
 
     void getPredictedObservation( Pose3 &pose, std::vector<OrientedPlane3> &predicted_observations );
 
-    void publishPath();
+    void predictObservation( std::vector<OrientedPlane3> &landmarks, Pose3 &pose,
+                             std::vector<OrientedPlane3> &predicted_observations);
+
+    void updateLandmarks( std::vector<PlaneType> &landmarks,
+                          const std::vector<PlaneType> &observations,
+                          const std::vector<PlanePair> &pairs,
+                          const Pose3 &odom_pose,
+                          const Pose3 &estimated_pose,
+                          const std::vector<OrientedPlane3> &estimated_planes);
+
+    void publishEstimatedPath();
 
     void publishOdomPath();
 
-    void getLandmarks( std::vector<PlaneType> &planes );
+    inline std::vector<PlaneType> &getLandmarks() { return landmarks_; }
+
+    void passThoughFilter( const PointCloudTypePtr &cloud,
+                           PointCloudTypePtr &cloud_filtered,
+                           float leaf_size = 0.02f);
 
     void extractPlaneHulls(const PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
-    void projectPoints ( const PointCloudTypePtr &input, const std::vector<int> &inlier,
+    void projectPoints ( const PointCloudType &input,
+                         const Eigen::Vector4d &model_coefficients,
+                         PointCloudType &projected_points );
+
+    void projectPoints ( const PointCloudType &input,
+                         const Eigen::Vector4f &model_coefficients,
+                         PointCloudType &projected_points );
+
+    void projectPoints ( const PointCloudType &input, const std::vector<int> &inlier,
                          const Eigen::Vector4d &model_coefficients, PointCloudType &projected_points );
 
-    void projectPoints ( const PointCloudTypePtr &input, const std::vector<int> &inlier,
+    void projectPoints ( const PointCloudType &input, const std::vector<int> &inlier,
                          const Eigen::Vector4f &model_coefficients, PointCloudType &projected_points );
 
 //    void projectPoints( const PointCloudTypePtr &input, std::vector<int> &inliers,
@@ -92,8 +116,17 @@ public:
 
     void pose3ToTF( gtsam::Pose3 &pose, tf::Transform &trans );
 
-    inline void setPlaneMatchThreshold( double threshold) { plane_match_threshold_ = threshold; }
-    inline double getPlaneMatchThreshold() const { return plane_match_threshold_; }
+    inline void setPlaneMatchThreshold( double direction_thresh, double distance_thresh) {
+        plane_match_direction_threshold_ = direction_thresh;
+        plane_match_distance_threshold_ = distance_thresh; }
+    inline double getPlaneMatchDirectionThreshold() const { return plane_match_direction_threshold_; }
+    inline double getPlaneMatchDistanceThreshold() const { return plane_match_distance_threshold_; }
+
+    inline void setPlaneInlierLeafSize( double leaf_size ) { plane_inlier_leaf_size_ = leaf_size; }
+    inline double getPlaneInlierLeafSize() const { return plane_inlier_leaf_size_; }
+
+    inline void setPlaneHullAlpha( double alpha ) { plane_hull_alpha_ = alpha; }
+    inline double getPlaneHullAlpha() const { return plane_hull_alpha_; }
 
 private:
     //
@@ -115,12 +148,18 @@ private:
     Values initial_estimate_; // initial guess
     //
     bool first_pose_;
-    Values poses_;
     int pose_count_;
     int landmark_count_;
 
+    //
+    std::vector<Pose3> estimated_poses_;
+    std::vector<OrientedPlane3> estimated_planes_;
+    std::vector<PlaneType> landmarks_;
     // Parameters
-    double plane_match_threshold_;
+    double plane_match_direction_threshold_;
+    double plane_match_distance_threshold_;
+    double plane_inlier_leaf_size_;
+    double plane_hull_alpha_;
 };
 
 #endif // PLANE_SLAM_H
