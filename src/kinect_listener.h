@@ -80,6 +80,14 @@ protected:
 
     void lineBasedSegmentReconfigCallback( plane_slam::LineBasedSegmentConfig &config, uint32_t level);
 
+    void getPointCloudFromIndices( const PointCloudTypePtr &input,
+                                   pcl::PointIndices &indices,
+                                   PointCloudTypePtr &output);
+
+    void getPointCloudFromIndices( const PointCloudTypePtr &input,
+                                   std::vector<int> &indices,
+                                   PointCloudTypePtr &output);
+
     PointCloudTypePtr getPointCloudFromIndices( const PointCloudTypePtr &input,
                                                  pcl::PointIndices &indices);
 
@@ -107,7 +115,7 @@ protected:
 
     void pclViewerNormal( const PointCloudTypePtr &input, PlaneFromLineSegment::NormalType &normal, const std::string &id, int viewpoint);
 
-    void pclViewerPlane( const PointCloudTypePtr &input, PlaneType &plane, const std::string &id, int viewpoint);
+    void pclViewerPlane( const PointCloudTypePtr &input, PlaneType &plane, const std::string &id, int viewport);
 
     pcl::PointCloud<pcl::PointXYZRGBA>::Ptr image2PointCloud( const cv::Mat &rgb_img, const cv::Mat &depth_img,
                                                             const PlaneFromLineSegment::CAMERA_PARAMETERS& camera );
@@ -182,6 +190,7 @@ private:
     bool display_plane_arrow_;
     bool display_plane_inlier_;
     bool display_plane_projected_inlier_;
+    bool display_plane_boundary_;
     bool display_plane_hull_;
     bool display_landmarks_;
     bool display_path_;
@@ -228,6 +237,7 @@ private:
     float neighbor_threshold_;
     bool optimize_coefficients_;
     bool project_points_;
+    bool extract_boundary_;
 
     //
     bool is_initialized;

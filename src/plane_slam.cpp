@@ -333,7 +333,18 @@ void PlaneSlam::extractPlaneHulls(const PointCloudTypePtr &input, std::vector<Pl
     }
 }
 
-void PlaneSlam::projectPoints ( const PointCloudTypePtr &input, const std::vector<int> &inliers,
+void PlaneSlam::projectPoints ( const PointCloudTypePtr &input, const std::vector<int> &inlier,
+                                const Eigen::Vector4d &model_coefficients, PointCloudType &projected_points )
+{
+    Eigen::Vector4f coefficients;
+    coefficients[0] = model_coefficients[0];
+    coefficients[1] = model_coefficients[1];
+    coefficients[2] = model_coefficients[2];
+    coefficients[3] = model_coefficients[3];
+    projectPoints( input, inlier, coefficients, projected_points );
+}
+
+void PlaneSlam::projectPoints ( const PointCloudTypePtr &input, const std::vector<int> &inlier,
                                 const Eigen::Vector4f &model_coefficients, PointCloudType &projected_points )
 {
     projected_points.header = input->header;
@@ -350,23 +361,23 @@ void PlaneSlam::projectPoints ( const PointCloudTypePtr &input, const std::vecto
     tmp_mc[2] = mc[2];
 
     // Allocate enough space and copy the basics
-    projected_points.points.resize (inliers.size ());
-    projected_points.width    = static_cast<uint32_t> (inliers.size ());
+    projected_points.points.resize (inlier.size ());
+    projected_points.width    = static_cast<uint32_t> (inlier.size ());
     projected_points.height   = 1;
 
     typedef typename pcl::traits::fieldList<PointType>::type FieldList;
     // Iterate over each point
-    for (size_t i = 0; i < inliers.size (); ++i)
+    for (size_t i = 0; i < inlier.size (); ++i)
         // Iterate over each dimension
-        pcl::for_each_type <FieldList> (pcl::NdConcatenateFunctor <PointType, PointType> (input->points[inliers[i]], projected_points.points[i]));
+        pcl::for_each_type <FieldList> (pcl::NdConcatenateFunctor <PointType, PointType> (input->points[inlier[i]], projected_points.points[i]));
 
     // Iterate through the 3d points and calculate the distances from them to the plane
-    for (size_t i = 0; i < inliers.size (); ++i)
+    for (size_t i = 0; i < inlier.size (); ++i)
     {
         // Calculate the distance from the point to the plane
-        Eigen::Vector4f p (input->points[inliers[i]].x,
-                            input->points[inliers[i]].y,
-                            input->points[inliers[i]].z,
+        Eigen::Vector4f p (input->points[inlier[i]].x,
+                            input->points[inlier[i]].y,
+                            input->points[inlier[i]].z,
                             1);
         // use normalized coefficients to calculate the scalar projection
         float distance_to_plane = tmp_mc.dot (p);

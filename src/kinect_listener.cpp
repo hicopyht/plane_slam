@@ -305,6 +305,7 @@ void KinectListener::setlineBasedPlaneSegmentParameters()
     plane_from_line_segment_.setNeighborThreshold( neighbor_threshold_ );
     plane_from_line_segment_.setOptimizeCoefficients( optimize_coefficients_ );
     plane_from_line_segment_.setProjectPoints( project_points_ );
+    plane_from_line_segment_.setExtractBoundary( extract_boundary_ );
 }
 
 void KinectListener::lineBasedPlaneSegment(PointCloudTypePtr &input,
@@ -348,6 +349,11 @@ void KinectListener::lineBasedPlaneSegment(PointCloudTypePtr &input,
         plane.sigmas[1] = fabs(normal.coefficients[1]*0.1);
         plane.sigmas[2] = fabs(normal.coefficients[3]*0.1);
         plane.inlier = normal.inliers;
+        plane.boundary_inlier = normal.boundary_inlier;
+        plane.hull_inlier = normal.hull_inlier;
+        plane_slam_->projectPoints( input, plane.inlier, plane.coefficients, *(plane.cloud) );
+        getPointCloudFromIndices( input, plane.boundary_inlier, plane.cloud_boundary );
+        getPointCloudFromIndices( input, plane.hull_inlier, plane.cloud_hull );
         //
         planes.push_back( plane );
     }
@@ -409,6 +415,7 @@ void KinectListener::planeSegmentReconfigCallback(plane_slam::PlaneSegmentConfig
     display_plane_arrow_ = config.display_plane_arrow;
     display_plane_inlier_ = config.display_plane_inlier;
     display_plane_projected_inlier_ = config.display_plane_projected_inlier;
+    display_plane_boundary_ = config.display_plane_boundary;
     display_plane_hull_ = config.display_plane_hull;
     loop_one_message_ = config.loop_one_message;
 
@@ -465,6 +472,7 @@ void KinectListener::lineBasedSegmentReconfigCallback( plane_slam::LineBasedSegm
     neighbor_threshold_ = config.neighbor_threshold;
     optimize_coefficients_ = config.optimize_coefficients;
     project_points_ = config.project_points;
+    extract_boundary_ = config.extract_boundary;
     //
 
     cout << GREEN <<"Line Based Segment Config." << RESET << endl;
@@ -621,7 +629,7 @@ void KinectListener::pclViewerNormal( const PointCloudTypePtr &input, PlaneFromL
 
 }
 
-void KinectListener::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &plane, const std::string &id, int viewpoint)
+void KinectListener::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &plane, const std::string &id, int viewport)
 {
     double r = rng.uniform(0.0, 255.0);
     double g = rng.uniform(0.0, 255.0);
@@ -631,8 +639,8 @@ void KinectListener::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &
     if( display_plane_inlier_ && display_plane_projected_inlier_ )
     {
         pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color( plane.cloud, r, g, b);
-        pcl_viewer_->addPointCloud( plane.cloud, color, id+"_inlier", viewpoint);
-        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, id+"_inlier", viewpoint);
+        pcl_viewer_->addPointCloud( plane.cloud, color, id+"_inlier", viewport);
+        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, id+"_inlier", viewport);
 
         if( display_plane_arrow_ )
         {
@@ -652,9 +660,9 @@ void KinectListener::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &
             p2.x = p1.x + plane.coefficients[0]*0.2;
             p2.y = p1.y + plane.coefficients[1]*0.2;
             p2.z = p1.z + plane.coefficients[2]*0.2;
-            pcl_viewer_->addArrow(p2, p1, r, g, b, false, id+"_arrow", viewpoint);
+            pcl_viewer_->addArrow(p2, p1, r, g, b, false, id+"_arrow", viewport);
             // add a sphere
-        //    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point", viewpoint);
+        //    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point", viewport);
         }
     }
     else if( display_plane_inlier_ )
@@ -662,8 +670,8 @@ void KinectListener::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &
         PointCloudTypePtr cloud = getPointCloudFromIndices( input, plane.inlier );
 
         pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color(cloud, r, g, b);
-        pcl_viewer_->addPointCloud(cloud, color, id+"_inlier", viewpoint);
-        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, id+"_inlier", viewpoint);
+        pcl_viewer_->addPointCloud(cloud, color, id+"_inlier", viewport);
+        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, id+"_inlier", viewport);
 
         if( display_plane_arrow_ )
         {
@@ -683,28 +691,90 @@ void KinectListener::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &
             p2.x = p1.x + plane.coefficients[0]*0.2;
             p2.y = p1.y + plane.coefficients[1]*0.2;
             p2.z = p1.z + plane.coefficients[2]*0.2;
-            pcl_viewer_->addArrow(p2, p1, r, g, b, false, id+"_arrow", viewpoint);
+            pcl_viewer_->addArrow(p2, p1, r, g, b, false, id+"_arrow", viewport);
             // add a sphere
-        //    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point", viewpoint);
+        //    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point", viewport);
         }
     }
 
-    // hull
-    if( display_plane_hull_ )
+    // boundary
+    if( display_plane_boundary_ && display_plane_projected_inlier_ )
     {
         r = rng.uniform(0.0, 255.0);
         g = rng.uniform(0.0, 255.0);
         b = rng.uniform(0.0, 255.0);
-        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color_hull( plane.cloud_hull, r, g, b);
-        pcl_viewer_->addPointCloud( plane.cloud_hull, color_hull, id+"_hull", viewpoint );
-        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_hull", viewpoint);
+
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color_boundary( plane.cloud_boundary, r, g, b);
+        pcl_viewer_->addPointCloud( plane.cloud_boundary, color_boundary, id+"_boundary", viewport );
+        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_boundary", viewport);
+    }
+    else if( display_plane_boundary_ )
+    {
+        PointCloudTypePtr cloud_boundary = getPointCloudFromIndices( input, plane.boundary_inlier );
+        r = rng.uniform(0.0, 255.0);
+        g = rng.uniform(0.0, 255.0);
+        b = rng.uniform(0.0, 255.0);
+
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color_boundary( cloud_boundary, r, g, b);
+        pcl_viewer_->addPointCloud( cloud_boundary, color_boundary, id+"_boundary", viewport );
+        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_boundary", viewport);
+
+    }
+
+    // hull
+    if( display_plane_hull_ && display_plane_projected_inlier_ )
+    {
+        r = rng.uniform(0.0, 1.0);
+        g = rng.uniform(0.0, 1.0);
+        b = rng.uniform(0.0, 1.0);
+
+        const int num = plane.cloud_hull->size();
+        if( num >= 3)
+        {
+            for(int i = 1; i < num; i++)
+            {
+                stringstream ss;
+                ss << id << "_hull_line_" << i;
+                pcl_viewer_->addLine(plane.cloud_hull->points[i-1], plane.cloud_hull->points[i], r, g, b, ss.str(), viewport );
+            }
+            stringstream ss;
+            ss << id << "_hull_line_0";
+            pcl_viewer_->addLine(plane.cloud_hull->points[0], plane.cloud_hull->points[num-1], r, g, b, ss.str(), viewport );
+        }
+
+//        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color_hull( plane.cloud_hull, r, g, b);
+//        pcl_viewer_->addPointCloud( plane.cloud_hull, color_hull, id+"_hull", viewpoint );
+//        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_hull", viewport );
+
+    }
+    else if( display_plane_hull_ )
+    {
+        PointCloudTypePtr cloud_hull = getPointCloudFromIndices( input, plane.hull_inlier );
+        r = rng.uniform(0.0, 1.0);
+        g = rng.uniform(0.0, 1.0);
+        b = rng.uniform(0.0, 1.0);
+
+        const int num = cloud_hull->size();
+        if( num >= 3)
+        {
+            for(int i = 1; i < num; i++)
+            {
+                stringstream ss;
+                ss << id << "_hull_line_" << i;
+                pcl_viewer_->addLine(cloud_hull->points[i-1], cloud_hull->points[i], r, g, b, ss.str(), viewport );
+            }
+            stringstream ss;
+            ss << id << "_hull_line_0";
+            pcl_viewer_->addLine(cloud_hull->points[0], cloud_hull->points[num-1], r, g, b, ss.str(), viewport );
+        }
     }
 }
 
-PointCloudTypePtr KinectListener::getPointCloudFromIndices( const PointCloudTypePtr &input,
-                                             pcl::PointIndices &indices)
+void KinectListener::getPointCloudFromIndices( const PointCloudTypePtr &input,
+                                               pcl::PointIndices &indices,
+                                               PointCloudTypePtr &output)
 {
-    PointCloudTypePtr output (new PointCloudType );
+    output->clear();
     for(int i = 0; i < indices.indices.size(); i++)
     {
         output->points.push_back( input->points[ indices.indices[i] ]);
@@ -712,13 +782,13 @@ PointCloudTypePtr KinectListener::getPointCloudFromIndices( const PointCloudType
     output->is_dense = false;
     output->height = 1;
     output->width = output->points.size();
-    return output;
 }
 
-PointCloudTypePtr KinectListener::getPointCloudFromIndices( const PointCloudTypePtr &input,
-                                             std::vector<int> &indices)
+void KinectListener::getPointCloudFromIndices( const PointCloudTypePtr &input,
+                                               std::vector<int> &indices,
+                                               PointCloudTypePtr &output)
 {
-    PointCloudTypePtr output (new PointCloudType );
+    output->clear();
     for(int i = 0; i < indices.size(); i++)
     {
         output->points.push_back( input->points[ indices[i] ]);
@@ -726,6 +796,21 @@ PointCloudTypePtr KinectListener::getPointCloudFromIndices( const PointCloudType
     output->is_dense = false;
     output->height = 1;
     output->width = output->points.size();
+}
+
+PointCloudTypePtr KinectListener::getPointCloudFromIndices( const PointCloudTypePtr &input,
+                                             pcl::PointIndices &indices)
+{
+    PointCloudTypePtr output (new PointCloudType );
+    getPointCloudFromIndices( input, indices, output);
+    return output;
+}
+
+PointCloudTypePtr KinectListener::getPointCloudFromIndices( const PointCloudTypePtr &input,
+                                             std::vector<int> &indices)
+{
+    PointCloudTypePtr output (new PointCloudType );
+    getPointCloudFromIndices( input, indices, output);
     return output;
 }
 

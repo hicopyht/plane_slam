@@ -77,7 +77,10 @@ public:
 
     void extractPlaneHulls(const PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
-    void projectPoints ( const PointCloudTypePtr &input, const std::vector<int> &inliers,
+    void projectPoints ( const PointCloudTypePtr &input, const std::vector<int> &inlier,
+                         const Eigen::Vector4d &model_coefficients, PointCloudType &projected_points );
+
+    void projectPoints ( const PointCloudTypePtr &input, const std::vector<int> &inlier,
                          const Eigen::Vector4f &model_coefficients, PointCloudType &projected_points );
 
 //    void projectPoints( const PointCloudTypePtr &input, std::vector<int> &inliers,
