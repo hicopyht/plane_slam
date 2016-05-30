@@ -19,6 +19,7 @@ PlaneSlam::PlaneSlam() :
   , plane_match_distance_threshold_( 0.05 )
   , plane_inlier_leaf_size_( 0.02f )
   , plane_hull_alpha_( 0.5 )
+  , rng(12345)
 {
     isam2_parameters_.relinearizeThreshold = 0.05;
     isam2_parameters_.relinearizeSkip = 1;
@@ -82,17 +83,23 @@ void PlaneSlam::initialize(Pose3 &init_pose, std::vector<PlaneType> &planes)
         estimated_planes_.push_back( glmn );
 
         // Add to landmarks buffer
-        PlaneType global_plane = plane;
+        PlaneType global_plane;
         global_plane.coefficients = glmn.planeCoefficients();
+        global_plane.color.Blue = rng.uniform(0, 255);
+        global_plane.color.Green = rng.uniform(0, 255);
+        global_plane.color.Red = rng.uniform(0, 255);
+        global_plane.color.Alpha = 255;
         Eigen::Matrix4d transform = init_pose.matrix();
-        transformPointCloud( *plane.cloud, *global_plane.cloud, transform );
-        transformPointCloud( *plane.cloud_boundary, *global_plane.cloud_boundary, transform );
-        transformPointCloud( *plane.cloud_hull, *global_plane.cloud_hull, transform );
-        Eigen::Vector4f cen;
-        pcl::compute3DCentroid( *global_plane.cloud_boundary, cen );
-        global_plane.centroid.x = cen[0];
-        global_plane.centroid.y = cen[1];
-        global_plane.centroid.z = cen[2];
+        PointCloudTypePtr cloud_filtered( new PointCloudType );
+        voxelGridFilter( plane.cloud, cloud_filtered, plane_inlier_leaf_size_ );
+        transformPointCloud( *cloud_filtered, *global_plane.cloud, transform, global_plane.color );
+//        transformPointCloud( *plane.cloud_boundary, *global_plane.cloud_boundary, transform );
+//        transformPointCloud( *plane.cloud_hull, *global_plane.cloud_hull, transform );
+//        Eigen::Vector4f cen;
+//        pcl::compute3DCentroid( *global_plane.cloud_boundary, cen );
+//        global_plane.centroid.x = cen[0];
+//        global_plane.centroid.y = cen[1];
+//        global_plane.centroid.z = cen[2];
         landmarks_.push_back( global_plane );
 
         //
@@ -156,7 +163,7 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, std::vector<PlaneType> &planes)
     matchPlanes( predicted_observations, observations, pairs);
 
     // Add factor to exist landmark
-    Eigen::VectorXd unpairs = Eigen::VectorXd::Ones( planes.size() );
+    Eigen::VectorXi unpairs = Eigen::VectorXi::Ones( planes.size() );
     for( int i = 0; i < pairs.size(); i++)
     {
         PlanePair &pair = pairs[i];
@@ -183,20 +190,6 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, std::vector<PlaneType> &planes)
             OrientedPlane3 lmn( obs.coefficients );
             OrientedPlane3 glmn = lmn.transform( new_pose.inverse() );
             initial_estimate_.insert<OrientedPlane3>( ln, glmn );
-
-            // Add to landmarks buffer
-            PlaneType global_plane = obs;
-            global_plane.coefficients = glmn.planeCoefficients();
-            Eigen::Matrix4d transform = new_pose.matrix();
-            transformPointCloud( *obs.cloud, *global_plane.cloud, transform );
-            transformPointCloud( *obs.cloud_boundary, *global_plane.cloud_boundary, transform );
-            transformPointCloud( *obs.cloud_hull, *global_plane.cloud_hull, transform );
-            Eigen::Vector4f cen;
-            pcl::compute3DCentroid( *global_plane.cloud_boundary, cen );
-            global_plane.centroid.x = cen[0];
-            global_plane.centroid.y = cen[1];
-            global_plane.centroid.z = cen[2];
-            landmarks_.push_back( global_plane );
 
             //
             landmark_count_ ++;
@@ -233,12 +226,15 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, std::vector<PlaneType> &planes)
 //    Pose3 current_estimate = isam2_->calculateEstimate( pose_key ).cast<Pose3>();
 
     // Update landmarks
-    updateLandmarks( landmarks_, planes, pairs, new_pose, current_estimate, estimated_planes_ );
+    ros::Time utime =  ros::Time::now();
+    updateLandmarks( landmarks_, planes, pairs, current_estimate, estimated_planes_ );
+    cout << YELLOW << " - landmarks update time: " << (ros::Time::now() - utime).toSec()*1000
+         << " ms " << RESET << endl;
 
-    // Print estimate pose:
-    cout << BLUE;
-    current_estimate.print("Current estimate:");
-    cout << RESET << endl;
+//    // Print estimate pose:
+//    cout << BLUE;
+//    current_estimate.print("Current estimate:");
+//    cout << RESET << endl;
 
     // Clear the factor graph and values for the next iteration
     graph_.resize(0);
@@ -257,25 +253,29 @@ void PlaneSlam::matchPlanes( std::vector<OrientedPlane3> &predicted_observations
     for( int i = 0; i < observations.size(); i++)
     {
         OrientedPlane3 &obs = observations[i];
-        double min_d = 1e2;
+//        double min_d = 1e2;
         int min_index = -1;
+        int max_size = 0;
         for( int l = 0; l < predicted_observations.size(); l++)
         {
             if( paired[l] )
                 continue;
 
+            PlaneType &glm = landmarks_[l];
             OrientedPlane3 &lm = predicted_observations[l];
 //            Vector3 error = obs.errorVector( lm );
             Vector3 error = obs.error( lm );
             double dir_error = acos( cos(error[0])*cos(error[1]));
             double dis_error = fabs( error[2] );
             double d = fabs(dir_error) + dis_error;
-            cout << YELLOW << "  - " << i << "*" << l << ": " << dir_error << ", " << dis_error << RESET << endl;
+//            cout << YELLOW << "  - " << i << "*" << l << ": " << dir_error << ", " << dis_error << RESET << endl;
             if( (fabs(dir_error) < plane_match_direction_threshold_)
-                    && (dis_error < plane_match_distance_threshold_) && (d < min_d) )
+                    && (dis_error < plane_match_distance_threshold_) )
             {
-                min_d = d;
+                if( glm.cloud->size() > max_size )
+//                min_d = d;
                 min_index = l;
+                max_size = glm.cloud->size();
             }
         }
         if( min_index >= 0 )
@@ -313,16 +313,15 @@ void PlaneSlam::predictObservation( std::vector<OrientedPlane3> &landmarks, Pose
 void PlaneSlam::updateLandmarks( std::vector<PlaneType> &landmarks,
                                  const std::vector<PlaneType> &observations,
                                  const std::vector<PlanePair> &pairs,
-                                 const Pose3 &odom_pose,
                                  const Pose3 &estimated_pose,
                                  const std::vector<OrientedPlane3> &estimated_planes)
 
 {
-    if( landmarks.size() != estimated_planes.size() )
-    {
-        cout << RED << "[Error]: landmark.size() != estimated_planes.size()" << RESET << endl;
-        return;
-    }
+//    if( landmarks.size() != estimated_planes.size() )
+//    {
+//        cout << RED << "[Error]: landmark.size() != estimated_planes.size()" << RESET << endl;
+//        return;
+//    }
 
     Eigen::Matrix4d transform = estimated_pose.matrix();
 
@@ -332,44 +331,80 @@ void PlaneSlam::updateLandmarks( std::vector<PlaneType> &landmarks,
         lm.coefficients = estimated_planes[i].planeCoefficients();
     }
 
+    Eigen::VectorXi unpairs = Eigen::VectorXi::Ones( observations.size() );
+
     for( int i = 0; i < pairs.size(); i++)
     {
         const int iobs = pairs[i].iobs;
         const int ilm = pairs[i].ilm;
+        unpairs[iobs] = 0;
         const PlaneType &obs = observations[ iobs ];
         PlaneType &lm = landmarks[ ilm ] ;
 
-        PointCloudTypePtr cloud( new PointCloudType );
-        PointCloudTypePtr cloud_boundary( new PointCloudType );
-        PointCloudTypePtr cloud_hull( new PointCloudType );
+        PointCloudTypePtr cloud( new PointCloudType ), cloud_filtered( new PointCloudType );
+//        PointCloudTypePtr cloud_boundary( new PointCloudType );
+//        PointCloudTypePtr cloud_hull( new PointCloudType );
 
+        // downsample
+        voxelGridFilter( obs.cloud, cloud_filtered, plane_inlier_leaf_size_ );
         // transform cloud
-        transformPointCloud( *obs.cloud, *cloud, transform );
-        transformPointCloud( *obs.cloud_boundary, *cloud_boundary, transform );
-        transformPointCloud( *obs.cloud_hull, *cloud_hull, transform );
+        transformPointCloud( *cloud_filtered, *cloud, transform, lm.color );
+//        transformPointCloud( *obs.cloud_boundary, *cloud_boundary, transform );
+//        transformPointCloud( *obs.cloud_hull, *cloud_hull, transform );
 
         // sum
-        *lm.cloud += *cloud;
-        *lm.cloud_boundary += *cloud_boundary;
-        *lm.cloud_hull += *cloud_hull;
+        *cloud += *lm.cloud;
+//        *lm.cloud_boundary += *cloud_boundary;
+//        *lm.cloud_hull += *cloud_hull;
 
         // project
-        projectPoints( *lm.cloud, lm.coefficients, *cloud );
+        projectPoints( *cloud, lm.coefficients, *cloud_filtered );
 //        projectPoints( *lm.cloud_boundary, lm.coefficients, *cloud_boundary );
 //        projectPoints( *lm.cloud_hull, lm.coefficients, *cloud_hull );
 
         // refresh inlier, boundary, hull
-        passThoughFilter( cloud, lm.cloud, plane_inlier_leaf_size_ );
+        voxelGridFilter( cloud_filtered, lm.cloud, plane_inlier_leaf_size_ );
 //        cloudHull( cloud_boundary, lm.cloud_boundary );
-        cloudHull( cloud, lm.cloud_hull );
+//        cloudHull( cloud, lm.cloud_hull );
 
-        // compute new centroid
-        Eigen::Vector4d cen;
-        pcl::compute3DCentroid( *lm.cloud_hull, cen);
-        lm.centroid.x = cen[0];
-        lm.centroid.y = cen[1];
-        lm.centroid.z = cen[2];
+//        // compute new centroid
+//        Eigen::Vector4d cen;
+//        pcl::compute3DCentroid( *lm.cloud_hull, cen);
+//        lm.centroid.x = cen[0];
+//        lm.centroid.y = cen[1];
+//        lm.centroid.z = cen[2];
     }
+
+    // Add new to landmarks buffer
+    int lm_num = landmarks.size();
+    for( int i = 0; i < unpairs.rows(); i++)
+    {
+        if( unpairs[i] )
+        {
+            const PlaneType &obs = observations[i];
+            PlaneType global_plane;
+            global_plane.coefficients = estimated_planes[lm_num].planeCoefficients();
+            global_plane.color.Blue = rng.uniform(0, 255);
+            global_plane.color.Green = rng.uniform(0, 255);
+            global_plane.color.Red = rng.uniform(0, 255);
+            global_plane.color.Alpha = 255;
+            PointCloudTypePtr cloud_filtered( new PointCloudType );
+            voxelGridFilter( obs.cloud, cloud_filtered, plane_inlier_leaf_size_ );
+            transformPointCloud( *cloud_filtered, *global_plane.cloud, transform, global_plane.color );
+//            transformPointCloud( *cloud_filtered, *global_plane.cloud, transform );
+//            transformPointCloud( *obs.cloud_boundary, *global_plane.cloud_boundary, transform );
+//            transformPointCloud( *obs.cloud_hull, *global_plane.cloud_hull, transform );
+//            Eigen::Vector4f cen;
+//            pcl::compute3DCentroid( *global_plane.cloud_boundary, cen );
+//            global_plane.centroid.x = cen[0];
+//            global_plane.centroid.y = cen[1];
+//            global_plane.centroid.z = cen[2];
+
+            landmarks.push_back( global_plane );
+            lm_num = landmarks.size();
+        }
+    }
+
 }
 
 void PlaneSlam::publishEstimatedPath()
@@ -420,7 +455,7 @@ void PlaneSlam::publishOdomPath()
     cout << GREEN << "Publisher odom path, p = " << odom_poses_.size() << RESET << endl;
 }
 
-void PlaneSlam::passThoughFilter( const PointCloudTypePtr &cloud,
+void PlaneSlam::voxelGridFilter( const PointCloudTypePtr &cloud,
                                   PointCloudTypePtr &cloud_filtered,
                                   float leaf_size)
 {

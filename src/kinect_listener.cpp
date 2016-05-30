@@ -64,6 +64,7 @@ KinectListener::KinectListener() :
 
     true_path_publisher_ = nh_.advertise<nav_msgs::Path>("true_path", 10);
     pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("estimate_pose", 10);
+    planar_map_publisher_ = nh_.advertise<sensor_msgs::PointCloud2>("planar_map", 10);
 
     // config subscribers
     if(!topic_point_cloud_.empty()) // pointcloud2
@@ -106,7 +107,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
 
     // Get odom pose
     tf::Transform odom_pose;
-    if( !getOdomPose( odom_pose, depth_img_msg->header.frame_id ) )
+    if( !getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
         return;
 
     // Get camera parameter
@@ -137,7 +138,7 @@ void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img
 
     // Get odom pose
     tf::Transform odom_pose;
-    if( !getOdomPose( odom_pose, point_cloud->header.frame_id ) )
+    if( !getOdomPose( odom_pose, point_cloud->header.frame_id, ros::Time(0) ) )
         return;
 
     // Get camera parameter
@@ -232,6 +233,7 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
     map_viewer_->removeAllShapes();
 
     // Do slam
+    std::vector<PlaneType> landmarks;
     if(!is_initialized)
     {
         gtsam::Pose3 init_pose;
@@ -251,14 +253,20 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
             plane_slam_->publishOdomPath();
 
         // visualize landmark
-        std::vector<PlaneType> landmarks = plane_slam_->getLandmarks();
+        landmarks = plane_slam_->getLandmarks();
         // project and recalculate contour
-        // display
-        if(display_landmarks_)
-            displayLandmarks( landmarks, "landmark");
+
     }
+
     slam_dura = time.toc();
     time.tic();
+
+    // display landmarks
+    if(display_landmarks_ && landmarks.size() > 0)
+    {
+        displayLandmarks( landmarks, "landmark");
+        publishPlanarMap( landmarks );
+    }
 
     // display
     if(display_input_cloud_)
@@ -274,8 +282,8 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
     display_dura = time.toc();
     total_dura = (pcl::getTime() - start_time) * 1000;
 
-    ROS_INFO("Total time: %f, segment: %f, hull: %f, slam: %f, display: %f \n",
-             total_dura, segment_dura, hull_dura, slam_dura, display_dura);
+    cout << GREEN << "Total time: " << total_dura << ", segment: " << segment_dura << ", hull: "
+         << hull_dura << ", slam: "<< slam_dura << ", display: " << display_dura << RESET << endl;
     cout << "----------------------------------- END -------------------------------------" << endl;
 }
 
@@ -386,7 +394,6 @@ void KinectListener::organizedPlaneSegment(PointCloudTypePtr &input, std::vector
         plane.centroid.x = centroid[0];
         plane.centroid.y = centroid[1];
         plane.centroid.z = centroid[2];
-        plane.inlier = indices.indices;
         plane.coefficients[0] = coef.values[0];
         plane.coefficients[1] = coef.values[1];
         plane.coefficients[2] = coef.values[2];
@@ -394,6 +401,20 @@ void KinectListener::organizedPlaneSegment(PointCloudTypePtr &input, std::vector
         plane.sigmas[0] = fabs(plane.coefficients[0]*0.1);
         plane.sigmas[1] = fabs(plane.coefficients[1]*0.1);
         plane.sigmas[2] = fabs(plane.coefficients[3]*0.1);
+        //
+        plane.inlier = indices.indices;
+        plane.boundary_inlier = result.boundary_indices[i].indices;
+        plane.hull_inlier = result.boundary_indices[i].indices;
+        //
+        plane_slam_->projectPoints( *input, plane.inlier, plane.coefficients, *(plane.cloud) );
+        plane.cloud_boundary->points = pr.getContour();
+        plane.cloud_boundary->height = 1;
+        plane.cloud_boundary->width = plane.cloud_boundary->points.size();
+        plane.cloud_boundary->is_dense = false;
+        *plane.cloud_hull = *plane.cloud_boundary;
+//        getPointCloudFromIndices( input, plane.boundary_inlier, plane.cloud_boundary );
+//        getPointCloudFromIndices( input, plane.hull_inlier, plane.cloud_hull );
+        //
         planes.push_back( plane );
     }
 }
@@ -508,6 +529,25 @@ void KinectListener::publishPose( gtsam::Pose3 &pose)
     pose_publisher_.publish( msg );
 }
 
+void KinectListener::publishPlanarMap( const std::vector<PlaneType> &landmarks)
+{
+    PointCloudTypePtr cloud ( new PointCloudType );
+
+    for( int i = 0; i < landmarks.size(); i++)
+    {
+        const PlaneType &lm = landmarks[i];
+        *cloud += *lm.cloud;
+    }
+
+    sensor_msgs::PointCloud2 cloud2;
+    pcl::toROSMsg( *cloud, cloud2);
+    cloud2.header.frame_id = "/world";
+    cloud2.header.stamp = ros::Time::now();
+    cloud2.is_dense = false;
+
+    planar_map_publisher_.publish( cloud2 );
+}
+
 void KinectListener::displayLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix)
 {
 
@@ -579,14 +619,10 @@ void KinectListener::displayLinesAndNormals( const PointCloudTypePtr &input,
 
 void KinectListener::pclViewerLandmark( const PlaneType &plane, const std::string &id )
 {
-    double r = rng.uniform(0.0, 255.0);
-    double g = rng.uniform(0.0, 255.0);
-    double b = rng.uniform(0.0, 255.0);
-
     // inlier
     if( display_landmark_inlier_ )
     {
-        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color( plane.cloud, r, g, b);
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color( plane.cloud, plane.color.Red, plane.color.Green, plane.color.Blue);
         map_viewer_->addPointCloud( plane.cloud, color, id+"_inlier" );
         map_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, id+"_inlier" );
 
@@ -605,10 +641,10 @@ void KinectListener::pclViewerLandmark( const PlaneType &plane, const std::strin
                 p1.z = cen[2];
             }
 
-            p2.x = p1.x + plane.coefficients[0]*0.2;
-            p2.y = p1.y + plane.coefficients[1]*0.2;
-            p2.z = p1.z + plane.coefficients[2]*0.2;
-            map_viewer_->addArrow(p2, p1, r, g, b, false, id+"_arrow" );
+            p2.x = p1.x + plane.coefficients[0]*0.4;
+            p2.y = p1.y + plane.coefficients[1]*0.4;
+            p2.z = p1.z + plane.coefficients[2]*0.4;
+            map_viewer_->addArrow(p2, p1, plane.color.Red/255.0, plane.color.Green/255.0, plane.color.Blue/255.0, false, id+"_arrow" );
             // add a sphere
         //    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point" );
         }
@@ -617,9 +653,9 @@ void KinectListener::pclViewerLandmark( const PlaneType &plane, const std::strin
     // boundary
     if( display_landmark_boundary_ )
     {
-        r = rng.uniform(0.0, 255.0);
-        g = rng.uniform(0.0, 255.0);
-        b = rng.uniform(0.0, 255.0);
+        double r = rng.uniform(0.0, 255.0);
+        double g = rng.uniform(0.0, 255.0);
+        double b = rng.uniform(0.0, 255.0);
 
         pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color_boundary( plane.cloud_boundary, r, g, b);
         map_viewer_->addPointCloud( plane.cloud_boundary, color_boundary, id+"_boundary" );
@@ -629,9 +665,9 @@ void KinectListener::pclViewerLandmark( const PlaneType &plane, const std::strin
     // hull
     if( display_landmark_hull_ )
     {
-        r = rng.uniform(0.0, 1.0);
-        g = rng.uniform(0.0, 1.0);
-        b = rng.uniform(0.0, 1.0);
+        double r = rng.uniform(0.0, 1.0);
+        double g = rng.uniform(0.0, 1.0);
+        double b = rng.uniform(0.0, 1.0);
 
         const int num = plane.cloud_hull->size();
         if( num >= 3)
@@ -1005,12 +1041,12 @@ pcl::PointCloud<pcl::PointXYZRGBA>::Ptr KinectListener::image2PointCloud( const 
     return cloud;
 }
 
-bool KinectListener::getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame)
+bool KinectListener::getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time &time)
 {
     // get transform
     tf::StampedTransform trans;
     try{
-        tf_listener_.lookupTransform(odom_frame_, camera_frame, ros::Time(0), trans);
+        tf_listener_.lookupTransform(odom_frame_, camera_frame, time, trans);
     }catch (tf::TransformException &ex)
     {
         ROS_ERROR("%s",ex.what());

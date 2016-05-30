@@ -68,8 +68,12 @@ struct PlaneType
     PointCloudTypePtr cloud;
     PointCloudTypePtr cloud_boundary;
     PointCloudTypePtr cloud_hull;
+    RGBValue color;
 
-    PlaneType() : cloud( new PointCloudType), cloud_boundary( new PointCloudType), cloud_hull( new PointCloudType) {}
+    PlaneType() : cloud( new PointCloudType)
+      , cloud_boundary( new PointCloudType)
+      , cloud_hull( new PointCloudType)
+    {   color.Blue = 255; color.Green = 255; color.Red = 255; color.Alpha = 255;}
 };
 
 struct PlanePair
@@ -92,6 +96,11 @@ PointType transformPoint (const PointType &point,
 void transformPointCloud (const PointCloudType &cloud_in,
                           PointCloudType &cloud_out,
                           const Eigen::Matrix4d &transform);
+
+void transformPointCloud (const PointCloudType &cloud_in,
+                          PointCloudType &cloud_out,
+                          const Eigen::Matrix4d &transform,
+                          const RGBValue &color);
 
 
 //the following are UBUNTU/LINUX ONLY terminal color

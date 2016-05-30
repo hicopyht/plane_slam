@@ -15,6 +15,8 @@
 #include <tf/transform_listener.h>
 #include <tf_conversions/tf_eigen.h>
 //
+#include <pcl/io/pcd_io.h>
+#include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/console/time.h>
 #include <pcl/common/time.h>
@@ -102,6 +104,8 @@ protected:
 
     void publishPose( gtsam::Pose3 &pose);
 
+    void publishPlanarMap( const std::vector<PlaneType> &landmarks);
+
     void displayLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix = "landmark");
 
     void displayPlanes( const PointCloudTypePtr &input, std::vector<PlaneType> &planes, const std::string &prefix, int viewport);
@@ -122,7 +126,7 @@ protected:
     pcl::PointCloud<pcl::PointXYZRGBA>::Ptr image2PointCloud( const cv::Mat &rgb_img, const cv::Mat &depth_img,
                                                             const PlaneFromLineSegment::CAMERA_PARAMETERS& camera );
 
-    bool getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame );
+    bool getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time &time = ros::Time(0) );
 
     void publishTruePath();
 
@@ -163,6 +167,7 @@ private:
     //
     ros::Publisher true_path_publisher_;
     ros::Publisher pose_publisher_;
+    ros::Publisher planar_map_publisher_;
     //
     tf::TransformListener tf_listener_;
     //

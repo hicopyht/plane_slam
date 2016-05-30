@@ -77,7 +77,6 @@ public:
     void updateLandmarks( std::vector<PlaneType> &landmarks,
                           const std::vector<PlaneType> &observations,
                           const std::vector<PlanePair> &pairs,
-                          const Pose3 &odom_pose,
                           const Pose3 &estimated_pose,
                           const std::vector<OrientedPlane3> &estimated_planes);
 
@@ -87,7 +86,7 @@ public:
 
     inline std::vector<PlaneType> &getLandmarks() { return landmarks_; }
 
-    void passThoughFilter( const PointCloudTypePtr &cloud,
+    void voxelGridFilter( const PointCloudTypePtr &cloud,
                            PointCloudTypePtr &cloud_filtered,
                            float leaf_size = 0.02f);
 
@@ -150,6 +149,7 @@ private:
     bool first_pose_;
     int pose_count_;
     int landmark_count_;
+    cv::RNG rng;
 
     //
     std::vector<Pose3> estimated_poses_;
