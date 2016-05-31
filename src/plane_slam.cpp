@@ -17,6 +17,7 @@ PlaneSlam::PlaneSlam() :
   , landmark_count_( 0 )
   , plane_match_direction_threshold_( 0.1 )
   , plane_match_distance_threshold_( 0.05 )
+  , plane_match_check_overlap_( true )
   , plane_inlier_leaf_size_( 0.02f )
   , plane_hull_alpha_( 0.5 )
   , rng(12345)
@@ -160,7 +161,7 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, std::vector<PlaneType> &planes)
 
     // Match modelled landmark with measurement
     std::vector<PlanePair> pairs;
-    matchPlanes( predicted_observations, observations, pairs);
+    matchPlanes( predicted_observations, landmarks_, observations, planes, odom_pose, pairs);
 
     // Add factor to exist landmark
     Eigen::VectorXi unpairs = Eigen::VectorXi::Ones( planes.size() );
@@ -245,14 +246,18 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, std::vector<PlaneType> &planes)
 }
 
 // simple euclidian distance
-void PlaneSlam::matchPlanes( std::vector<OrientedPlane3> &predicted_observations,
-                             std::vector<OrientedPlane3> &observations,
+void PlaneSlam::matchPlanes( const std::vector<OrientedPlane3> &predicted_observations,
+                             const std::vector<PlaneType> &landmarks,
+                             const std::vector<OrientedPlane3> &observations,
+                             const std::vector<PlaneType> &observed_planes,
+                             const Pose3 pose,
                              std::vector<PlanePair> &pairs)
 {
     Eigen::VectorXd paired = Eigen::VectorXd::Zero( predicted_observations.size() );
     for( int i = 0; i < observations.size(); i++)
     {
-        OrientedPlane3 &obs = observations[i];
+        const PlaneType &observed = observed_planes[i];
+        const OrientedPlane3 &obs = observations[i];
 //        double min_d = 1e2;
         int min_index = -1;
         int max_size = 0;
@@ -261,8 +266,8 @@ void PlaneSlam::matchPlanes( std::vector<OrientedPlane3> &predicted_observations
             if( paired[l] )
                 continue;
 
-            PlaneType &glm = landmarks_[l];
-            OrientedPlane3 &lm = predicted_observations[l];
+            const PlaneType &glm = landmarks[l];
+            const OrientedPlane3 &lm = predicted_observations[l];
 //            Vector3 error = obs.errorVector( lm );
             Vector3 error = obs.error( lm );
             double dir_error = acos( cos(error[0])*cos(error[1]));
@@ -273,9 +278,14 @@ void PlaneSlam::matchPlanes( std::vector<OrientedPlane3> &predicted_observations
                     && (dis_error < plane_match_distance_threshold_) )
             {
                 if( glm.cloud->size() > max_size )
-//                min_d = d;
-                min_index = l;
-                max_size = glm.cloud->size();
+                {
+                    if( plane_match_check_overlap_ && !checkOverlap( glm.cloud, glm.coefficients, observed.cloud, pose ) )
+                        continue;
+    //                min_d = d;
+                    min_index = l;
+                    max_size = glm.cloud->size();
+
+                }
             }
         }
         if( min_index >= 0 )
@@ -620,6 +630,41 @@ void PlaneSlam::cloudHull( const PointCloudTypePtr &cloud, PointCloudTypePtr &cl
     chull.setInputCloud ( cloud );
     chull.setAlpha ( plane_hull_alpha_ );
     chull.reconstruct ( *cloud_hull );
+}
+
+bool PlaneSlam::checkOverlap( const PointCloudTypePtr &landmark_cloud, const OrientedPlane3 &landmark,
+                              const PointCloudTypePtr &observation, const Pose3 &pose)
+{
+    // transform and project pointcloud
+    PointCloudTypePtr cloud( new PointCloudType ), cloud_projected( new PointCloudType );
+    transformPointCloud( *observation, *cloud, pose.matrix() );
+    projectPoints( *cloud, landmark.planeCoefficients(), *cloud_projected );
+
+    // build octree
+    float resolution = plane_inlier_leaf_size_;
+    pcl::octree::OctreePointCloud<PointType> octreeD (resolution);
+    octreeD.setInputCloud( landmark_cloud );
+    octreeD.addPointsFromInputCloud();
+
+    // check if occupied
+    int collision = 0;
+    PointCloudType::iterator it = cloud_projected->begin();
+    for( ; it != cloud_projected->end(); it++)
+    {
+        PointType &pt = *it;
+        if( octreeD.isVoxelOccupiedAtPoint( pt ) )
+            collision ++;
+    }
+
+//    cout << GREEN << "  - collision: " << collision << "/" << cloud_projected->size() << RESET << endl;
+
+    double alpha = ((float)collision) / (float)cloud_projected->size();
+    if( alpha < plane_match_overlap_alpha_ )
+        return false;
+    else
+        return true;
+
+    return true;
 }
 
 void PlaneSlam::tfToPose3( tf::Transform &trans, gtsam::Pose3 &pose )

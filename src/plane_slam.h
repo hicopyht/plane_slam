@@ -26,6 +26,9 @@
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/project_inliers.h>
 #include <pcl/surface/concave_hull.h>
+#include <pcl/kdtree/kdtree_flann.h>
+#include <pcl/octree/octree.h>
+#include <pcl/octree/octree_pointcloud_occupancy.h>
 //
 #include "utils.h"
 
@@ -65,8 +68,11 @@ public:
 
     Pose3 planeSlam(Pose3 &rel_pose, std::vector<PlaneType> &planes);
 
-    void matchPlanes( std::vector<OrientedPlane3> &predicted_observations,
-                      std::vector<OrientedPlane3> &observations,
+    void matchPlanes( const std::vector<OrientedPlane3> &predicted_observations,
+                      const std::vector<PlaneType> &landmarks,
+                      const std::vector<OrientedPlane3> &observations,
+                      const std::vector<PlaneType> &observed_planes,
+                      const Pose3 pose,
                       std::vector<PlanePair> &pairs);
 
     void getPredictedObservation( Pose3 &pose, std::vector<OrientedPlane3> &predicted_observations );
@@ -111,6 +117,9 @@ public:
 
     void cloudHull( const PointCloudTypePtr &cloud, PointCloudTypePtr &cloud_hull);
 
+    bool checkOverlap( const PointCloudTypePtr &landmark_cloud, const OrientedPlane3 &landmark,
+                       const PointCloudTypePtr &observation, const Pose3 &pose);
+
     void tfToPose3( tf::Transform &trans, gtsam::Pose3 &pose );
 
     void pose3ToTF( gtsam::Pose3 &pose, tf::Transform &trans );
@@ -121,11 +130,18 @@ public:
     inline double getPlaneMatchDirectionThreshold() const { return plane_match_direction_threshold_; }
     inline double getPlaneMatchDistanceThreshold() const { return plane_match_distance_threshold_; }
 
+    inline void setPlaneMatchCheckOverlap( bool check ) { plane_match_check_overlap_ = check; }
+    inline bool getPlaneMatchCheckOverlap() const { return plane_match_check_overlap_; }
+
+    inline void setPlaneMatchOverlapAlpha( double alpha ) { plane_match_overlap_alpha_ = alpha; }
+    inline double getPlaneMatchOverlapAlpha() const { return plane_match_overlap_alpha_; }
+
     inline void setPlaneInlierLeafSize( double leaf_size ) { plane_inlier_leaf_size_ = leaf_size; }
     inline double getPlaneInlierLeafSize() const { return plane_inlier_leaf_size_; }
 
     inline void setPlaneHullAlpha( double alpha ) { plane_hull_alpha_ = alpha; }
     inline double getPlaneHullAlpha() const { return plane_hull_alpha_; }
+
 
 private:
     //
@@ -158,6 +174,8 @@ private:
     // Parameters
     double plane_match_direction_threshold_;
     double plane_match_distance_threshold_;
+    bool plane_match_check_overlap_;
+    double plane_match_overlap_alpha_;
     double plane_inlier_leaf_size_;
     double plane_hull_alpha_;
 };

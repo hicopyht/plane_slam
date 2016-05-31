@@ -424,7 +424,8 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     map_frame_ = config.map_frame;
     base_frame_ = config.base_frame;
     odom_frame_ = config.odom_frame;
-    plane_slam_->setPlaneMatchThreshold( config.plane_match_direction_threshold, config.plane_match_distance_threshold);
+    plane_slam_->setPlaneMatchThreshold( config.plane_match_direction_threshold * M_PI / 180.0, config.plane_match_distance_threshold);
+    plane_slam_->setPlaneMatchCheckOverlap( config.plane_match_check_overlap );
     plane_slam_->setPlaneInlierLeafSize( config.plane_inlier_leaf_size );
     plane_slam_->setPlaneHullAlpha( config.plane_hull_alpha );
     display_path_ = config.display_path;
