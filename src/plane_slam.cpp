@@ -96,11 +96,11 @@ void PlaneSlam::initialize(Pose3 &init_pose, std::vector<PlaneType> &planes)
         transformPointCloud( *cloud_filtered, *global_plane.cloud, transform, global_plane.color );
 //        transformPointCloud( *plane.cloud_boundary, *global_plane.cloud_boundary, transform );
 //        transformPointCloud( *plane.cloud_hull, *global_plane.cloud_hull, transform );
-//        Eigen::Vector4f cen;
-//        pcl::compute3DCentroid( *global_plane.cloud_boundary, cen );
-//        global_plane.centroid.x = cen[0];
-//        global_plane.centroid.y = cen[1];
-//        global_plane.centroid.z = cen[2];
+        Eigen::Vector4f cen;
+        pcl::compute3DCentroid( *global_plane.cloud, cen );
+        global_plane.centroid.x = cen[0];
+        global_plane.centroid.y = cen[1];
+        global_plane.centroid.z = cen[2];
         landmarks_.push_back( global_plane );
 
         //
@@ -242,7 +242,28 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, std::vector<PlaneType> &planes)
     initial_estimate_.clear();
     last_estimate_pose_ = current_estimate;
 
+    if( refine_planar_map_ )
+    {
+
+    }
+
     return current_estimate;
+}
+
+// return true if being refined.
+bool PlaneSlam::refinePlanarMap()
+{
+    std::map<int, int> coplanar;
+    int num = landmarks_.size();
+    for( int i = 0; i < (num - 1 ); i++)
+    {
+        PlaneType &p1 = landmarks_[i];
+        for( int j = i+1; j < num; j++)
+        {
+            PlaneType &p2 = landmarks_[j];
+
+        }
+    }
 }
 
 // simple euclidian distance
@@ -253,29 +274,44 @@ void PlaneSlam::matchPlanes( const std::vector<OrientedPlane3> &predicted_observ
                              const Pose3 pose,
                              std::vector<PlanePair> &pairs)
 {
-    Eigen::VectorXd paired = Eigen::VectorXd::Zero( predicted_observations.size() );
+//    Eigen::VectorXd paired = Eigen::VectorXd::Zero( predicted_observations.size() );
     for( int i = 0; i < observations.size(); i++)
     {
         const PlaneType &observed = observed_planes[i];
         const OrientedPlane3 &obs = observations[i];
-//        double min_d = 1e2;
+        // plane coordinate
+        Point3 point( observed.centroid.x, observed.centroid.y, observed.centroid.z );
+        Point3 col3 = obs.normal().point3();
+        Matrix32 basis = obs.normal().basis();
+        Point3 col1( basis(0,0), basis(1,0), basis(2,0) );
+        Point3 col2( basis(0,1), basis(1,1), basis(2,1) );
+        Rot3 rot3( col1, col2, col3 );
+        Pose3 local( rot3, point);
+        local.print("local coord: ");
+        // Transform observation to local frame
+        const OrientedPlane3 &lobs = obs.transform( local );
         int min_index = -1;
         int max_size = 0;
         for( int l = 0; l < predicted_observations.size(); l++)
         {
-            if( paired[l] )
-                continue;
+//            if( paired[l] )
+//                continue;
 
             const PlaneType &glm = landmarks[l];
-            const OrientedPlane3 &lm = predicted_observations[l];
-//            Vector3 error = obs.errorVector( lm );
-            Vector3 error = obs.error( lm );
-            double dir_error = acos( cos(error[0])*cos(error[1]));
-            double dis_error = fabs( error[2] );
-            double d = fabs(dir_error) + dis_error;
-//            cout << YELLOW << "  - " << i << "*" << l << ": " << dir_error << ", " << dis_error << RESET << endl;
-            if( (fabs(dir_error) < plane_match_direction_threshold_)
-                    && (dis_error < plane_match_distance_threshold_) )
+            const OrientedPlane3 &plm = predicted_observations[l];
+            // Transform landmark to local frame
+            const OrientedPlane3 &llm = plm.transform( local );
+            double dr_error = acos( lobs.normal().dot( llm.normal() ));
+            double ds_error = fabs( lobs.distance() - llm.distance() );
+            cout << CYAN << "  - " << i << "*" << l << ": " << dr_error << "("<< plane_match_direction_threshold_ << "), "
+                 << ds_error << "(" << plane_match_distance_threshold_ << ")" << RESET << endl;
+            //
+//            double dir_error = acos( obs.normal().dot( plm.normal() ));
+//            double dis_error = fabs( obs.distance() - plm.distance() );
+//            cout << YELLOW << "  - " << i << "*" << l << ": " << dir_error << "("<< plane_match_direction_threshold_ << "), "
+//                 << dis_error << "(" << plane_match_distance_threshold_ << ")" << RESET << endl;
+            if( (fabs(dr_error) < plane_match_direction_threshold_)
+                    && (ds_error < plane_match_distance_threshold_) )
             {
                 if( glm.cloud->size() > max_size )
                 {
@@ -290,7 +326,7 @@ void PlaneSlam::matchPlanes( const std::vector<OrientedPlane3> &predicted_observ
         }
         if( min_index >= 0 )
         {
-            paired[min_index] = 1;
+//            paired[min_index] = 1;
             pairs.push_back( PlanePair(i, min_index) );
         }
     }
@@ -377,12 +413,12 @@ void PlaneSlam::updateLandmarks( std::vector<PlaneType> &landmarks,
 //        cloudHull( cloud_boundary, lm.cloud_boundary );
 //        cloudHull( cloud, lm.cloud_hull );
 
-//        // compute new centroid
-//        Eigen::Vector4d cen;
-//        pcl::compute3DCentroid( *lm.cloud_hull, cen);
-//        lm.centroid.x = cen[0];
-//        lm.centroid.y = cen[1];
-//        lm.centroid.z = cen[2];
+        // compute new centroid
+        Eigen::Vector4d cen;
+        pcl::compute3DCentroid( *lm.cloud, cen);
+        lm.centroid.x = cen[0];
+        lm.centroid.y = cen[1];
+        lm.centroid.z = cen[2];
     }
 
     // Add new to landmarks buffer
@@ -404,11 +440,11 @@ void PlaneSlam::updateLandmarks( std::vector<PlaneType> &landmarks,
 //            transformPointCloud( *cloud_filtered, *global_plane.cloud, transform );
 //            transformPointCloud( *obs.cloud_boundary, *global_plane.cloud_boundary, transform );
 //            transformPointCloud( *obs.cloud_hull, *global_plane.cloud_hull, transform );
-//            Eigen::Vector4f cen;
-//            pcl::compute3DCentroid( *global_plane.cloud_boundary, cen );
-//            global_plane.centroid.x = cen[0];
-//            global_plane.centroid.y = cen[1];
-//            global_plane.centroid.z = cen[2];
+            Eigen::Vector4f cen;
+            pcl::compute3DCentroid( *global_plane.cloud, cen );
+            global_plane.centroid.x = cen[0];
+            global_plane.centroid.y = cen[1];
+            global_plane.centroid.z = cen[2];
 
             landmarks.push_back( global_plane );
             lm_num = landmarks.size();

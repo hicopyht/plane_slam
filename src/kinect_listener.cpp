@@ -65,6 +65,7 @@ KinectListener::KinectListener() :
     true_path_publisher_ = nh_.advertise<nav_msgs::Path>("true_path", 10);
     pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("estimate_pose", 10);
     planar_map_publisher_ = nh_.advertise<sensor_msgs::PointCloud2>("planar_map", 10);
+    auto_spin_map_viewer_ss_ = nh_.advertiseService("auto_spin_map_viewer", &KinectListener::autoSpinMapViewerCallback, this);
 
     // config subscribers
     if(!topic_point_cloud_.empty()) // pointcloud2
@@ -428,6 +429,7 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     plane_slam_->setPlaneMatchCheckOverlap( config.plane_match_check_overlap );
     plane_slam_->setPlaneInlierLeafSize( config.plane_inlier_leaf_size );
     plane_slam_->setPlaneHullAlpha( config.plane_hull_alpha );
+    plane_slam_->setRefinePlanarMap( config.refine_planar_map );
     display_path_ = config.display_path;
     display_odom_path_ = config.display_odom_path;
     display_landmarks_ = config.display_landmarks;
@@ -1075,4 +1077,21 @@ void KinectListener::publishTruePath()
     path.poses = true_poses_;
     true_path_publisher_.publish( path );
     cout << GREEN << "Publish true path, p = " << true_poses_.size() << RESET << endl;
+}
+
+bool KinectListener::autoSpinMapViewerCallback(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res)
+{
+    auto_spin_map_viewer_ = true;
+    ros::Time time = ros::Time::now() + ros::Duration(20.0);
+    ros::Rate loop_rate( 50 );
+    while( auto_spin_map_viewer_ && ros::ok())
+    {
+        map_viewer_->spinOnce( 20 );
+        loop_rate.sleep();
+
+        if( ros::Time::now() > time )
+            auto_spin_map_viewer_ = false;
+    }
+    res.success = true;
+    return true;
 }

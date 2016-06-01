@@ -68,6 +68,8 @@ public:
 
     Pose3 planeSlam(Pose3 &rel_pose, std::vector<PlaneType> &planes);
 
+    bool refinePlanarMap();
+
     void matchPlanes( const std::vector<OrientedPlane3> &predicted_observations,
                       const std::vector<PlaneType> &landmarks,
                       const std::vector<OrientedPlane3> &observations,
@@ -142,6 +144,9 @@ public:
     inline void setPlaneHullAlpha( double alpha ) { plane_hull_alpha_ = alpha; }
     inline double getPlaneHullAlpha() const { return plane_hull_alpha_; }
 
+    inline void setRefinePlanarMap( bool refine ) { refine_planar_map_ = refine; }
+    inline bool getRefinePlanarMap() const { return refine_planar_map_; }
+
 
 private:
     //
@@ -178,6 +183,7 @@ private:
     double plane_match_overlap_alpha_;
     double plane_inlier_leaf_size_;
     double plane_hull_alpha_;
+    bool refine_planar_map_;
 };
 
 #endif // PLANE_SLAM_H

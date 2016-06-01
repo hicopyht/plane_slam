@@ -14,6 +14,7 @@
 #include <cv_bridge/cv_bridge.h>
 #include <tf/transform_listener.h>
 #include <tf_conversions/tf_eigen.h>
+#include <std_srvs/SetBool.h>
 //
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
@@ -135,6 +136,8 @@ protected:
         return (prttcp_->isValid(p) && p.z > 0);
     }
 
+    bool autoSpinMapViewerCallback( std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res);
+
 private:
     ros::NodeHandle nh_;
     ros::NodeHandle private_nh_;
@@ -168,6 +171,7 @@ private:
     ros::Publisher true_path_publisher_;
     ros::Publisher pose_publisher_;
     ros::Publisher planar_map_publisher_;
+    ros::ServiceServer auto_spin_map_viewer_ss_;
     //
     tf::TransformListener tf_listener_;
     //
@@ -180,6 +184,7 @@ private:
     PointRepresentationConstPtr prttcp_;
     //
     pcl::visualization::PCLVisualizer* map_viewer_;
+    bool auto_spin_map_viewer_;
 
     // Plane slam
     string map_frame_;
