@@ -69,10 +69,18 @@ struct PlaneType
     PointCloudTypePtr cloud_boundary;
     PointCloudTypePtr cloud_hull;
     RGBValue color;
+    bool valid;
 
     PlaneType() : cloud( new PointCloudType)
       , cloud_boundary( new PointCloudType)
       , cloud_hull( new PointCloudType)
+      , valid(true)
+    {   color.Blue = 255; color.Green = 255; color.Red = 255; color.Alpha = 255;}
+
+    PlaneType( bool is_valid ) : cloud( new PointCloudType)
+      , cloud_boundary( new PointCloudType)
+      , cloud_hull( new PointCloudType)
+      , valid(is_valid)
     {   color.Blue = 255; color.Green = 255; color.Red = 255; color.Alpha = 255;}
 };
 

@@ -82,11 +82,17 @@ public:
     void predictObservation( std::vector<OrientedPlane3> &landmarks, Pose3 &pose,
                              std::vector<OrientedPlane3> &predicted_observations);
 
+    void updateSlamResult( std::vector<Pose3> &poses, std::vector<OrientedPlane3> &planes);
+
     void updateLandmarks( std::vector<PlaneType> &landmarks,
                           const std::vector<PlaneType> &observations,
                           const std::vector<PlanePair> &pairs,
                           const Pose3 &estimated_pose,
                           const std::vector<OrientedPlane3> &estimated_planes);
+
+    NonlinearFactorGraph graphRekey( NonlinearFactorGraph &graph, const std::map<Key,Key>& rekey_mapping);
+
+    void nonlinearFactorRekey(boost::shared_ptr<NonlinearFactor> &factor, const std::map<Key, Key>& rekey_mapping);
 
     void publishEstimatedPath();
 
@@ -121,6 +127,10 @@ public:
 
     bool checkOverlap( const PointCloudTypePtr &landmark_cloud, const OrientedPlane3 &landmark,
                        const PointCloudTypePtr &observation, const Pose3 &pose);
+
+    bool checkLandmarksOverlap( const PlaneType &lm1, const PlaneType &lm2);
+
+    void mergeLandmarkInlier( PlaneType &from, PlaneType &to);
 
     void tfToPose3( tf::Transform &trans, gtsam::Pose3 &pose );
 
@@ -168,14 +178,16 @@ private:
     Values initial_estimate_; // initial guess
     //
     bool first_pose_;
-    int pose_count_;
-    int landmark_count_;
     cv::RNG rng;
 
     //
     std::vector<Pose3> estimated_poses_;
     std::vector<OrientedPlane3> estimated_planes_;
     std::vector<PlaneType> landmarks_;
+    //
+    int pose_count_;
+    int landmark_max_count_;
+    //
     // Parameters
     double plane_match_direction_threshold_;
     double plane_match_distance_threshold_;

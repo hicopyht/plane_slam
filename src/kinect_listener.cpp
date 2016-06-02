@@ -539,7 +539,9 @@ void KinectListener::publishPlanarMap( const std::vector<PlaneType> &landmarks)
     for( int i = 0; i < landmarks.size(); i++)
     {
         const PlaneType &lm = landmarks[i];
-        *cloud += *lm.cloud;
+        if( !lm.valid )
+            continue;
+       *cloud += *lm.cloud;
     }
 
     sensor_msgs::PointCloud2 cloud2;
@@ -556,9 +558,16 @@ void KinectListener::displayLandmarks( const std::vector<PlaneType> &landmarks, 
 
     if(display_landmarks_)
     {
+        int invalid_count = 0;
         for(int i = 0; i < landmarks.size(); i++)
         {
             const PlaneType & plane = landmarks[i];
+            if( !plane.valid )
+            {
+                invalid_count ++;
+                continue;
+            }
+
             pcl::ModelCoefficients coeff;
             coeff.values.resize( 4 );
             coeff.values[0] = plane.coefficients[0];
@@ -571,6 +580,8 @@ void KinectListener::displayLandmarks( const std::vector<PlaneType> &landmarks, 
 //            map_viewer_->addPlane( coeff, 1.0, 1.0, 1.0, ss.str());
             pclViewerLandmark( plane, ss.str() );
         }
+
+        cout << GREEN << " Display landmarks: " << landmarks.size() << ", invalid = " << invalid_count << RESET << endl;
     }
 }
 
@@ -1082,10 +1093,16 @@ void KinectListener::publishTruePath()
 bool KinectListener::autoSpinMapViewerCallback(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res)
 {
     auto_spin_map_viewer_ = true;
-    ros::Time time = ros::Time::now() + ros::Duration(20.0);
+    ros::Time time = ros::Time::now() + ros::Duration(30.0);
     ros::Rate loop_rate( 50 );
-    while( auto_spin_map_viewer_ && ros::ok())
+    while( auto_spin_map_viewer_ && nh_.ok())
     {
+        if( !nh_.ok() )
+        {
+            res.message = "Node shutdown.";
+            return true;
+        }
+
         map_viewer_->spinOnce( 20 );
         loop_rate.sleep();
 

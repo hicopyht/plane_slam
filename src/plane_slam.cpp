@@ -14,7 +14,7 @@ PlaneSlam::PlaneSlam() :
   , initial_estimate_()
   , first_pose_(true)
   , pose_count_( 0 )
-  , landmark_count_( 0 )
+  , landmark_max_count_( 0 )
   , plane_match_direction_threshold_( 0.1 )
   , plane_match_distance_threshold_( 0.05 )
   , plane_match_check_overlap_( true )
@@ -64,7 +64,7 @@ void PlaneSlam::initialize(Pose3 &init_pose, std::vector<PlaneType> &planes)
     odom_poses_.clear();
     odom_poses_.push_back( odom_pose_ );
 
-    landmark_count_ = 0;
+    landmark_max_count_ = 0;
     for(int i = 0; i < planes.size(); i++)
     {
         PlaneType &plane = planes[i];
@@ -104,7 +104,7 @@ void PlaneSlam::initialize(Pose3 &init_pose, std::vector<PlaneType> &planes)
         landmarks_.push_back( global_plane );
 
         //
-        landmark_count_ ++;
+        landmark_max_count_ ++;
     }
     isam2_->update( graph_, initial_estimate_ );
     last_estimate_pose_ = init_pose;
@@ -170,7 +170,7 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, std::vector<PlaneType> &planes)
         PlanePair &pair = pairs[i];
         PlaneType &obs = planes[pair.iobs];
         unpairs[pair.iobs] = 0;
-        Key ln = Symbol('l', pair.ilm);
+        Key ln =  Symbol( 'l', pair.ilm);
         noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( obs.sigmas );
         graph_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
     }
@@ -183,7 +183,7 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, std::vector<PlaneType> &planes)
         {
             // Add factor
             PlaneType &obs = planes[i];
-            Key ln = Symbol('l', landmark_count_);
+            Key ln = Symbol('l', landmark_max_count_);
             noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( obs.sigmas );
             graph_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
 
@@ -193,11 +193,9 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, std::vector<PlaneType> &planes)
             initial_estimate_.insert<OrientedPlane3>( ln, glmn );
 
             //
-            landmark_count_ ++;
+            landmark_max_count_ ++;
         }
     }
-
-    cout << GREEN << " lm number: " << landmark_count_ << RESET << endl;
 
     // Update graph
     cout << "update " << endl;
@@ -205,25 +203,11 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, std::vector<PlaneType> &planes)
     // isam2->update(); // call additionally
 
     // Update estimated poses and planes
-    Values values = isam2_->calculateBestEstimate();
-    estimated_poses_.clear();
-    for(int i = 0; i < pose_count_; i++)
-    {
-        Key xn = Symbol('x', i);
-        Pose3 pose = values.at(xn).cast<Pose3>();
-        estimated_poses_.push_back( pose );
-    }
-    estimated_planes_.clear();
-    for(int i = 0; i < landmark_count_; i++)
-    {
-        Key ln = Symbol('l', i);
-        OrientedPlane3 predicted = values.at(ln).cast<OrientedPlane3>();
-        estimated_planes_.push_back( predicted );
-    }
+    updateSlamResult( estimated_poses_, estimated_planes_ );
 
     // Update pose
     cout << pose_count_ << " get current est " << endl;
-    Pose3 current_estimate = values.at( pose_key ).cast<Pose3>();
+    Pose3 current_estimate = estimated_poses_[estimated_poses_.size() - 1];
 //    Pose3 current_estimate = isam2_->calculateEstimate( pose_key ).cast<Pose3>();
 
     // Update landmarks
@@ -244,7 +228,7 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, std::vector<PlaneType> &planes)
 
     if( refine_planar_map_ )
     {
-
+        refinePlanarMap();
     }
 
     return current_estimate;
@@ -253,17 +237,87 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, std::vector<PlaneType> &planes)
 // return true if being refined.
 bool PlaneSlam::refinePlanarMap()
 {
-    std::map<int, int> coplanar;
-    int num = landmarks_.size();
+    cout << RED << ", lm size: " << landmarks_.size()
+         << ", pl size: " << estimated_planes_.size() << endl;
+
+    // find co-planar landmark pair
+    bool find_coplanar = false;
+    const int num = landmarks_.size();
     for( int i = 0; i < (num - 1 ); i++)
     {
         PlaneType &p1 = landmarks_[i];
+        OrientedPlane3 &lm1 = estimated_planes_[i];
+
+        // check is alive
+        if( !p1.valid )
+            continue;
+
+        // plane coordinate
+        Point3 point( p1.centroid.x, p1.centroid.y, p1.centroid.z );
+        Point3 col3 = lm1.normal().point3();
+        Matrix32 basis = lm1.normal().basis();
+        Point3 col1( basis(0,0), basis(1,0), basis(2,0) );
+        Point3 col2( basis(0,1), basis(1,1), basis(2,1) );
+        Rot3 rot3( col1, col2, col3 );
+        Pose3 local( rot3, point);
+        // Transform observation to local frame
+        const OrientedPlane3 &llm1 = lm1.transform( local );
+
         for( int j = i+1; j < num; j++)
         {
             PlaneType &p2 = landmarks_[j];
+            OrientedPlane3 &lm2 = estimated_planes_[j];
 
-        }
-    }
+            // check if alive
+            if( !p2.valid )
+                continue;
+
+            /// Match two plane
+            // Transform landmark to local frame
+            const OrientedPlane3 &llm2 = lm2.transform( local );
+            double dr_error = acos( llm1.normal().dot( llm2.normal() ));
+            double ds_error = fabs( llm1.distance() - llm2.distance() );
+            const double direction_threshold = 5.0 * M_PI / 180.0;
+            const double distance_threshold = 0.1;
+            cout << CYAN << "  - " << i << "*" << j << ": " << dr_error << "("<< direction_threshold << "), "
+                 << ds_error << "(" << distance_threshold << ")" << RESET << endl;
+            if( (fabs(dr_error) < direction_threshold)
+                    && (ds_error < distance_threshold) )
+            {
+                // check if overlap
+                bool overlap = false;
+                if( p1.cloud->size() < p2.cloud->size() )
+                    overlap = checkLandmarksOverlap( p2, p1);
+                else
+                    overlap = checkLandmarksOverlap( p1, p2);
+
+                if( overlap )
+                {
+                    // merge, make smaller one invalid
+                    if( p1.cloud->size() < p2.cloud->size() )
+                    {
+                        mergeLandmarkInlier( p1, p2);
+                        p1.valid = false;
+                        find_coplanar = true;
+                        cout << YELLOW << "  -- merge co-planar: " << i << " to " << j << RESET << endl;
+                        break;
+                    }
+                    else
+                    {
+                        mergeLandmarkInlier( p2, p1);
+                        find_coplanar = true;
+                        cout << YELLOW << "  -- merge co-planar: " << j << " to " << i << RESET << endl;
+                        p2.valid = false;
+                    }
+                } // end of if overlap
+
+            }
+
+        } // end of for( int j = i+1; j < num; j++)
+
+    } // end of for( int i = 0; i < (num - 1 ); i++)
+
+    return find_coplanar;
 }
 
 // simple euclidian distance
@@ -299,6 +353,11 @@ void PlaneSlam::matchPlanes( const std::vector<OrientedPlane3> &predicted_observ
 
             const PlaneType &glm = landmarks[l];
             const OrientedPlane3 &plm = predicted_observations[l];
+
+            // check if alive
+            if( !glm.valid )
+                continue;
+
             // Transform landmark to local frame
             const OrientedPlane3 &llm = plm.transform( local );
             double dr_error = acos( lobs.normal().dot( llm.normal() ));
@@ -337,11 +396,14 @@ void PlaneSlam::getPredictedObservation( Pose3 &pose, std::vector<OrientedPlane3
 {
     Values values = isam2_->calculateBestEstimate();
 
-    for(int i = 0; i < landmark_count_; i++)
+    for(int i = 0; i < landmark_max_count_; i++)
     {
         Key ln = Symbol('l', i);
-        OrientedPlane3 predicted = values.at(ln).cast<OrientedPlane3>();
-        predicted_observations.push_back( predicted.transform( pose ) );
+        if( values.exists( ln ))
+        {
+            OrientedPlane3 predicted = values.at(ln).cast<OrientedPlane3>();
+            predicted_observations.push_back( predicted.transform( pose ) );
+        }
     }
 }
 
@@ -353,6 +415,36 @@ void PlaneSlam::predictObservation( std::vector<OrientedPlane3> &landmarks, Pose
     for(int i = 0; i < landmarks.size(); i++)
     {
         predicted_observations.push_back( landmarks[i].transform( pose ) );
+    }
+}
+
+void PlaneSlam::updateSlamResult( std::vector<Pose3> &poses, std::vector<OrientedPlane3> &planes )
+{
+    // clear buffer
+    poses.clear();
+    planes.clear();
+
+    //
+    Values values = isam2_->calculateBestEstimate();
+    for(int i = 0; i < pose_count_; i++)
+    {
+        Key xn = Symbol('x', i);
+        Pose3 pose = values.at(xn).cast<Pose3>();
+        poses.push_back( pose );
+    }
+    for(int i = 0; i < landmark_max_count_; i++)
+    {
+
+        Key ln = Symbol('l', i);
+        if( values.exists(ln) )
+        {
+            OrientedPlane3 predicted = values.at(ln).cast<OrientedPlane3>();
+            planes.push_back( predicted );
+        }
+        else
+        {
+            planes.push_back( OrientedPlane3() );
+        }
     }
 }
 
@@ -451,6 +543,39 @@ void PlaneSlam::updateLandmarks( std::vector<PlaneType> &landmarks,
         }
     }
 
+}
+
+NonlinearFactorGraph PlaneSlam::graphRekey( NonlinearFactorGraph &graph, const std::map<Key,Key>& rekey_mapping)
+{
+    NonlinearFactorGraph result;
+    BOOST_FOREACH( boost::shared_ptr<NonlinearFactor> & f, graph)
+    {
+        if (f)
+        {
+            boost::shared_ptr<NonlinearFactor> new_factor =
+                    boost::static_pointer_cast<NonlinearFactor>( boost::shared_ptr<NonlinearFactor>() );
+            *new_factor = *f;
+            nonlinearFactorRekey(new_factor, rekey_mapping);
+            result.push_back( f );
+        }
+        else
+        {
+            result.push_back(boost::shared_ptr<NonlinearFactor>());
+        }
+    }
+
+    return result;
+}
+
+void PlaneSlam::nonlinearFactorRekey(boost::shared_ptr<NonlinearFactor> &factor, const std::map<Key, Key>& rekey_mapping)
+{
+    for (size_t i = 0; i < factor->size(); ++i)
+    {
+        Key& cur_key = factor->keys()[i];
+        std::map<Key, Key>::const_iterator mapping = rekey_mapping.find(cur_key);
+        if (mapping != rekey_mapping.end())
+            cur_key = mapping->second;
+    }
 }
 
 void PlaneSlam::publishEstimatedPath()
@@ -701,6 +826,53 @@ bool PlaneSlam::checkOverlap( const PointCloudTypePtr &landmark_cloud, const Ori
         return true;
 
     return true;
+}
+
+// indices of lm1 must bigger than that of lm2
+bool PlaneSlam::checkLandmarksOverlap( const PlaneType &lm1, const PlaneType &lm2)
+{
+    // project lm2 inlier to lm1 plane
+    PointCloudTypePtr cloud_projected( new PointCloudType );
+    projectPoints( *lm2.cloud, lm1.coefficients, *cloud_projected );
+
+    // build octree from lm1
+    float resolution = plane_inlier_leaf_size_;
+    pcl::octree::OctreePointCloud<PointType> octreeD (resolution);
+    octreeD.setInputCloud( lm1.cloud );
+    octreeD.addPointsFromInputCloud();
+
+    // check if occupied
+    int collision = 0;
+    PointCloudType::iterator it = cloud_projected->begin();
+    for( ; it != cloud_projected->end(); it++)
+    {
+        PointType &pt = *it;
+        if( octreeD.isVoxelOccupiedAtPoint( pt ) )
+        {
+            collision ++;
+            if(collision > 10)
+                return true;
+        }
+    }
+
+//    cout << GREEN << "  - collision: " << collision << "/" << cloud_projected->size() << RESET << endl;
+
+//    double alpha = ((float)collision) / (float)cloud_projected->size();
+//    if( alpha < plane_match_overlap_alpha_ )
+//        return false;
+//    else
+//        return true;
+
+    return false;
+}
+
+// just do project and voxel filter
+void PlaneSlam::mergeLandmarkInlier( PlaneType &from, PlaneType &to)
+{
+    PointCloudTypePtr cloud( new PointCloudType );
+    projectPoints( *from.cloud, to.coefficients, *cloud);
+    *cloud += *to.cloud;
+    voxelGridFilter( cloud, to.cloud, plane_inlier_leaf_size_ );
 }
 
 void PlaneSlam::tfToPose3( tf::Transform &trans, gtsam::Pose3 &pose )
