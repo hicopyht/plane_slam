@@ -33,10 +33,10 @@ PlaneSlam::PlaneSlam() :
     marker_publisher_ = nh_.advertise<visualization_msgs::Marker>("visualization_marker", 10);
 }
 
-void PlaneSlam::initialize(Pose3 &init_pose, std::vector<PlaneType> &planes)
+bool PlaneSlam::initialize(Pose3 &init_pose, std::vector<PlaneType> &planes)
 {
     if(planes.size() == 0)
-        return;
+        return false;
 
     // Add a prior factor
     pose_count_ = 0;
@@ -117,6 +117,8 @@ void PlaneSlam::initialize(Pose3 &init_pose, std::vector<PlaneType> &planes)
     cout << GREEN << "Initialize plane slam, register first observation." << endl;
     initial_estimate_.print(" - Initial estimate: ");
     cout << RESET << endl;
+
+    return true;
 }
 
 Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, std::vector<PlaneType> &planes)
@@ -141,7 +143,7 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, std::vector<PlaneType> &planes)
     odom_sigmas << rel_pose.translation().vector()*0.2, rel_pose.rotation().rpy() * 0.1;
     noiseModel::Diagonal::shared_ptr odometry_noise =
             noiseModel::Diagonal::Sigmas( odom_sigmas );
-    cout << GREEN << "odom noise dim: " << odometry_noise->dim() << RESET << endl;
+//    cout << GREEN << "odom noise dim: " << odometry_noise->dim() << RESET << endl;
     Key pose_key = Symbol('x', pose_count_);
     Key last_key = Symbol('x', pose_count_-1);
     graph_.push_back(BetweenFactor<Pose3>(last_key, pose_key, rel_pose, odometry_noise));
@@ -279,8 +281,8 @@ bool PlaneSlam::refinePlanarMap()
             double ds_error = fabs( llm1.distance() - llm2.distance() );
             const double direction_threshold = 5.0 * M_PI / 180.0;
             const double distance_threshold = 0.1;
-            cout << CYAN << "  - " << i << "*" << j << ": " << dr_error << "("<< direction_threshold << "), "
-                 << ds_error << "(" << distance_threshold << ")" << RESET << endl;
+//            cout << CYAN << "  - " << i << "*" << j << ": " << dr_error << "("<< direction_threshold << "), "
+//                 << ds_error << "(" << distance_threshold << ")" << RESET << endl;
             if( (fabs(dr_error) < direction_threshold)
                     && (ds_error < distance_threshold) )
             {
@@ -299,14 +301,14 @@ bool PlaneSlam::refinePlanarMap()
                         mergeLandmarkInlier( p1, p2);
                         p1.valid = false;
                         find_coplanar = true;
-                        cout << YELLOW << "  -- merge co-planar: " << i << " to " << j << RESET << endl;
+                        cout << RED << "  -- merge co-planar: " << i << " to " << j << RESET << endl;
                         break;
                     }
                     else
                     {
                         mergeLandmarkInlier( p2, p1);
                         find_coplanar = true;
-                        cout << YELLOW << "  -- merge co-planar: " << j << " to " << i << RESET << endl;
+                        cout << RED << "  -- merge co-planar: " << j << " to " << i << RESET << endl;
                         p2.valid = false;
                     }
                 } // end of if overlap
@@ -341,7 +343,7 @@ void PlaneSlam::matchPlanes( const std::vector<OrientedPlane3> &predicted_observ
         Point3 col2( basis(0,1), basis(1,1), basis(2,1) );
         Rot3 rot3( col1, col2, col3 );
         Pose3 local( rot3, point);
-        local.print("local coord: ");
+//        local.print("local coord: ");
         // Transform observation to local frame
         const OrientedPlane3 &lobs = obs.transform( local );
         int min_index = -1;
@@ -362,8 +364,8 @@ void PlaneSlam::matchPlanes( const std::vector<OrientedPlane3> &predicted_observ
             const OrientedPlane3 &llm = plm.transform( local );
             double dr_error = acos( lobs.normal().dot( llm.normal() ));
             double ds_error = fabs( lobs.distance() - llm.distance() );
-            cout << CYAN << "  - " << i << "*" << l << ": " << dr_error << "("<< plane_match_direction_threshold_ << "), "
-                 << ds_error << "(" << plane_match_distance_threshold_ << ")" << RESET << endl;
+//            cout << CYAN << "  - " << i << "*" << l << ": " << dr_error << "("<< plane_match_direction_threshold_ << "), "
+//                 << ds_error << "(" << plane_match_distance_threshold_ << ")" << RESET << endl;
             //
 //            double dir_error = acos( obs.normal().dot( plm.normal() ));
 //            double dis_error = fabs( obs.distance() - plm.distance() );

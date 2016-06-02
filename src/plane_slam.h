@@ -64,7 +64,7 @@ class PlaneSlam
 public:
     PlaneSlam();
 
-    void initialize(Pose3 &init_pose, std::vector<PlaneType> &planes);
+    bool initialize(Pose3 &init_pose, std::vector<PlaneType> &planes);
 
     Pose3 planeSlam(Pose3 &rel_pose, std::vector<PlaneType> &planes);
 

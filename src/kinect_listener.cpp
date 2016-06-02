@@ -204,12 +204,14 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
     // Plane Segment
     if( plane_segment_method_ == ORGANSIZED)
     {
+        cout << GREEN << "Organized segmentation." << RESET << endl;
         organizedPlaneSegment( cloud_in, segment_planes );
         segment_dura = time.toc();
         time.tic();
     }
     else if( plane_segment_method_ == LINE_BADED )
     {
+        cout << GREEN << "Line based segmentation." << RESET << endl;
         lineBasedPlaneSegment( cloud_in, segment_planes );
         segment_dura = time.toc();
         time.tic();
@@ -239,8 +241,10 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
     {
         gtsam::Pose3 init_pose;
         plane_slam_->tfToPose3( odom_pose, init_pose);
-        plane_slam_->initialize( init_pose, segment_planes );
-        is_initialized = true;
+        if( plane_slam_->initialize( init_pose, segment_planes ) )
+            is_initialized = true;
+        else
+            return;
     }
     else
     {
