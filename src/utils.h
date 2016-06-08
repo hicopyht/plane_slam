@@ -3,6 +3,9 @@
 
 #include <ros/ros.h>
 #include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+#include <opencv2/features2d/features2d.hpp>
+#include <opencv2/nonfree/features2d.hpp>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/ros/conversions.h>
@@ -12,6 +15,8 @@
 #include <Eigen/Core>
 #include <stdio.h>
 #include <vector>
+
+using namespace std;
 
 //
 typedef pcl::PointCloud< pcl::PointXYZ > PointCloudXYZ;
@@ -26,6 +31,8 @@ typedef PointCloudType::Ptr PointCloudTypePtr;
 typedef PointCloudType::ConstPtr PointCloudTypeConstPtr;
 
 typedef boost::shared_ptr<const pcl::PointRepresentation< PointType > > PointRepresentationConstPtr;
+
+typedef std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> > std_vector_of_eigen_vector4f;
 
 // RGB Value
 typedef union
@@ -62,6 +69,7 @@ struct PlaneType
     PointType centroid;
     Eigen::Vector4d coefficients;
     Eigen::Vector3d sigmas;
+    //
     std::vector<int> inlier;
     std::vector<int> boundary_inlier;
     std::vector<int> hull_inlier;
@@ -70,16 +78,23 @@ struct PlaneType
     PointCloudTypePtr cloud_hull;
     RGBValue color;
     bool valid;
+    //
+    cv::Mat mask;
+    std::vector<cv::KeyPoint> feature_locations_2d;
+    std_vector_of_eigen_vector4f feature_locations_3d;
+    cv::Mat feature_descriptors;
 
     PlaneType() : cloud( new PointCloudType)
       , cloud_boundary( new PointCloudType)
       , cloud_hull( new PointCloudType)
+      , mask()
       , valid(true)
     {   color.Blue = 255; color.Green = 255; color.Red = 255; color.Alpha = 255;}
 
     PlaneType( bool is_valid ) : cloud( new PointCloudType)
       , cloud_boundary( new PointCloudType)
       , cloud_hull( new PointCloudType)
+      , mask()
       , valid(is_valid)
     {   color.Blue = 255; color.Green = 255; color.Red = 255; color.Alpha = 255;}
 };

@@ -157,6 +157,9 @@ public:
     inline void setRefinePlanarMap( bool refine ) { refine_planar_map_ = refine; }
     inline bool getRefinePlanarMap() const { return refine_planar_map_; }
 
+    inline void setPlanarMergeThreshold( double direction_thresh, double distance_thresh ) {
+        planar_merge_direction_threshold_ = direction_thresh;
+        planar_merge_distance_threshold_ = distance_thresh;}
 
 private:
     //
@@ -196,6 +199,8 @@ private:
     double plane_inlier_leaf_size_;
     double plane_hull_alpha_;
     bool refine_planar_map_;
+    double planar_merge_direction_threshold_;
+    double planar_merge_distance_threshold_;
 };
 
 #endif // PLANE_SLAM_H

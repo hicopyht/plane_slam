@@ -52,17 +52,24 @@ class KinectListener
 {
     enum { VGA = 0, QVGA = 1, QQVGA = 2};
     enum { LINE_BADED = 0, ORGANSIZED = 1};
+    enum { SURF = 0, ORB = 1, SIFT = 2};
 public:
     KinectListener();
 
-    void processCloud( const PointCloudTypePtr &input, tf::Transform &odom_pose );
+    ~KinectListener();
+
+    void processCloud( const PointCloudTypePtr &input, const cv::Mat visual_image, tf::Transform &odom_pose );
 
     void lineBasedPlaneSegment(PointCloudTypePtr &input,
                                std::vector<PlaneType> &planes);
 
     void organizedPlaneSegment(PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
+    void computeKeypoint( const PointCloudTypePtr &cloud, const cv::Mat &visual_image, std::vector<PlaneType> &planes );
 
+    void projectTo3D( const PointCloudTypePtr &cloud,
+                      std::vector<cv::KeyPoint> &locations_2d,
+                      std_vector_of_eigen_vector4f &locations_3d);
 
 protected:
     void noCloudCallback (const sensor_msgs::ImageConstPtr& visual_img_msg,
@@ -100,12 +107,16 @@ protected:
     void downsampleOrganizedCloud(const PointCloudTypePtr &input, PointCloudTypePtr &output,
                                   PlaneFromLineSegment::CAMERA_PARAMETERS &out_camera, int size_type);
 
+    void downsampleImage(const cv::Mat &input, cv::Mat &output, int size_type);
+
     void getCameraParameter(const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
                             PlaneFromLineSegment::CAMERA_PARAMETERS &camera);
 
     void publishPose( gtsam::Pose3 &pose);
 
     void publishPlanarMap( const std::vector<PlaneType> &landmarks);
+
+    void displayKeypoint( const cv::Mat visual_image, std::vector<PlaneType> &planes);
 
     void displayLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix = "landmark");
 
@@ -137,6 +148,10 @@ protected:
     }
 
     bool autoSpinMapViewerCallback( std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res);
+
+    cv::FeatureDetector* createDetector( const std::string& detectorType );
+
+    cv::DescriptorExtractor* createDescriptorExtractor( const string& descriptorType );
 
 private:
     ros::NodeHandle nh_;
@@ -186,7 +201,12 @@ private:
     pcl::visualization::PCLVisualizer* map_viewer_;
     bool auto_spin_map_viewer_;
 
+    //Variables
+    cv::Ptr<cv::FeatureDetector> detector_;
+    cv::Ptr<cv::DescriptorExtractor> extractor_;
+
     // Plane slam
+    bool do_slam_;
     string map_frame_;
     string base_frame_;
     string odom_frame_;
@@ -202,6 +222,8 @@ private:
     int cloud_size_type_;
     int cloud_size_type_config_;
     int plane_segment_method_;
+    std::string feature_detector_type_;
+    std::string feature_extractor_type_;
 
     bool display_input_cloud_;
     bool display_line_cloud_;

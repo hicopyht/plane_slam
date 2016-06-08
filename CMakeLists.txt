@@ -42,7 +42,7 @@ LIST( APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules )
 ## System dependencies are found with CMake's conventions
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(Eigen3 REQUIRED)
-find_package(OpenCV REQUIRED)
+find_package(OpenCV 2.4.13 REQUIRED)
 find_package(PCL 1.7 REQUIRED)
 
 # Include GTSAM CMake tools
@@ -108,6 +108,7 @@ catkin_package(
 # include_directories(include)
 include_directories(
   ${catkin_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIR}
   ${PCL_INCLUDE_DIRS}
   ${Wrap_INCLUDE_DIR}
@@ -128,6 +129,7 @@ target_link_libraries( ${PROJECT_NAME}
     ${catkin_LIBRARIES}
     ${EIGEN3_LIBS}
     ${OpenCV_LIBS}
+    ${OpenCV_LIBRARIES}
     ${PCL_LIBRARIES}
     ${CppUnitLite_LIBS}
     gtsam

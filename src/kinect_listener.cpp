@@ -1,6 +1,9 @@
 #include "kinect_listener.h"
 
 
+const std::string KeypointWindow = "Keypoint";
+
+
 KinectListener::KinectListener() :
     private_nh_("~")
   , plane_slam_config_server_( ros::NodeHandle( "PlaneSlam" ) )
@@ -41,7 +44,7 @@ KinectListener::KinectListener() :
     private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
     private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/camera/rgb/image_color");
     private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth/image");
-    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/rgb/camera_info");
+    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/depth/camera_info");
     private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
 
     pcl_viewer_->createViewPort(0, 0, 0.5, 0.5, viewer_v1_);
@@ -61,6 +64,13 @@ KinectListener::KinectListener() :
     map_viewer_->initCameraParameters();
     map_viewer_->setCameraPosition( 0, 3.0, 3.0, -3.0, 0, 0, -1, -1, 0 );
     map_viewer_->setShowFPS(true);
+
+    //
+    cv::namedWindow( KeypointWindow );
+
+    // feature detector
+    detector_ = createDetector( feature_detector_type_ );
+    extractor_ = createDescriptorExtractor( feature_extractor_type_ );
 
     true_path_publisher_ = nh_.advertise<nav_msgs::Path>("true_path", 10);
     pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("estimate_pose", 10);
@@ -99,6 +109,11 @@ KinectListener::KinectListener() :
 
 }
 
+KinectListener::~KinectListener()
+{
+    async_spinner_->stop();
+    cv::destroyAllWindows();
+}
 
 void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_img_msg,
                                 const sensor_msgs::ImageConstPtr& depth_img_msg,
@@ -122,12 +137,12 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
 
     //
     if(!loop_one_message_)
-        processCloud( cloud_in, odom_pose );
+        processCloud( cloud_in, visual_image, odom_pose );
     else
         while(loop_one_message_ && ros::ok())
         {
             ros::Duration(0.2).sleep();
-            processCloud( cloud_in, odom_pose );
+            processCloud( cloud_in, visual_image, odom_pose );
         }
 }
 
@@ -145,22 +160,24 @@ void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img
     // Get camera parameter
     getCameraParameter( cam_info_msg, camera_parameters_);
 
+    // Get Mat Image
+    cv::Mat visual_image = cv_bridge::toCvCopy(visual_img_msg)->image; // to cv image
     // To pcl pointcloud
     PointCloudTypePtr cloud_in ( new PointCloudType );
     pcl::fromROSMsg( *point_cloud, *cloud_in);
 
     //
     if(!loop_one_message_)
-        processCloud( cloud_in, odom_pose );
+        processCloud( cloud_in, visual_image, odom_pose );
     else
         while(loop_one_message_ && ros::ok())
         {
             ros::Duration(0.2).sleep();
-            processCloud( cloud_in, odom_pose );
+            processCloud( cloud_in, visual_image, odom_pose );
         }
 }
 
-void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform &odom_pose )
+void KinectListener::processCloud( const PointCloudTypePtr &input, const cv::Mat visual_image, tf::Transform &odom_pose )
 {
 //    static tf::Transform last_pose = odom_pose;
     geometry_msgs::PoseStamped pstamped;
@@ -174,22 +191,26 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
     std::vector<PlaneType> segment_planes;
 
     PointCloudTypePtr cloud_in( new PointCloudType );
+    cv::Mat visual;
     // if use downsample cloud
     cloud_size_type_ = cloud_size_type_config_;
     if( cloud_size_type_ == QVGA)
     {
         cout << GREEN << "QVGA" << RESET << endl;
         downsampleOrganizedCloud( input, cloud_in, camera_parameters_, (int)QVGA);
+        downsampleImage( visual_image, visual, (int)QVGA );
     }
     else if( cloud_size_type_ == QQVGA)
     {
         cout << GREEN << "QQVGA" << RESET << endl;
         downsampleOrganizedCloud( input, cloud_in, camera_parameters_, (int)QQVGA);
+        downsampleImage( visual_image, visual, (int)QQVGA );
     }
     else
     {
         cout << GREEN << "VGA" << RESET << endl;
         cloud_in = input; // copy pointer
+        visual = visual_image;
     }
 
     double start_time = pcl::getTime();
@@ -215,6 +236,10 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
         lineBasedPlaneSegment( cloud_in, segment_planes );
         segment_dura = time.toc();
         time.tic();
+
+        // Detect Keypoint
+        computeKeypoint( cloud_in, visual, segment_planes );
+        displayKeypoint( visual, segment_planes );
     }
     else
     {
@@ -229,6 +254,7 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
     hull_dura = time.toc();
     time.tic();
 
+
     // display
     pcl_viewer_->removeAllPointClouds();
     pcl_viewer_->removeAllShapes();
@@ -237,30 +263,33 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
 
     // Do slam
     std::vector<PlaneType> landmarks;
-    if(!is_initialized)
+    if( do_slam_ )
     {
-        gtsam::Pose3 init_pose;
-        plane_slam_->tfToPose3( odom_pose, init_pose);
-        if( plane_slam_->initialize( init_pose, segment_planes ) )
-            is_initialized = true;
+        if(!is_initialized)
+        {
+            gtsam::Pose3 init_pose;
+            plane_slam_->tfToPose3( odom_pose, init_pose);
+            if( plane_slam_->initialize( init_pose, segment_planes ) )
+                is_initialized = true;
+            else
+                return;
+        }
         else
-            return;
-    }
-    else
-    {
-        gtsam::Pose3 pose3;
-        plane_slam_->tfToPose3( odom_pose, pose3 );
-        gtsam::Pose3 estmated_pose = plane_slam_->planeSlam( pose3, segment_planes );
-        publishPose( estmated_pose );
-        if(display_path_)
-            plane_slam_->publishEstimatedPath();
-        if(display_odom_path_)
-            plane_slam_->publishOdomPath();
+        {
+            gtsam::Pose3 pose3;
+            plane_slam_->tfToPose3( odom_pose, pose3 );
+            gtsam::Pose3 estmated_pose = plane_slam_->planeSlam( pose3, segment_planes );
+            publishPose( estmated_pose );
+            if(display_path_)
+                plane_slam_->publishEstimatedPath();
+            if(display_odom_path_)
+                plane_slam_->publishOdomPath();
 
-        // visualize landmark
-        landmarks = plane_slam_->getLandmarks();
-        // project and recalculate contour
+            // visualize landmark
+            landmarks = plane_slam_->getLandmarks();
+            // project and recalculate contour
 
+        }
     }
 
     slam_dura = time.toc();
@@ -291,6 +320,55 @@ void KinectListener::processCloud( const PointCloudTypePtr &input, tf::Transform
          << hull_dura << ", slam: "<< slam_dura << ", display: " << display_dura << RESET << endl;
     cout << "----------------------------------- END -------------------------------------" << endl;
 }
+
+void KinectListener::computeKeypoint( const PointCloudTypePtr &cloud, const cv::Mat &visual_image, std::vector<PlaneType> &planes )
+{
+    // Get gray image
+    cv::Mat gray_img;
+    if(visual_image.type() == CV_8UC3)
+        cv::cvtColor(visual_image, gray_img, CV_RGB2GRAY);
+    else
+        gray_img = visual_image;
+
+    // Detect feature for all planes
+    for( int i = 0; i < planes.size(); i++)
+    {
+        PlaneType &plane = planes[i];
+        detector_->detect( gray_img, plane.feature_locations_2d, plane.mask );// fill 2d locations
+        extractor_->compute( gray_img, plane.feature_locations_2d, plane.feature_descriptors ); //fill feature_descriptors_ with information
+        projectTo3D( cloud, plane.feature_locations_2d, plane.feature_locations_3d ); // project to 3d
+    }
+
+}
+
+void KinectListener::projectTo3D( const PointCloudTypePtr &cloud,
+                                  std::vector<cv::KeyPoint> &locations_2d,
+                                  std_vector_of_eigen_vector4f &locations_3d)
+{
+    // Clear
+    if(locations_3d.size())
+        locations_3d.clear();
+
+    for(int i = 0; i < locations_2d.size(); )
+    {
+        cv::Point2f p2d = locations_2d[i].pt;
+
+        PointType p3d = cloud->at((int) p2d.x,(int) p2d.y);
+
+        // Check for invalid measurements
+        if ( isnan(p3d.x) || isnan(p3d.y) || isnan(p3d.z))
+        {
+            locations_2d.erase( locations_2d.begin()+i );
+            continue;
+        }
+
+        locations_3d.push_back(Eigen::Vector4f(p3d.x, p3d.y, p3d.z, 1.0));
+        i++; //Only increment if no element is removed from vector
+//        if( locations_3d.size() > max_keyp )
+//            break;
+    }
+}
+
 
 void KinectListener::setlineBasedPlaneSegmentParameters()
 {
@@ -361,6 +439,7 @@ void KinectListener::lineBasedPlaneSegment(PointCloudTypePtr &input,
     {
         PlaneFromLineSegment::NormalType &normal = line_based_planes[i];
         PlaneType plane;
+        plane.mask = normal.mask;
         plane.centroid = normal.centroid;
         plane.coefficients[0] = normal.coefficients[0];
         plane.coefficients[1] = normal.coefficients[1];
@@ -426,6 +505,7 @@ void KinectListener::organizedPlaneSegment(PointCloudTypePtr &input, std::vector
 
 void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &config, uint32_t level)
 {
+    do_slam_ = config.do_slam;
     map_frame_ = config.map_frame;
     base_frame_ = config.base_frame;
     odom_frame_ = config.odom_frame;
@@ -434,6 +514,7 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     plane_slam_->setPlaneInlierLeafSize( config.plane_inlier_leaf_size );
     plane_slam_->setPlaneHullAlpha( config.plane_hull_alpha );
     plane_slam_->setRefinePlanarMap( config.refine_planar_map );
+    plane_slam_->setPlanarMergeThreshold( config.planar_merge_direction_threshold, config.planar_merge_distance_threshold );
     display_path_ = config.display_path;
     display_odom_path_ = config.display_odom_path;
     display_landmarks_ = config.display_landmarks;
@@ -449,6 +530,8 @@ void KinectListener::planeSegmentReconfigCallback(plane_slam::PlaneSegmentConfig
 {
     cloud_size_type_config_ = config.cloud_size_type;
     plane_segment_method_ = config.segment_method;
+    feature_detector_type_ = config.feature_detector_type;
+    feature_extractor_type_ = config.feature_extractor_type;
     display_input_cloud_ = config.display_input_cloud;
     display_line_cloud_ = config.display_line_cloud;
     display_normal_ = config.display_normal;
@@ -555,6 +638,23 @@ void KinectListener::publishPlanarMap( const std::vector<PlaneType> &landmarks)
     cloud2.is_dense = false;
 
     planar_map_publisher_.publish( cloud2 );
+}
+
+void KinectListener::displayKeypoint( const cv::Mat visual_image, std::vector<PlaneType> &planes)
+{
+    // Keypoints
+    std::vector<cv::KeyPoint> keypoints;
+    if( planes.size() > 0)
+        keypoints = planes[0].feature_locations_2d;
+//    for( int i = 0; i < planes.size(); i++)
+//    {
+//        keypoints += planes[i].feature_locations_2d;
+//    }
+
+    cv::Mat image;
+    cv::drawKeypoints( visual_image, keypoints, image, cv::Scalar::all(-1), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS );
+    cv::imshow( KeypointWindow, image );
+    cv::waitKey(1);
 }
 
 void KinectListener::displayLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix)
@@ -984,6 +1084,17 @@ void KinectListener::downsampleOrganizedCloud(const PointCloudTypePtr &input, Po
     out_camera.scale = 1.0;
 }
 
+void KinectListener::downsampleImage(const cv::Mat &input, cv::Mat &output, int size_type)
+{
+    int skip = pow(2, size_type);
+    int width = input.cols / skip;
+    int height = input.rows / skip;
+
+    cout << GREEN << " - downsample image size: " << width << "x" << height << RESET << endl;
+
+    cv::pyrDown( input, output, cv::Size( width, height ) );
+}
+
 void KinectListener::getCameraParameter(const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
                                       PlaneFromLineSegment::CAMERA_PARAMETERS &camera)
 {
@@ -1115,4 +1226,59 @@ bool KinectListener::autoSpinMapViewerCallback(std_srvs::SetBool::Request &req, 
     }
     res.success = true;
     return true;
+}
+
+///Analog to opencv example file and modified to use adjusters
+cv::FeatureDetector* KinectListener::createDetector( const std::string& detectorType )
+{
+    cv::FeatureDetector* fd = 0;
+    if( !detectorType.compare( "FAST" ) )
+    {
+//        fd = new cv::FastFeatureDetector( 20/*threshold*/, true/*nonmax_suppression*/ );
+        fd = new cv::FastFeatureDetector();
+    }
+    else if( !detectorType.compare( "SURF" ) )
+    {
+        fd = new cv::SurfFeatureDetector(200.0, 6, 5);
+//        fd = new cv::SurfFeatureDetector();
+    }
+    else if( !detectorType.compare( "ORB" ) )
+    {
+        fd = new cv::OrbFeatureDetector();
+    }
+    else if( !detectorType.compare( "SIFT" ) )
+    {
+        fd = new cv::SiftFeatureDetector();
+    }
+    else
+    {
+        ROS_WARN("No valid detector-type given: %s. Using SURF.", detectorType.c_str());
+        fd = createDetector("SURF"); //recursive call with correct parameter
+    }
+    ROS_ERROR_COND(fd == 0, "No detector could be created");
+    return fd;
+}
+
+cv::DescriptorExtractor* KinectListener::createDescriptorExtractor( const string& descriptorType )
+{
+    cv::DescriptorExtractor* extractor = 0;
+    if( !descriptorType.compare( "SURF" ) )
+    {
+        extractor = new cv::SurfDescriptorExtractor();/*( int nOctaves=4, int nOctaveLayers=2, bool extended=false )*/
+    }
+    else if( !descriptorType.compare( "ORB" ) )
+    {
+        extractor = new cv::OrbDescriptorExtractor();
+    }
+    else if( !descriptorType.compare( "SIFT" ) )
+    {
+        extractor = new cv::SiftDescriptorExtractor();/*( double magnification=SIFT::DescriptorParams::GET_DEFAULT_MAGNIFICATION(), bool isNormalize=true, bool recalculateAngles=true, int nOctaves=SIFT::CommonParams::DEFAULT_NOCTAVES, int nOctaveLayers=SIFT::CommonParams::DEFAULT_NOCTAVE_LAYERS, int firstOctave=SIFT::CommonParams::DEFAULT_FIRST_OCTAVE, int angleMode=SIFT::CommonParams::FIRST_ANGLE )*/
+    }
+    else
+    {
+        ROS_ERROR("No valid descriptor-matcher-type given: %s. Using SURF", descriptorType.c_str());
+        extractor = createDescriptorExtractor("SURF");
+    }
+    ROS_ERROR_COND(extractor == 0, "No extractor could be created");
+    return extractor;
 }

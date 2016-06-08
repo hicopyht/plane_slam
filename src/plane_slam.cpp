@@ -279,7 +279,7 @@ bool PlaneSlam::refinePlanarMap()
             const OrientedPlane3 &llm2 = lm2.transform( local );
             double dr_error = acos( llm1.normal().dot( llm2.normal() ));
             double ds_error = fabs( llm1.distance() - llm2.distance() );
-            const double direction_threshold = 5.0 * M_PI / 180.0;
+            const double direction_threshold = 20.0 * M_PI / 180.0;
             const double distance_threshold = 0.1;
 //            cout << CYAN << "  - " << i << "*" << j << ": " << dr_error << "("<< direction_threshold << "), "
 //                 << ds_error << "(" << distance_threshold << ")" << RESET << endl;
@@ -362,7 +362,8 @@ void PlaneSlam::matchPlanes( const std::vector<OrientedPlane3> &predicted_observ
 
             // Transform landmark to local frame
             const OrientedPlane3 &llm = plm.transform( local );
-            double dr_error = acos( lobs.normal().dot( llm.normal() ));
+            double cs = lobs.normal().dot( llm.normal() );
+            double dr_error = acos( cs );
             double ds_error = fabs( lobs.distance() - llm.distance() );
 //            cout << CYAN << "  - " << i << "*" << l << ": " << dr_error << "("<< plane_match_direction_threshold_ << "), "
 //                 << ds_error << "(" << plane_match_distance_threshold_ << ")" << RESET << endl;
