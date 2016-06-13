@@ -58,14 +58,16 @@ public:
 
     ~KinectListener();
 
-    void processCloud( const PointCloudTypePtr &input, const cv::Mat visual_image, tf::Transform &odom_pose );
+    void processCloud( KinectFrame &frame, const tf::Transform &odom_pose = tf::Transform::getIdentity() );
 
     void lineBasedPlaneSegment(PointCloudTypePtr &input,
                                std::vector<PlaneType> &planes);
 
     void organizedPlaneSegment(PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
-    void computeKeypoint( const PointCloudTypePtr &cloud, const cv::Mat &visual_image, std::vector<PlaneType> &planes );
+    RESULT_OF_PNP estimateMotion( KinectFrame& current_frame, KinectFrame& last_frame, PlaneFromLineSegment::CAMERA_PARAMETERS& camera );
+
+    void computeKeypoint( const cv::Mat &visual, std::vector<cv::KeyPoint> &keypoints, cv::Mat &feature_descriptors, const cv::Mat& mask=cv::Mat());
 
     void projectTo3D( const PointCloudTypePtr &cloud,
                       std::vector<cv::KeyPoint> &locations_2d,
@@ -116,7 +118,7 @@ protected:
 
     void publishPlanarMap( const std::vector<PlaneType> &landmarks);
 
-    void displayKeypoint( const cv::Mat visual_image, std::vector<PlaneType> &planes);
+    void displayKeypoint( const cv::Mat &visual, std::vector<cv::KeyPoint> &keypoints );
 
     void displayLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix = "landmark");
 

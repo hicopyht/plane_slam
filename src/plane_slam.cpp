@@ -878,7 +878,7 @@ void PlaneSlam::mergeLandmarkInlier( PlaneType &from, PlaneType &to)
     voxelGridFilter( cloud, to.cloud, plane_inlier_leaf_size_ );
 }
 
-void PlaneSlam::tfToPose3( tf::Transform &trans, gtsam::Pose3 &pose )
+void PlaneSlam::tfToPose3( const tf::Transform &trans, gtsam::Pose3 &pose )
 {
     Eigen::Matrix3d m33 = matrixTF2Eigen( trans.getBasis() );
     gtsam::Rot3 rot3(m33);
@@ -890,7 +890,7 @@ void PlaneSlam::tfToPose3( tf::Transform &trans, gtsam::Pose3 &pose )
     pose = gtsam::Pose3( rot3, point3 );
 }
 
-void PlaneSlam::pose3ToTF( gtsam::Pose3 &pose, tf::Transform &trans )
+void PlaneSlam::pose3ToTF( const gtsam::Pose3 &pose, tf::Transform &trans )
 {
     trans.setOrigin( tf::Vector3( pose.x(), pose.y(), pose.z()) );
     tf::Matrix3x3 m33;

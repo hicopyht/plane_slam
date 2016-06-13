@@ -6,6 +6,8 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/nonfree/features2d.hpp>
+#include <opencv2/calib3d/calib3d.hpp>
+//#include <opencv2/core/eigen.hpp>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/ros/conversions.h>
@@ -13,10 +15,12 @@
 #include <pcl/point_representation.h>
 
 #include <Eigen/Core>
+#include <Eigen/Geometry>
 #include <stdio.h>
 #include <vector>
 
 using namespace std;
+using namespace Eigen;
 
 //
 typedef pcl::PointCloud< pcl::PointXYZ > PointCloudXYZ;
@@ -55,9 +59,29 @@ struct CAMERA_INTRINSIC_PARAMETERS
     CAMERA_INTRINSIC_PARAMETERS() : width(640), height(480), cx(319.5), cy(239.5), fx(525.0), fy(525.0), scale(1.0) {}
 };
 
-struct Frame
+struct KinectFrame
 {
     cv::Mat visual_image;
+    cv::Mat depth_image;
+    cv::Mat depth_mono;
+    PointCloudTypePtr cloud;
+    //
+    PointCloudTypePtr cloud_in; //
+    cv::Mat visual; //
+    //
+    std::vector<cv::KeyPoint> feature_locations_2d;
+    std_vector_of_eigen_vector4f feature_locations_3d;
+    cv::Mat feature_descriptors;
+
+    KinectFrame() : cloud( new PointCloudType ), cloud_in( new PointCloudType ) {}
+};
+
+// PnP Result
+struct RESULT_OF_PNP
+{
+    Eigen::Matrix3d rotation;
+    Eigen::Vector3d translation;
+    int inliers;
 };
 
 /*
@@ -124,6 +148,10 @@ void transformPointCloud (const PointCloudType &cloud_in,
                           PointCloudType &cloud_out,
                           const Eigen::Matrix4d &transform,
                           const RGBValue &color);
+
+void depthToCV8UC1(cv::Mat& depth_img, cv::Mat& mono8_img);
+
+void cvToEigen(const cv::Mat& src, Eigen::Matrix3d& dst );
 
 
 //the following are UBUNTU/LINUX ONLY terminal color

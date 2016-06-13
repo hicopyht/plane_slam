@@ -132,9 +132,9 @@ public:
 
     void mergeLandmarkInlier( PlaneType &from, PlaneType &to);
 
-    void tfToPose3( tf::Transform &trans, gtsam::Pose3 &pose );
+    void tfToPose3( const tf::Transform &trans, gtsam::Pose3 &pose );
 
-    void pose3ToTF( gtsam::Pose3 &pose, tf::Transform &trans );
+    void pose3ToTF( const gtsam::Pose3 &pose, tf::Transform &trans );
 
     inline void setPlaneMatchThreshold( double direction_thresh, double distance_thresh) {
         plane_match_direction_threshold_ = direction_thresh;
