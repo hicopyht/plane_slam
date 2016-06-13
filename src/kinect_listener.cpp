@@ -139,7 +139,9 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
     // Get PointCloud
     current_frame.cloud = image2PointCloud( current_frame.visual_image, current_frame.depth_image, camera_parameters_);
 
-    //
+
+
+    // Process data
     processCloud( current_frame, odom_pose );
 
     //
@@ -204,8 +206,6 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
     true_poses_.push_back( pstamped );
     publishTruePath();
 
-    std::vector<PlaneType> segment_planes;
-
     // if use downsample cloud
     cloud_size_type_ = cloud_size_type_config_;
     if( cloud_size_type_ == QVGA)
@@ -241,14 +241,14 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
     if( plane_segment_method_ == ORGANSIZED)
     {
         cout << GREEN << "Organized segmentation." << RESET << endl;
-        organizedPlaneSegment( frame.cloud_in, segment_planes );
+        organizedPlaneSegment( frame.cloud_in, frame.segment_planes );
         segment_dura = time.toc();
         time.tic();
     }
     else if( plane_segment_method_ == LINE_BADED )
     {
         cout << GREEN << "Line based segmentation." << RESET << endl;
-        lineBasedPlaneSegment( frame.cloud_in, segment_planes );
+        lineBasedPlaneSegment( frame.cloud_in, frame.segment_planes );
         segment_dura = time.toc();
         time.tic();
     }
@@ -258,7 +258,7 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
         exit(0);
     }
 
-    cout << GREEN << " planes: " << segment_planes.size() << RESET << endl;
+    cout << GREEN << " planes: " << frame.segment_planes.size() << RESET << endl;
 
     // extract Hull
 //    plane_slam_->extractPlaneHulls( cloud_in, segment_planes );
@@ -286,7 +286,7 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
         {
             gtsam::Pose3 init_pose;
             plane_slam_->tfToPose3( odom_pose, init_pose);
-            if( plane_slam_->initialize( init_pose, segment_planes ) )
+            if( plane_slam_->initialize( init_pose, frame.segment_planes ) )
             {
                 is_initialized = true;
                 estimated_pose = init_pose;
@@ -300,7 +300,7 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
             RESULT_OF_PNP motion = estimateMotion( frame, last_frame, camera_parameters_ );
             gtsam::Pose3 rel( gtsam::Rot3(motion.rotation), gtsam::Point3(motion.translation) );
             gtsam::Pose3 pose3 = estimated_pose * rel;
-            estimated_pose = plane_slam_->planeSlam( pose3, segment_planes );
+            estimated_pose = plane_slam_->planeSlam( pose3, frame.segment_planes );
             publishPose( estimated_pose );
             if(display_path_)
                 plane_slam_->publishEstimatedPath();
@@ -333,7 +333,7 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
         pcl_viewer_->addPointCloud( frame.cloud_in, "rgba_cloud", viewer_v1_ );
         pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "rgba_cloud", viewer_v1_);
     }
-    displayPlanes( frame.cloud_in, segment_planes, "segment_plane", viewer_v2_ );
+    displayPlanes( frame.cloud_in, frame.segment_planes, "segment_plane", viewer_v2_ );
     pcl_viewer_->spinOnce(1);
     map_viewer_->spinOnce(1);
 
@@ -343,6 +343,51 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
     cout << GREEN << "Total time: " << total_dura << ", segment: " << segment_dura << ", keypoints: "
          << keypoint_dura << ", slam: "<< slam_dura << ", display: " << display_dura << RESET << endl;
     cout << "----------------------------------- END -------------------------------------" << endl;
+}
+
+bool KinectListener::estimateRelativeTransform( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result)
+{
+    /// 1: Find matches
+    vector< cv::DMatch > matches;
+    cv::FlannBasedMatcher matcher;
+    matcher.match( last_frame.feature_descriptors, current_frame.feature_descriptors, matches );
+
+    cout << "find total " << matches.size() << " matches." <<endl;
+
+    /// 2: Find good matches, sort
+    vector< cv::DMatch > goodMatches;
+    double minDis = 9999;
+    double good_match_threshold = 4.0;
+    for ( size_t i=0; i<matches.size(); i++ )
+    {
+        if ( matches[i].distance < minDis )
+            minDis = matches[i].distance;
+    }
+    for ( size_t i=0; i<matches.size(); i++ )
+    {
+        cv::DMatch &m = matches[i];
+        if ( m.distance < good_match_threshold*minDis )
+        {
+            if(!isnan(last_frame.feature_locations_3d[m.queryIdx](2))
+               && !isnan(current_frame.feature_locations_3d[m.trainIdx](2)))
+                goodMatches.push_back( m );
+        }
+    }
+
+    std::sort(goodMatches.begin(), goodMatches.end()); //sort by distance, which is the nn_ratio
+    cout << "good matches: " << goodMatches.size() << endl;
+
+    /// 3: RANSAC
+    // initialize result values of all iterations
+    matches.clear();
+    Eigen::Matrix4f resulting_transformation = Eigen::Matrix4f::Identity();
+    float rmse = 1e6;
+    unsigned int valid_iterations = 0;//, best_inlier_cnt = 0;
+    const unsigned int sample_size = 3;// chose this many randomly from the correspondences:
+    bool valid_tf = false; // valid is false iff the sampled points clearly aren't inliers themself
+
+    /// 4: Registeration using points & planes
+
 }
 
 // estimateMotion 计算两个帧之间的运动

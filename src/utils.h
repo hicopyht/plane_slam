@@ -13,6 +13,9 @@
 #include <pcl/ros/conversions.h>
 #include <pcl_ros/transforms.h>
 #include <pcl/point_representation.h>
+#include <pcl/common/transformation_from_correspondences.h>
+#include <pcl/registration/icp.h>
+#include <pcl/registration/registration.h>
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
@@ -59,30 +62,6 @@ struct CAMERA_INTRINSIC_PARAMETERS
     CAMERA_INTRINSIC_PARAMETERS() : width(640), height(480), cx(319.5), cy(239.5), fx(525.0), fy(525.0), scale(1.0) {}
 };
 
-struct KinectFrame
-{
-    cv::Mat visual_image;
-    cv::Mat depth_image;
-    cv::Mat depth_mono;
-    PointCloudTypePtr cloud;
-    //
-    PointCloudTypePtr cloud_in; //
-    cv::Mat visual; //
-    //
-    std::vector<cv::KeyPoint> feature_locations_2d;
-    std_vector_of_eigen_vector4f feature_locations_3d;
-    cv::Mat feature_descriptors;
-
-    KinectFrame() : cloud( new PointCloudType ), cloud_in( new PointCloudType ) {}
-};
-
-// PnP Result
-struct RESULT_OF_PNP
-{
-    Eigen::Matrix3d rotation;
-    Eigen::Vector3d translation;
-    int inliers;
-};
 
 /*
  * \brief Plane parameters
@@ -130,6 +109,35 @@ struct PlanePair
 
     PlanePair() : iobs(-1), ilm(-1) {}
     PlanePair(int _iobs, int _ilm) : iobs(_iobs), ilm(_ilm) {}
+};
+
+
+struct KinectFrame
+{
+    cv::Mat visual_image;
+    cv::Mat depth_image;
+    cv::Mat depth_mono;
+    PointCloudTypePtr cloud;
+    //
+    PointCloudTypePtr cloud_in; //
+    cv::Mat visual; //
+    //
+    std::vector<cv::KeyPoint> feature_locations_2d;
+    std_vector_of_eigen_vector4f feature_locations_3d;
+    cv::Mat feature_descriptors;
+
+    //
+    std::vector<PlaneType> segment_planes;
+
+    KinectFrame() : cloud( new PointCloudType ), cloud_in( new PointCloudType ) {}
+};
+
+// PnP Result
+struct RESULT_OF_PNP
+{
+    Eigen::Matrix3d rotation;
+    Eigen::Vector3d translation;
+    int inliers;
 };
 
 void matrixTF2Eigen(const tf::Matrix3x3 &t, Eigen::Matrix3d &e);

@@ -65,6 +65,8 @@ public:
 
     void organizedPlaneSegment(PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
+    bool estimateRelativeTransform( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result);
+
     RESULT_OF_PNP estimateMotion( KinectFrame& current_frame, KinectFrame& last_frame, PlaneFromLineSegment::CAMERA_PARAMETERS& camera );
 
     void computeKeypoint( const cv::Mat &visual, std::vector<cv::KeyPoint> &keypoints, cv::Mat &feature_descriptors, const cv::Mat& mask=cv::Mat());
