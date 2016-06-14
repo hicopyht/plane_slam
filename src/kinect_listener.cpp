@@ -286,7 +286,7 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
         {
             gtsam::Pose3 init_pose;
             plane_slam_->tfToPose3( odom_pose, init_pose);
-            if( plane_slam_->initialize( init_pose, frame.segment_planes ) )
+            if( plane_slam_->initialize( init_pose, frame ) )
             {
                 is_initialized = true;
                 estimated_pose = init_pose;
@@ -300,7 +300,7 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
             RESULT_OF_PNP motion = estimateMotion( frame, last_frame, camera_parameters_ );
             gtsam::Pose3 rel( gtsam::Rot3(motion.rotation), gtsam::Point3(motion.translation) );
             gtsam::Pose3 pose3 = estimated_pose * rel;
-            estimated_pose = plane_slam_->planeSlam( pose3, frame.segment_planes );
+            estimated_pose = plane_slam_->planeSlam( pose3, frame );
             publishPose( estimated_pose );
             if(display_path_)
                 plane_slam_->publishEstimatedPath();
@@ -345,7 +345,70 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
     cout << "----------------------------------- END -------------------------------------" << endl;
 }
 
-bool KinectListener::estimateRelativeTransform( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result)
+bool KinectListener::solveRelativeTransform3Planes( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result )
+{
+    std::vector<PlaneType> &planes = current_frame.segment_planes;
+    std::vector<PlaneType> &last_planes = last_frame.segment_planes;
+
+    if( planes.size() < 3 || last_planes.size() < 3)
+        return false;
+
+    /// 1: Check co-planar
+
+
+    /// 2: Find correspondences
+
+
+    /// 3: compute Rt
+    // algorithm: "Least-squares estimation of transformation parameters between two point patterns", Shinji Umeyama, PAMI 1991, DOI: 10.1109/34.88573
+    Eigen::MatrixXd src(3,3), dst(3,3);
+    for(int i = 0; i < 3; i++ )
+    {
+        Eigen::Vector3d f = planes[i].coefficients.head<3>();
+        Eigen::Vector3d t = last_planes[i].coefficients.head<3>();
+        src.col(i) = f;
+        dst.col(i) = t;
+    }
+    const Eigen::MatrixXd sigma = dst * src.transpose();    // Eq. ABt
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(sigma, ComputeFullU | ComputeFullV);
+    Eigen::MatrixXd R = Eigen::MatrixXd::Identity(3,3);
+
+    // Eq. (39)
+    Eigen::VectorXd S = Eigen::VectorXd::Ones(3);
+    if( sigma.determinant() < 0 )
+        S(2) = -1;
+
+    // Eq. (40) and (43)
+    const Eigen::VectorXd& vs = svd.singularValues();
+    int rank = 0;
+    for (int i=0; i<3; ++i)
+        if (!Eigen::internal::isMuchSmallerThan(vs.coeff(i),vs.coeff(0)))
+            ++rank;
+    if (rank == 2)
+    {
+        if ( svd.matrixU().determinant() * svd.matrixV().determinant() > 0 )
+        {
+            R.noalias() = svd.matrixU()*svd.matrixV().transpose();
+        }
+        else
+        {
+            const double s = S(2);
+            S(2) = -1;
+            R.noalias() = svd.matrixU() * S.asDiagonal() * svd.matrixV().transpose();
+            S(2) = s;
+        }
+    }
+    else
+    {
+        R.noalias() = svd.matrixU() * S.asDiagonal() * svd.matrixV().transpose();
+    }
+
+    result.rotation = R;
+
+    return true;
+}
+
+bool KinectListener::estimateRelativeTransform( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result )
 {
     /// 1: Find matches
     vector< cv::DMatch > matches;

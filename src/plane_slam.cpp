@@ -33,8 +33,10 @@ PlaneSlam::PlaneSlam() :
     marker_publisher_ = nh_.advertise<visualization_msgs::Marker>("visualization_marker", 10);
 }
 
-bool PlaneSlam::initialize(Pose3 &init_pose, std::vector<PlaneType> &planes)
+bool PlaneSlam::initialize(Pose3 &init_pose, KinectFrame &frame)
 {
+    std::vector<PlaneType> &planes = frame.segment_planes;
+
     if(planes.size() == 0)
         return false;
 
@@ -121,8 +123,10 @@ bool PlaneSlam::initialize(Pose3 &init_pose, std::vector<PlaneType> &planes)
     return true;
 }
 
-Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, std::vector<PlaneType> &planes)
+Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, KinectFrame &frame)
 {
+    std::vector<PlaneType> &planes = frame.segment_planes;
+
     if(first_pose_)
     {
         ROS_ERROR("You should call initialize() before doing slam.");

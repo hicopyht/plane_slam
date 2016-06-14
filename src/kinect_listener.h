@@ -65,6 +65,8 @@ public:
 
     void organizedPlaneSegment(PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
+    bool solveRelativeTransform3Planes( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result );
+
     bool estimateRelativeTransform( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result);
 
     RESULT_OF_PNP estimateMotion( KinectFrame& current_frame, KinectFrame& last_frame, PlaneFromLineSegment::CAMERA_PARAMETERS& camera );
