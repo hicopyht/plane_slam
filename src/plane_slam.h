@@ -106,23 +106,6 @@ public:
 
     void extractPlaneHulls(const PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
-    void projectPoints ( const PointCloudType &input,
-                         const Eigen::Vector4d &model_coefficients,
-                         PointCloudType &projected_points );
-
-    void projectPoints ( const PointCloudType &input,
-                         const Eigen::Vector4f &model_coefficients,
-                         PointCloudType &projected_points );
-
-    void projectPoints ( const PointCloudType &input, const std::vector<int> &inlier,
-                         const Eigen::Vector4d &model_coefficients, PointCloudType &projected_points );
-
-    void projectPoints ( const PointCloudType &input, const std::vector<int> &inlier,
-                         const Eigen::Vector4f &model_coefficients, PointCloudType &projected_points );
-
-//    void projectPoints( const PointCloudTypePtr &input, std::vector<int> &inliers,
-//                        Eigen::Vector4d &coeffs, PointCloudTypePtr &output);
-
     void cloudHull( const PointCloudTypePtr &cloud, PointCloudTypePtr &cloud_hull);
 
     bool checkOverlap( const PointCloudTypePtr &landmark_cloud, const OrientedPlane3 &landmark,

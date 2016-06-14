@@ -140,7 +140,6 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
     current_frame.cloud = image2PointCloud( current_frame.visual_image, current_frame.depth_image, camera_parameters_);
 
 
-
     // Process data
     processCloud( current_frame, odom_pose );
 
@@ -258,7 +257,7 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
         exit(0);
     }
 
-    cout << GREEN << " planes: " << frame.segment_planes.size() << RESET << endl;
+    cout << GREEN << " segment planes: " << frame.segment_planes.size() << RESET << endl;
 
     // extract Hull
 //    plane_slam_->extractPlaneHulls( cloud_in, segment_planes );
@@ -284,32 +283,66 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
     {
         if(!is_initialized)
         {
+//            gtsam::Pose3 init_pose;
+//            plane_slam_->tfToPose3( odom_pose, init_pose);
+//            if( plane_slam_->initialize( init_pose, frame ) )
+//            {
+//                is_initialized = true;
+//                estimated_pose = init_pose;
+//                last_frame = frame; // store frame
+//            }
+//            else
+//                return;
+
             gtsam::Pose3 init_pose;
-            plane_slam_->tfToPose3( odom_pose, init_pose);
-            if( plane_slam_->initialize( init_pose, frame ) )
-            {
-                is_initialized = true;
-                estimated_pose = init_pose;
-                last_frame = frame; // store frame
-            }
-            else
-                return;
+            plane_slam_->tfToPose3( odom_pose, init_pose );
+            estimated_pose = init_pose;
+            is_initialized = true;
+            last_frame = frame; // store frame
         }
         else
         {
-            RESULT_OF_PNP motion = estimateMotion( frame, last_frame, camera_parameters_ );
-            gtsam::Pose3 rel( gtsam::Rot3(motion.rotation), gtsam::Point3(motion.translation) );
-            gtsam::Pose3 pose3 = estimated_pose * rel;
-            estimated_pose = plane_slam_->planeSlam( pose3, frame );
-            publishPose( estimated_pose );
-            if(display_path_)
-                plane_slam_->publishEstimatedPath();
-            if(display_odom_path_)
-                plane_slam_->publishOdomPath();
+            gtsam::Pose3 o_pose;
+            plane_slam_->tfToPose3( odom_pose, o_pose );
+            gtsam::Pose3 r_pose = estimated_pose.inverse() * o_pose;
+            estimated_pose = o_pose;
+            RESULT_OF_PNP motion;
+            bool res = solveRelativeTransformPlanes( frame, last_frame, motion );
+            if( res )
+            {
+                cout << YELLOW << " relative motion: " << endl;
+                gtsam::Rot3 rot3( motion.rotation );
+                cout << "  - R:(rpy) " << endl;
+                cout << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
+                cout << "  - T: " << endl;
+                cout << motion.translation << RESET << endl;
+                cout << CYAN << " true motion: " << endl;
+                cout << "  - R:(rpy) " << endl;
+                cout << r_pose.rotation().roll() << ", " << r_pose.rotation().pitch() << ", " << r_pose.rotation().yaw() << endl;
+                cout << "  - T: " << endl;
+                cout << r_pose.translation().vector() << RESET << endl;
+            }
+            else
+            {
+                cout << RED << " failed to estimate relative motion. " << RESET << endl;
+            }
+            //
+////            RESULT_OF_PNP motion = estimateMotion( frame, last_frame, camera_parameters_ );
+//            gtsam::Pose3 rel( gtsam::Rot3(motion.rotation), gtsam::Point3(motion.translation) );
+//            gtsam::Pose3 pose3 = estimated_pose * rel;
+//            estimated_pose = plane_slam_->planeSlam( pose3, frame );
+//            publishPose( estimated_pose );
+//            if(display_path_)
+//                plane_slam_->publishEstimatedPath();
+//            if(display_odom_path_)
+//                plane_slam_->publishOdomPath();
 
-            // visualize landmark
-            landmarks = plane_slam_->getLandmarks();
-            // project and recalculate contour
+//            // visualize landmark
+//            landmarks = plane_slam_->getLandmarks();
+//            // project and recalculate contour
+
+//            // store frame
+//            last_frame = frame;
 
             // store frame
             last_frame = frame;
@@ -345,7 +378,10 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
     cout << "----------------------------------- END -------------------------------------" << endl;
 }
 
-bool KinectListener::solveRelativeTransform3Planes( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result )
+bool KinectListener::solveRelativeTransformPlanes( KinectFrame& current_frame,
+                                                   KinectFrame& last_frame,
+                                                   RESULT_OF_PNP &result,
+                                                   const Eigen::Matrix4d &estimated_transform)
 {
     std::vector<PlaneType> &planes = current_frame.segment_planes;
     std::vector<PlaneType> &last_planes = last_frame.segment_planes;
@@ -353,30 +389,58 @@ bool KinectListener::solveRelativeTransform3Planes( KinectFrame& current_frame, 
     if( planes.size() < 3 || last_planes.size() < 3)
         return false;
 
-    /// 1: Check co-planar
+    /// 1: Find correspondences
+    std::vector<PlanePair> pairs;
+    ITree::euclidianPlaneCorrespondences( planes, last_planes, pairs, estimated_transform );
+    int pairs_num = pairs.size();
+    if( pairs_num < 3 )
+        return false;
+    cout << GREEN << " pairs size: " << pairs_num << RESET << endl;
+    pairs_num = 3;
 
-
-    /// 2: Find correspondences
+    /// 2: Check co-planar
+    double dis1, dis2, dis3;
+    double dir1, dir2, dir3;
+    const double dir_thresh = 15.0 * DEG_TO_RAD;
+    // check
+    ITree::euclidianDistance( planes[pairs[0].iobs], planes[pairs[1].iobs], dir1, dis1 );
+    ITree::euclidianDistance( planes[pairs[0].iobs], planes[pairs[2].iobs], dir2, dis2 );
+    ITree::euclidianDistance( planes[pairs[1].iobs], planes[pairs[2].iobs], dir3, dis3 );
+    if( dir1 < dir_thresh || dir2 < dir_thresh || dir3 < dir_thresh )
+        return false;
+    // check
+    ITree::euclidianDistance( last_planes[pairs[0].ilm], last_planes[pairs[1].ilm], dir1, dis1 );
+    ITree::euclidianDistance( last_planes[pairs[0].ilm], last_planes[pairs[2].ilm], dir2, dis2 );
+    ITree::euclidianDistance( last_planes[pairs[1].ilm], last_planes[pairs[2].ilm], dir3, dis3 );
+    if( dir1 < dir_thresh || dir2 < dir_thresh || dir3 < dir_thresh )
+        return false;
 
 
     /// 3: compute Rt
+    Eigen::MatrixXd R = Eigen::MatrixXd::Identity(3,3);
+    Eigen::VectorXd T = Eigen::Vector3d::Zero(3);
     // algorithm: "Least-squares estimation of transformation parameters between two point patterns", Shinji Umeyama, PAMI 1991, DOI: 10.1109/34.88573
-    Eigen::MatrixXd src(3,3), dst(3,3);
-    for(int i = 0; i < 3; i++ )
+    Eigen::MatrixXd src( 3, pairs_num ), dst(3, pairs_num ); // A = RB, A === dst, B === src
+    Eigen::VectorXd distance( pairs_num );
+    for(int i = 0; i < pairs_num; i++ )
     {
-        Eigen::Vector3d f = planes[i].coefficients.head<3>();
-        Eigen::Vector3d t = last_planes[i].coefficients.head<3>();
+        PlanePair &pair = pairs[i];
+        Eigen::Vector3d f = planes[pair.iobs].coefficients.head<3>();
+        Eigen::Vector3d t = last_planes[pair.ilm].coefficients.head<3>();
+        double d1 = planes[pair.iobs].coefficients(3);
+        double d2 = last_planes[pair.ilm].coefficients(3);
         src.col(i) = f;
         dst.col(i) = t;
+        distance(i) = d1 - d2;   // d_src - d_dst
     }
     const Eigen::MatrixXd sigma = dst * src.transpose();    // Eq. ABt
     Eigen::JacobiSVD<Eigen::MatrixXd> svd(sigma, ComputeFullU | ComputeFullV);
-    Eigen::MatrixXd R = Eigen::MatrixXd::Identity(3,3);
 
     // Eq. (39)
-    Eigen::VectorXd S = Eigen::VectorXd::Ones(3);
+    Eigen::VectorXd S = Eigen::VectorXd::Ones( 3 );
+    cout << "   det(sigma) = " << sigma.determinant() << endl;
     if( sigma.determinant() < 0 )
-        S(2) = -1;
+        S( 2 ) = -1;
 
     // Eq. (40) and (43)
     const Eigen::VectorXd& vs = svd.singularValues();
@@ -384,8 +448,12 @@ bool KinectListener::solveRelativeTransform3Planes( KinectFrame& current_frame, 
     for (int i=0; i<3; ++i)
         if (!Eigen::internal::isMuchSmallerThan(vs.coeff(i),vs.coeff(0)))
             ++rank;
-    if (rank == 2)
+    cout << "   D: " << endl;
+    cout << vs << endl;
+    cout << "   rank(sigma) = " << rank << endl;
+    if ( rank == 2 )
     {
+        cout << "   det(U)*det(V) = " << svd.matrixU().determinant() * svd.matrixV().determinant() << endl;
         if ( svd.matrixU().determinant() * svd.matrixV().determinant() > 0 )
         {
             R.noalias() = svd.matrixU()*svd.matrixV().transpose();
@@ -402,8 +470,13 @@ bool KinectListener::solveRelativeTransform3Planes( KinectFrame& current_frame, 
     {
         R.noalias() = svd.matrixU() * S.asDiagonal() * svd.matrixV().transpose();
     }
+    Eigen::JacobiSVD<MatrixXd> svdA(dst.transpose(), ComputeFullU | ComputeFullV);
+    T = svdA.solve(distance);
 
     result.rotation = R;
+    result.translation = T;
+
+//    Eigen::umeyama
 
     return true;
 }
@@ -666,7 +739,7 @@ void KinectListener::lineBasedPlaneSegment(PointCloudTypePtr &input,
         plane.inlier = normal.inliers;
         plane.boundary_inlier = normal.boundary_inlier;
         plane.hull_inlier = normal.hull_inlier;
-        plane_slam_->projectPoints( *input, plane.inlier, plane.coefficients, *(plane.cloud) );
+        projectPoints( *input, plane.inlier, plane.coefficients, *(plane.cloud) );
         getPointCloudFromIndices( input, plane.boundary_inlier, plane.cloud_boundary );
         getPointCloudFromIndices( input, plane.hull_inlier, plane.cloud_hull );
         //
@@ -705,7 +778,7 @@ void KinectListener::organizedPlaneSegment(PointCloudTypePtr &input, std::vector
         plane.boundary_inlier = result.boundary_indices[i].indices;
         plane.hull_inlier = result.boundary_indices[i].indices;
         //
-        plane_slam_->projectPoints( *input, plane.inlier, plane.coefficients, *(plane.cloud) );
+        projectPoints( *input, plane.inlier, plane.coefficients, *(plane.cloud) );
         plane.cloud_boundary->points = pr.getContour();
         plane.cloud_boundary->height = 1;
         plane.cloud_boundary->width = plane.cloud_boundary->points.size();

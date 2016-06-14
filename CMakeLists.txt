@@ -122,6 +122,7 @@ add_library( ${PROJECT_NAME}
     src/organized_plane_segment.cpp
     src/plane_slam.cpp
     src/utils.cpp
+    src/itree.cpp
 )
 
 ## Specify libraries to link a library or executable target against

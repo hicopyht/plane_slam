@@ -16,6 +16,16 @@
 #include <pcl/common/transformation_from_correspondences.h>
 #include <pcl/registration/icp.h>
 #include <pcl/registration/registration.h>
+#include <pcl/filters/passthrough.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/project_inliers.h>
+#include <pcl/surface/concave_hull.h>
+#include <pcl/kdtree/kdtree_flann.h>
+#include <pcl/octree/octree.h>
+#include <pcl/octree/octree_pointcloud_occupancy.h>
+//
+#include <gtsam/geometry/Pose3.h>
+#include <gtsam/geometry/OrientedPlane3.h>
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
@@ -24,6 +34,9 @@
 
 using namespace std;
 using namespace Eigen;
+
+const double DEG_TO_RAD = ( M_PI / 180.0 );
+const double RAD_TO_DEG = ( 180.0 / M_PI );
 
 //
 typedef pcl::PointCloud< pcl::PointXYZ > PointCloudXYZ;
@@ -156,6 +169,24 @@ void transformPointCloud (const PointCloudType &cloud_in,
                           PointCloudType &cloud_out,
                           const Eigen::Matrix4d &transform,
                           const RGBValue &color);
+
+void transformPlane( const Eigen::Vector4d &input,
+                     const Eigen::Matrix4d &transform,
+                     Eigen::Vector4d &output);
+
+void projectPoints ( const PointCloudType &input,
+                     const Eigen::Vector4d &model_coefficients,
+                     PointCloudType &projected_points );
+
+void projectPoints ( const PointCloudType &input,
+                     const Eigen::Vector4f &model_coefficients,
+                     PointCloudType &projected_points );
+
+void projectPoints ( const PointCloudType &input, const std::vector<int> &inlier,
+                     const Eigen::Vector4d &model_coefficients, PointCloudType &projected_points );
+
+void projectPoints ( const PointCloudType &input, const std::vector<int> &inlier,
+                     const Eigen::Vector4f &model_coefficients, PointCloudType &projected_points );
 
 void depthToCV8UC1(cv::Mat& depth_img, cv::Mat& mono8_img);
 

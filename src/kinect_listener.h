@@ -30,6 +30,7 @@
 #include <plane_slam/LineBasedSegmentConfig.h>
 #include "organized_plane_segment.h"
 #include "utils.h"
+#include "itree.h"
 #include "plane_slam.h"
 
 using namespace std;
@@ -65,7 +66,10 @@ public:
 
     void organizedPlaneSegment(PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
-    bool solveRelativeTransform3Planes( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result );
+    bool solveRelativeTransformPlanes( KinectFrame& current_frame,
+                                       KinectFrame& last_frame,
+                                       RESULT_OF_PNP &result,
+                                       const Eigen::Matrix4d &estimated_transform = Eigen::MatrixXd::Identity(4,4));
 
     bool estimateRelativeTransform( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result);
 
