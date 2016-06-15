@@ -66,6 +66,14 @@ public:
 
     void organizedPlaneSegment(PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
+    void solveRT(const std::vector<PlaneCoefficients> &planes,
+                 const std::vector<PlaneCoefficients> &last_planes,
+                 RESULT_OF_PNP &result);
+
+    bool solveMotionPlanes( const std::vector<PlaneCoefficients> &planes,
+                            const std::vector<PlaneCoefficients> &last_planes,
+                            RESULT_OF_PNP &result);
+
     bool solveRelativeTransformPlanes( KinectFrame& current_frame,
                                        KinectFrame& last_frame,
                                        RESULT_OF_PNP &result,

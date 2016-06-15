@@ -264,12 +264,12 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
     hull_dura = time.toc();
     time.tic();
 
-    // Compute Keypoints
-    computeKeypoint( frame.visual_image, frame.feature_locations_2d, frame.feature_descriptors, frame.depth_mono );
-    projectTo3D( frame.cloud, frame.feature_locations_2d, frame.feature_locations_3d ); // project to 3d
-    displayKeypoint( frame.visual_image, frame.feature_locations_2d );
-    keypoint_dura = time.toc();
-    time.tic();
+//    // Compute Keypoints
+//    computeKeypoint( frame.visual_image, frame.feature_locations_2d, frame.feature_descriptors, frame.depth_mono );
+//    projectTo3D( frame.cloud, frame.feature_locations_2d, frame.feature_locations_3d ); // project to 3d
+//    displayKeypoint( frame.visual_image, frame.feature_locations_2d );
+//    keypoint_dura = time.toc();
+//    time.tic();
 
     // display
     pcl_viewer_->removeAllPointClouds();
@@ -310,19 +310,13 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
             bool res = solveRelativeTransformPlanes( frame, last_frame, motion );
             if( res )
             {
-                cout << YELLOW << " relative motion: " << endl;
-                gtsam::Rot3 rot3( motion.rotation );
-                cout << "  - R:(rpy) " << endl;
-                cout << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
-                cout << "  - T: " << endl;
-                cout << motion.translation << RESET << endl;
                 cout << CYAN << " true motion: " << endl;
                 cout << "  - R:(rpy) " << endl;
                 cout << r_pose.rotation().roll() << ", " << r_pose.rotation().pitch() << ", " << r_pose.rotation().yaw() << endl;
                 cout << "  - T: " << endl;
                 cout << r_pose.translation().vector() << RESET << endl;
             }
-            else
+            if( !res )
             {
                 cout << RED << " failed to estimate relative motion. " << RESET << endl;
             }
@@ -378,6 +372,109 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
     cout << "----------------------------------- END -------------------------------------" << endl;
 }
 
+void KinectListener::solveRT(const std::vector<PlaneCoefficients> &planes,
+                             const std::vector<PlaneCoefficients> &last_planes,
+                             RESULT_OF_PNP &result)
+{
+    Eigen::MatrixXd R = Eigen::MatrixXd::Identity(3,3);
+    Eigen::VectorXd T = Eigen::Vector3d::Zero(3);
+    // algorithm: "Least-squares estimation of transformation parameters between two point patterns", Shinji Umeyama, PAMI 1991, DOI: 10.1109/34.88573
+    Eigen::MatrixXd A( 3, 3 ), B(3, 3 ); // A = RB, A === dst, B === src
+    Eigen::VectorXd distance( 3 );
+    for(int i = 0; i < 3; i++ )
+    {
+        Eigen::Vector3d from = planes[i].head<3>();
+        Eigen::Vector3d to = last_planes[i].head<3>();
+        double d1 = planes[i](3);
+        double d2 = last_planes[i](3);
+        B.col(i) = from;
+        A.col(i) = to;
+        distance(i) = d1 - d2;   // d_src - d_dst
+    }
+    // Rotation
+    // n_dst = R * n_src
+    const Eigen::MatrixXd sigma = A * B.transpose();    // Eq. ABt
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(sigma, ComputeFullU | ComputeFullV);
+
+    // Eq. (39)
+    Eigen::VectorXd S = Eigen::VectorXd::Ones( 3 );
+    cout << "   det(sigma) = " << sigma.determinant() << endl;
+    if( sigma.determinant() < 0 )
+        S( 2 ) = -1;
+
+    // Eq. (40) and (43)
+    const Eigen::VectorXd& vs = svd.singularValues();
+    int rank = 0;
+    for (int i=0; i<3; ++i)
+        if (!Eigen::internal::isMuchSmallerThan(vs.coeff(i),vs.coeff(0)))
+            ++rank;
+//    cout << "   D: " << endl;
+//    cout << vs << endl;
+    cout << "   rank(sigma) = " << rank << endl;
+    if ( rank == 2 )
+    {
+        cout << "   det(U)*det(V) = " << svd.matrixU().determinant() * svd.matrixV().determinant() << endl;
+        if ( svd.matrixU().determinant() * svd.matrixV().determinant() > 0 )
+        {
+            R = svd.matrixU()*svd.matrixV().transpose();
+        }
+        else
+        {
+            const double s = S(2);
+            S(2) = -1;
+            R = svd.matrixU() * S.asDiagonal() * svd.matrixV().transpose();
+            S(2) = s;
+        }
+    }
+    else
+    {
+        R = svd.matrixU() * S.asDiagonal() * svd.matrixV().transpose();
+    }
+    // Translation
+    // n_dst^T * t = d_dst - d_src
+    Eigen::JacobiSVD<MatrixXd> svdA(A.transpose(), ComputeFullU | ComputeFullV);
+    T = svdA.solve(distance);
+
+    result.rotation = R;
+    result.translation = T;
+}
+
+bool KinectListener::solveMotionPlanes( const std::vector<PlaneCoefficients> &planes,
+                                        const std::vector<PlaneCoefficients> &last_planes,
+                                        RESULT_OF_PNP &result)
+{
+    result.rotation = Eigen::Matrix3d::Identity();
+    result.translation = Eigen::Vector3d::Zero();
+
+    /// 1: Check number of planes
+    if( planes.size() != 3 || last_planes.size() != 3)
+        return false;
+
+    /// 2: Check co-planar
+    double dis1, dis2, dis3;
+    double dir1, dir2, dir3;
+    const double dir_thresh = 20.0 * DEG_TO_RAD;
+    // check co-planar
+    ITree::euclidianDistance( planes[0], planes[1], dir1, dis1 );
+    ITree::euclidianDistance( planes[0], planes[2], dir2, dis2 );
+    ITree::euclidianDistance( planes[1], planes[2], dir3, dis3 );
+    cout << BOLDBLUE << " dir: " << dir_thresh << " - " << dir1 << " " << dir2 << " " << dir3 << RESET << endl;
+    if( dir1 < dir_thresh || dir2 < dir_thresh || dir3 < dir_thresh )
+        return false;
+    // check co-planar
+    ITree::euclidianDistance( last_planes[0], last_planes[1], dir1, dis1 );
+    ITree::euclidianDistance( last_planes[0], last_planes[2], dir2, dis2 );
+    ITree::euclidianDistance( last_planes[1], last_planes[2], dir3, dis3 );
+    cout << BOLDBLUE << " dir: " << dir_thresh << " - " << dir1 << " " << dir2 << " " << dir3 << RESET << endl;
+    if( dir1 < dir_thresh || dir2 < dir_thresh || dir3 < dir_thresh )
+        return false;
+
+    /// 3: compute Rt
+    solveRT( planes, last_planes, result );
+
+    return true;
+}
+
 bool KinectListener::solveRelativeTransformPlanes( KinectFrame& current_frame,
                                                    KinectFrame& last_frame,
                                                    RESULT_OF_PNP &result,
@@ -396,85 +493,42 @@ bool KinectListener::solveRelativeTransformPlanes( KinectFrame& current_frame,
     if( pairs_num < 3 )
         return false;
     cout << GREEN << " pairs size: " << pairs_num << RESET << endl;
-    pairs_num = 3;
 
-    /// 2: Check co-planar
-    double dis1, dis2, dis3;
-    double dir1, dir2, dir3;
-    const double dir_thresh = 15.0 * DEG_TO_RAD;
-    // check
-    ITree::euclidianDistance( planes[pairs[0].iobs], planes[pairs[1].iobs], dir1, dis1 );
-    ITree::euclidianDistance( planes[pairs[0].iobs], planes[pairs[2].iobs], dir2, dis2 );
-    ITree::euclidianDistance( planes[pairs[1].iobs], planes[pairs[2].iobs], dir3, dis3 );
-    if( dir1 < dir_thresh || dir2 < dir_thresh || dir3 < dir_thresh )
-        return false;
-    // check
-    ITree::euclidianDistance( last_planes[pairs[0].ilm], last_planes[pairs[1].ilm], dir1, dis1 );
-    ITree::euclidianDistance( last_planes[pairs[0].ilm], last_planes[pairs[2].ilm], dir2, dis2 );
-    ITree::euclidianDistance( last_planes[pairs[1].ilm], last_planes[pairs[2].ilm], dir3, dis3 );
-    if( dir1 < dir_thresh || dir2 < dir_thresh || dir3 < dir_thresh )
-        return false;
-
-
-    /// 3: compute Rt
-    Eigen::MatrixXd R = Eigen::MatrixXd::Identity(3,3);
-    Eigen::VectorXd T = Eigen::Vector3d::Zero(3);
-    // algorithm: "Least-squares estimation of transformation parameters between two point patterns", Shinji Umeyama, PAMI 1991, DOI: 10.1109/34.88573
-    Eigen::MatrixXd src( 3, pairs_num ), dst(3, pairs_num ); // A = RB, A === dst, B === src
-    Eigen::VectorXd distance( pairs_num );
-    for(int i = 0; i < pairs_num; i++ )
+    /// 2: Estimate motion
+    for( int x1 = 0; x1 < pairs_num-2; x1++)
     {
-        PlanePair &pair = pairs[i];
-        Eigen::Vector3d f = planes[pair.iobs].coefficients.head<3>();
-        Eigen::Vector3d t = last_planes[pair.ilm].coefficients.head<3>();
-        double d1 = planes[pair.iobs].coefficients(3);
-        double d2 = last_planes[pair.ilm].coefficients(3);
-        src.col(i) = f;
-        dst.col(i) = t;
-        distance(i) = d1 - d2;   // d_src - d_dst
-    }
-    const Eigen::MatrixXd sigma = dst * src.transpose();    // Eq. ABt
-    Eigen::JacobiSVD<Eigen::MatrixXd> svd(sigma, ComputeFullU | ComputeFullV);
-
-    // Eq. (39)
-    Eigen::VectorXd S = Eigen::VectorXd::Ones( 3 );
-    cout << "   det(sigma) = " << sigma.determinant() << endl;
-    if( sigma.determinant() < 0 )
-        S( 2 ) = -1;
-
-    // Eq. (40) and (43)
-    const Eigen::VectorXd& vs = svd.singularValues();
-    int rank = 0;
-    for (int i=0; i<3; ++i)
-        if (!Eigen::internal::isMuchSmallerThan(vs.coeff(i),vs.coeff(0)))
-            ++rank;
-    cout << "   D: " << endl;
-    cout << vs << endl;
-    cout << "   rank(sigma) = " << rank << endl;
-    if ( rank == 2 )
-    {
-        cout << "   det(U)*det(V) = " << svd.matrixU().determinant() * svd.matrixV().determinant() << endl;
-        if ( svd.matrixU().determinant() * svd.matrixV().determinant() > 0 )
+        PlanePair &p1 = pairs[x1];
+        for( int x2 = x1+1; x2 < pairs_num-1; x2++ )
         {
-            R.noalias() = svd.matrixU()*svd.matrixV().transpose();
-        }
-        else
-        {
-            const double s = S(2);
-            S(2) = -1;
-            R.noalias() = svd.matrixU() * S.asDiagonal() * svd.matrixV().transpose();
-            S(2) = s;
+            PlanePair &p2 = pairs[x2];
+            for( int x3 = x2+1; x3 < pairs_num; x3++)
+            {
+                PlanePair &p3 = pairs[x3];
+                std::vector<PlaneCoefficients> currents;
+                std::vector<PlaneCoefficients> lasts;
+                currents.push_back( planes[p1.iobs].coefficients );
+                currents.push_back( planes[p2.iobs].coefficients );
+                currents.push_back( planes[p3.iobs].coefficients );
+                lasts.push_back( last_planes[p1.ilm].coefficients );
+                lasts.push_back( last_planes[p2.ilm].coefficients );
+                lasts.push_back( last_planes[p3.ilm].coefficients );
+                //
+                cout << YELLOW << " solve motion: (" << x1 << "/" << x2 << "/" << x3 << RESET << endl;
+                RESULT_OF_PNP motion;
+                bool res = solveMotionPlanes( currents, lasts, motion);
+                if( res )
+                {
+                    // print motion
+                    gtsam::Rot3 rot3( motion.rotation );
+                    cout << YELLOW << " relative motion: " << endl;
+                    cout << "  - R:(rpy) " << endl;
+                    cout << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
+                    cout << "  - T: " << endl;
+                    cout << motion.translation << RESET << endl;
+                }
+            }
         }
     }
-    else
-    {
-        R.noalias() = svd.matrixU() * S.asDiagonal() * svd.matrixV().transpose();
-    }
-    Eigen::JacobiSVD<MatrixXd> svdA(dst.transpose(), ComputeFullU | ComputeFullV);
-    T = svdA.solve(distance);
-
-    result.rotation = R;
-    result.translation = T;
 
 //    Eigen::umeyama
 
@@ -1487,6 +1541,7 @@ void KinectListener::publishTruePath()
 bool KinectListener::autoSpinMapViewerCallback(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res)
 {
     auto_spin_map_viewer_ = true;
+    ROS_INFO("Auto spin map viewer for 30 seconds.");
     ros::Time time = ros::Time::now() + ros::Duration(30.0);
     ros::Rate loop_rate( 50 );
     while( auto_spin_map_viewer_ && nh_.ok())

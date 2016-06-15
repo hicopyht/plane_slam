@@ -25,6 +25,8 @@ public:
 
     static void euclidianDistance(const PlaneType &p1, const PlaneType &p2, double &direction, double &distance);
 
+    static void euclidianDistance(const PlaneCoefficients &p1, const PlaneCoefficients &p2, double &direction, double &distance);
+
     static bool checkPlanesOverlap( const PlaneType &lm1, const PlaneType &lm2, const double &overlap = 0.5);
 
     static void mahalanobisDistance( const PlaneType &p1, const PlaneType &p2, double &direction, double &distance );

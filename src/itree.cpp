@@ -25,6 +25,8 @@ bool ITree::euclidianPlaneCorrespondences( const vector<PlaneType> &planes,
     }
 
     /// 2: Find correspondences
+    const double direction_thresh = direction_threshold * DEG_TO_RAD;
+    const double distance_thresh = distance_threshold;
     Eigen::VectorXd paired = Eigen::VectorXd::Zero( predict_planes.size() );
     for( int i = 0; i < planes.size(); i++)
     {
@@ -39,15 +41,15 @@ bool ITree::euclidianPlaneCorrespondences( const vector<PlaneType> &planes,
 
             double dir_error, d_error;
             euclidianDistance( plane, predicted, dir_error, d_error);
-            if( (fabs(dir_error) < direction_threshold)
-                    && (d_error < distance_threshold) )
+            if( (fabs(dir_error) < direction_thresh )
+                    && (d_error < distance_thresh) )
             {
                 // check overlap
                 bool overlap;
                 if( plane.cloud->size() < predicted.cloud->size() )
-                    overlap = checkPlanesOverlap( predicted, plane, 0.5 );
+                    overlap = checkPlanesOverlap( predicted, plane, 0.67 );
                 else
-                    overlap = checkPlanesOverlap( plane, predicted, 0.5 );
+                    overlap = checkPlanesOverlap( plane, predicted, 0.67 );
                 if(overlap)
                 {
                     paired[j] = 1;
@@ -61,11 +63,26 @@ bool ITree::euclidianPlaneCorrespondences( const vector<PlaneType> &planes,
 
 void ITree::euclidianDistance(const PlaneType &p1, const PlaneType &p2, double &direction, double &distance)
 {
-    // Transform landmark to local frame
     Eigen::Vector3d n1 = p1.coefficients.head<3>();
     Eigen::Vector3d n2 = p2.coefficients.head<3>();
-    direction = acos( n1.dot(n2) );
+    const double ac = n1.dot(n2);
+    direction = std::acos( ac );
     distance = fabs( p1.coefficients[3] - p2.coefficients[3] );
+//    cout << CYAN << " n1.dot(n2): " << ac << RESET << endl;
+//    cout << CYAN << " n1: " << n1(0) << ", " << n1(1) << ", " << n1(2) << RESET << endl;
+//    cout << CYAN << " n2: " << n2(0) << ", " << n2(1) << ", " << n2(2) << RESET << endl;
+}
+
+void ITree::euclidianDistance(const PlaneCoefficients &p1, const PlaneCoefficients &p2, double &direction, double &distance)
+{
+    Eigen::Vector3d n1 = p1.head<3>();
+    Eigen::Vector3d n2 = p2.head<3>();
+    const double ac = n1.dot(n2);
+    direction = std::acos( ac );
+    distance = fabs( p1[3] - p2[3] );
+    cout << CYAN << " n1.dot(n2): " << ac << RESET << endl;
+    cout << CYAN << " n1: " << n1(0) << ", " << n1(1) << ", " << n1(2) << RESET << endl;
+    cout << CYAN << " n2: " << n2(0) << ", " << n2(1) << ", " << n2(2) << RESET << endl;
 }
 
 // indices of lm1 must bigger than that of lm2
@@ -83,6 +100,7 @@ bool ITree::checkPlanesOverlap( const PlaneType &lm1, const PlaneType &lm2, cons
 
     // check if occupied
     int collision = 0;
+    const int threshold = cloud_projected->size() * overlap;
     PointCloudType::iterator it = cloud_projected->begin();
     for( ; it != cloud_projected->end(); it++)
     {
@@ -90,15 +108,17 @@ bool ITree::checkPlanesOverlap( const PlaneType &lm1, const PlaneType &lm2, cons
         if( octreeD.isVoxelOccupiedAtPoint( pt ) )
         {
             collision ++;
+            if( collision > threshold )
+                return true;
         }
     }
 
-    cout << GREEN << "  - collision: " << collision << "/" << cloud_projected->size() << RESET << endl;
+//    cout << GREEN << "  - collision: " << collision << "/" << cloud_projected->size() << RESET << endl;
 
-    if( (((float)collision) / (float)cloud_projected->size()) < overlap )
-        return false;
-    else
-        return true;
+//    if( (((float)collision) / (float)cloud_projected->size()) < overlap )
+//        return false;
+//    else
+//        return true;
 
     return false;
 }
