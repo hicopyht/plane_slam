@@ -327,16 +327,15 @@ void cvToEigen(const cv::Mat& src, Eigen::Matrix3d& dst )
 //    //
 //    RESULT_OF_PNP pmotion;
 //    solveRT( froms, tos, pmotion );
-//    // print motion
 //    gtsam::Rot3 rot3( pmotion.rotation );
-//    cout << YELLOW << " relative motion: " << endl;
-//    cout << "  - R:(rpy) " << endl;
-//    cout << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
-//    cout << "  - T: " << endl;
-//    cout << pmotion.translation << RESET << endl;
+//    cout << YELLOW << " test relative motion 2 points & 1 plane: " << endl;
+//    cout << "  - R(rpy): " << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
+//    cout << "  - T:      "
+//         << pmotion.translation(0)
+//         << pmotion.translation(1)
+//         << pmotion.translation(2) << RESET << endl;
 //    cout << CYAN << " true motion: " << endl;
-//    cout << "  - R:(rpy) " << endl;
-//    cout << 0.1 << ", " << 0.2 << ", " << 0.3 << endl;
-//    cout << "  - T: " << "0.05, 0.06, 0.08" << RESET << endl;
+//    cout << "  - R(rpy): " << 0.1 << ", " << 0.2 << ", " << 0.3 << endl;
+//    cout << "  - T:      " << "0.05, 0.06, 0.08" << RESET << endl;
 //}
 

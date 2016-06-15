@@ -66,16 +66,22 @@ public:
 
     void organizedPlaneSegment(PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
-    void solveRT(const std::vector<Eigen::Vector3d>& from_points,
-                 const std::vector<Eigen::Vector3d>& to_points,
-                 RESULT_OF_PNP &result);
+    void solveRT( const std::vector<PlaneCoefficients> &last_planes,
+                  const std::vector<PlaneCoefficients> &planes,
+                  const std::vector<Eigen::Vector3d>& from_points,
+                  const std::vector<Eigen::Vector3d>& to_points,
+                  RESULT_OF_PNP &result);
 
-    void solveRT(const std::vector<PlaneCoefficients> &planes,
-                 const std::vector<PlaneCoefficients> &last_planes,
-                 RESULT_OF_PNP &result);
+    void solveRT( const std::vector<Eigen::Vector3d>& from_points,
+                  const std::vector<Eigen::Vector3d>& to_points,
+                  RESULT_OF_PNP &result);
 
-    bool solveMotionPlanes( const std::vector<PlaneCoefficients> &planes,
-                            const std::vector<PlaneCoefficients> &last_planes,
+    void solveRT( const std::vector<PlaneCoefficients> &last_planes,
+                  const std::vector<PlaneCoefficients> &planes,
+                  RESULT_OF_PNP &result);
+
+    bool solveMotionPlanes( const std::vector<PlaneCoefficients> &before,
+                            const std::vector<PlaneCoefficients> &after,
                             RESULT_OF_PNP &result);
 
     bool solveRelativeTransformPlanes( KinectFrame& current_frame,

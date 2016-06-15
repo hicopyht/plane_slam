@@ -281,6 +281,76 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
     map_viewer_->removeAllPointClouds();
     map_viewer_->removeAllShapes();
 
+    // test solveRT points&planes
+    {
+        /// 1: Define transform
+        Eigen::Affine3d tr = Eigen::Translation3d(0.05, 0.06, 0.08)
+                * Eigen::AngleAxisd( 0.3, Eigen::Vector3d::UnitZ())
+                * Eigen::AngleAxisd( 0.2, Eigen::Vector3d::UnitY())
+                * Eigen::AngleAxisd( 0.1, Eigen::Vector3d::UnitX());;
+
+        /// 2: Construct points
+        PointType p1, p2, p3;
+        PointType tp1, tp2, tp3;
+        p1.x = 0.1;           p1.y = 0.6;             p1.z = 2.0;
+        p2.x = p1.x + 0.7;    p2.y = p1.y + 0.1,      p2.z = p1.z + 0.1;
+        p3.x = p1.x + 0.2;    p3.y = p1.y + 1.2,      p3.z = p1.z - 0.1;
+        tp1 = transformPoint( p1, tr.matrix() );
+        tp2 = transformPoint( p2, tr.matrix() );
+        tp3 = transformPoint( p3, tr.matrix() );
+        // Select 2 points
+        std::vector<Eigen::Vector3d> from_points;
+        std::vector<Eigen::Vector3d> to_points;
+        from_points.push_back( Eigen::Vector3d(p1.x, p1.y, p1.z) );
+//        from_points.push_back( Eigen::Vector3d(p2.x, p2.y, p2.z) );
+//        from_points.push_back( Eigen::Vector3d(p3.x, p3.y, p3.z) );
+        to_points.push_back( Eigen::Vector3d(tp1.x, tp1.y, tp1.z) );
+//        to_points.push_back( Eigen::Vector3d(tp2.x, tp2.y, tp2.z) );
+//        to_points.push_back( Eigen::Vector3d(tp3.x, tp3.y, tp3.z) );
+
+        /// 3: Construct planes
+        PlaneCoefficients plane1, plane2, plane3;
+        PlaneCoefficients tplane1, tplane2, tplane3;
+        plane1.head<3>() = gtsam::Unit3( 0.1, -0.2, -0.8 ).unitVector();
+        plane1(3) = 1.8;
+        plane2.head<3>() = gtsam::Unit3( 0.8, -0.4, -0.8 ).unitVector();
+        plane2(3) = 2.2;
+        plane3.head<3>() = gtsam::Unit3( 0.1, -0.8, -0.1 ).unitVector();
+        plane3(3) = 0.8;
+        transformPlane( plane1, tr.matrix(), tplane1 );
+        transformPlane( plane2, tr.matrix(), tplane2 );
+        transformPlane( plane3, tr.matrix(), tplane3 );
+        // Select 1 plane
+        std::vector<PlaneCoefficients> planes, tplanes;
+//        planes.push_back( plane1 );
+        planes.push_back( plane2 );
+        planes.push_back( plane3 );
+//        tplanes.push_back( tplane1 );
+        tplanes.push_back( tplane2 );
+        tplanes.push_back( tplane3 );
+
+        /// 4: solve RT
+        RESULT_OF_PNP pmotion;
+        solveRT( tplanes, planes, from_points, to_points, pmotion );
+//        solveRT( tplanes, planes, pmotion );
+//        solveRT( from_points, to_points, pmotion );
+
+        /// 5: print result
+        gtsam::Rot3 rot3( pmotion.rotation );
+//        cout << YELLOW << " test relative motion 3 points: " << endl;
+//        cout << YELLOW << " test relative motion 3 planes: " << endl;
+//        cout << YELLOW << " test relative motion 2 points & 1 plane: " << endl;
+        cout << YELLOW << " test relative motion 1 point & 2 planes: " << endl;
+        cout << "  - R(rpy): " << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
+        cout << "  - T:      "
+             << pmotion.translation(0) << ", "
+             << pmotion.translation(1) << ", "
+             << pmotion.translation(2) << RESET << endl;
+        cout << CYAN << " true motion: " << endl;
+        cout << "  - R(rpy): " << 0.1 << ", " << 0.2 << ", " << 0.3 << endl;
+        cout << "  - T:      " << "0.05, 0.06, 0.08" << RESET << endl;
+    }
+
 
     // Do slam
     std::vector<PlaneType> landmarks;
@@ -377,6 +447,127 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
     cout << "----------------------------------- END -------------------------------------" << endl;
 }
 
+void KinectListener::solveRT( const std::vector<PlaneCoefficients> &before,
+                              const std::vector<PlaneCoefficients> &after,
+                              const std::vector<Eigen::Vector3d>& from_points,
+                              const std::vector<Eigen::Vector3d>& to_points,
+                              RESULT_OF_PNP &result)
+{
+    const int num_points = from_points.size();
+    const int num_planes = before.size();
+
+    ROS_ASSERT( before.size() == after.size() );
+    ROS_ASSERT( from_points.size() == to_points.size() );
+    ROS_ASSERT( num_planes + num_points == 3 );
+
+    // Rotation
+    Eigen::MatrixXd froms(3, num_points), tos(3, num_points);
+    Eigen::MatrixXd src(3, num_planes), dst(3, num_planes);
+    for( int i = 0; i < num_points; i++)
+    {
+        froms.col(i) = from_points[i];
+        tos.col(i) = to_points[i];
+    }
+    for( int i = 0; i < num_planes; i++)
+    {
+        src.col(i) = before[i].head<3>();
+        dst.col(i) = after[i].head<3>();
+    }
+    const double wi = 1.0;// / num_planes;
+    const double one_over_n = num_points > 0 ? 1.0 / num_points : 0;
+    /// 1: For point
+    // mean
+    const Eigen::VectorXd froms_mean = froms.rowwise().sum() * one_over_n;
+    const Eigen::VectorXd tos_mean = tos.rowwise().sum() * one_over_n;
+    // demeaning
+    const Eigen::MatrixXd froms_demean = froms.colwise() - froms_mean;
+    const Eigen::MatrixXd tos_demean = tos.colwise() - tos_mean;
+    // Eq. (38)
+    const Eigen::MatrixXd sigma_points = one_over_n * tos_demean * froms_demean.transpose();
+
+    /// 2: For plane
+    const Eigen::MatrixXd sigma_planes = wi * dst * src.transpose();
+
+    /// 3: sigma
+    const Eigen::MatrixXd sigma = sigma_points + sigma_planes;
+
+    /// 4: Umeyama solution
+    Eigen::MatrixXd R = Eigen::MatrixXd::Identity(3,3);
+    Eigen::JacobiSVD<Eigen::MatrixXd> svd(sigma, ComputeFullU | ComputeFullV);
+    // Eq. (39)
+    Eigen::VectorXd S = Eigen::VectorXd::Ones( 3 );
+    cout << "   det(sigma) = " << sigma.determinant() << endl;
+    if( sigma.determinant() < 0 )
+        S( 2 ) = -1;
+    // Eq. (40) and (43)
+    const Eigen::VectorXd& vs = svd.singularValues();
+    int rank = 0;
+    for (int i=0; i<3; ++i)
+        if (!Eigen::internal::isMuchSmallerThan(vs.coeff(i),vs.coeff(0)))
+            ++rank;
+//    cout << "   D: " << endl;
+//    cout << vs << endl;
+    cout << "   rank(sigma) = " << rank << endl;
+    if ( rank == 2 )
+    {
+        cout << "   det(U)*det(V) = " << svd.matrixU().determinant() * svd.matrixV().determinant() << endl;
+        if ( svd.matrixU().determinant() * svd.matrixV().determinant() > 0 )
+        {
+            R = svd.matrixU()*svd.matrixV().transpose();
+        }
+        else
+        {
+            const double s = S(2);
+            S(2) = -1;
+            R = svd.matrixU() * S.asDiagonal() * svd.matrixV().transpose();
+            S(2) = s;
+        }
+    }
+    else
+    {
+        R = svd.matrixU() * S.asDiagonal() * svd.matrixV().transpose();
+    }
+    // Translation
+    Eigen::VectorXd T = Eigen::Vector3d::Zero(3);
+    /// 1: For points
+    Eigen::MatrixXd I3 = Eigen::Matrix3d::Identity();
+    Eigen::MatrixXd A1 = num_points * I3;
+    Eigen::VectorXd b1 = num_points * ( tos_mean - R * froms_mean );
+    /// 2: For planes
+    Eigen::MatrixXd A2( num_planes, 3 );
+    Eigen::VectorXd b2( num_planes );
+    for( int i = 0; i < num_planes; i++)
+    {
+        A2.row(i) = wi * after[i].head<3>().transpose();
+        b2(i) = before[i](3) - after[i](3);
+    }
+    /// 3:  ( A1 A2 )^T * t = ( b1 b2)^T
+    Eigen::MatrixXd AA;( 3 + num_planes, 3 );
+    Eigen::VectorXd bb;( 3 + num_planes );
+    if( num_points != 0 )
+    {
+        AA = Eigen::MatrixXd( 3 + num_planes, 3);
+        bb = Eigen::VectorXd( 3 + num_planes );
+        AA << A1, A2;
+        bb << b1, b2;
+    }
+    else
+    {
+        AA = Eigen::MatrixXd( num_planes, 3);
+        bb = Eigen::VectorXd( num_planes );
+        AA << A2;
+        bb << b2;
+    }
+
+
+    /// 4: t = (A.transpose()*A).inverse()*A.transpose()*b;
+    Eigen::MatrixXd AAT = AA.transpose();
+    T = (AAT*AA).inverse()*AAT*bb;
+
+    result.rotation = R;
+    result.translation = T;
+}
+
 void KinectListener::solveRT(const std::vector<Eigen::Vector3d>& from_points,
                              const std::vector<Eigen::Vector3d>& to_points,
                              RESULT_OF_PNP &result)
@@ -394,23 +585,23 @@ void KinectListener::solveRT(const std::vector<Eigen::Vector3d>& from_points,
     result.translation = transform.col(3).head<3>();
 }
 
-void KinectListener::solveRT(const std::vector<PlaneCoefficients> &planes,
-                             const std::vector<PlaneCoefficients> &last_planes,
+void KinectListener::solveRT(const std::vector<PlaneCoefficients> &before,
+                             const std::vector<PlaneCoefficients> &after,
                              RESULT_OF_PNP &result)
 {
-    ROS_ASSERT( planes.size() >= 3 && last_planes.size() >=3 );
+    ROS_ASSERT( after.size() >= 3 && before.size() >=3 );
 
     Eigen::MatrixXd R = Eigen::MatrixXd::Identity(3,3);
     Eigen::VectorXd T = Eigen::Vector3d::Zero(3);
     // algorithm: "Least-squares estimation of transformation parameters between two point patterns", Shinji Umeyama, PAMI 1991, DOI: 10.1109/34.88573
-    Eigen::MatrixXd A( 3, 3 ), B(3, 3 ); // A = RB, A === dst, B === src
+    Eigen::MatrixXd A(3, 3), B(3, 3); // A = RB, A === dst, B === src
     Eigen::VectorXd distance( 3 );
     for(int i = 0; i < 3; i++ )
     {
-        Eigen::Vector3d to = planes[i].head<3>();
-        Eigen::Vector3d from = last_planes[i].head<3>();
-        double d2 = planes[i](3);
-        double d1 = last_planes[i](3);
+        const Eigen::Vector3d from = before[i].head<3>();
+        const Eigen::Vector3d to = after[i].head<3>();
+        const double d1 = before[i](3);
+        const double d2 = after[i](3);
         B.col(i) = from;
         A.col(i) = to;
         distance(i) = d1 - d2;   // d_src - d_dst
@@ -463,8 +654,8 @@ void KinectListener::solveRT(const std::vector<PlaneCoefficients> &planes,
     result.translation = T;
 }
 
-bool KinectListener::solveMotionPlanes( const std::vector<PlaneCoefficients> &planes,
-                                        const std::vector<PlaneCoefficients> &last_planes,
+bool KinectListener::solveMotionPlanes( const std::vector<PlaneCoefficients> &last_planes,
+                                        const std::vector<PlaneCoefficients> &planes,
                                         RESULT_OF_PNP &result)
 {
     result.rotation = Eigen::Matrix3d::Identity();
@@ -494,7 +685,7 @@ bool KinectListener::solveMotionPlanes( const std::vector<PlaneCoefficients> &pl
         return false;
 
     /// 3: compute Rt
-    solveRT( planes, last_planes, result );
+    solveRT( last_planes, planes, result );
 
     return true;
 }
@@ -539,8 +730,7 @@ bool KinectListener::solveRelativeTransformPlanes( KinectFrame& current_frame,
                 //
                 cout << YELLOW << " solve motion: (" << x1 << "/" << x2 << "/" << x3 << ")" << RESET << endl;
                 RESULT_OF_PNP motion;
-//                bool res = solveMotionPlanes( currents, lasts, motion);
-                bool res = solveMotionPlanes( lasts, currents, motion);
+                bool res = solveMotionPlanes( currents, lasts, motion);
                 if( res )
                 {
                     // print motion
