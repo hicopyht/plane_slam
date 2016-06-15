@@ -65,8 +65,15 @@ void ITree::euclidianDistance(const PlaneType &p1, const PlaneType &p2, double &
 {
     Eigen::Vector3d n1 = p1.coefficients.head<3>();
     Eigen::Vector3d n2 = p2.coefficients.head<3>();
+    // normal angle
     const double ac = n1.dot(n2);
-    direction = std::acos( ac );
+    if( ac == 1 )
+        direction = 0;
+    else if( ac == -1)
+        direction = M_PI;
+    else
+        direction = std::acos( ac );
+    // distance
     distance = fabs( p1.coefficients[3] - p2.coefficients[3] );
 //    cout << CYAN << " n1.dot(n2): " << ac << RESET << endl;
 //    cout << CYAN << " n1: " << n1(0) << ", " << n1(1) << ", " << n1(2) << RESET << endl;
@@ -77,12 +84,19 @@ void ITree::euclidianDistance(const PlaneCoefficients &p1, const PlaneCoefficien
 {
     Eigen::Vector3d n1 = p1.head<3>();
     Eigen::Vector3d n2 = p2.head<3>();
+    // normal angle
     const double ac = n1.dot(n2);
-    direction = std::acos( ac );
+    if( ac == 1 )
+        direction = 0;
+    else if( ac == -1)
+        direction = M_PI;
+    else
+        direction = std::acos( ac );
+    // distance
     distance = fabs( p1[3] - p2[3] );
-    cout << CYAN << " n1.dot(n2): " << ac << RESET << endl;
-    cout << CYAN << " n1: " << n1(0) << ", " << n1(1) << ", " << n1(2) << RESET << endl;
-    cout << CYAN << " n2: " << n2(0) << ", " << n2(1) << ", " << n2(2) << RESET << endl;
+//    cout << CYAN << " n1.dot(n2): " << ac << RESET << endl;
+//    cout << CYAN << " n1: " << n1(0) << ", " << n1(1) << ", " << n1(2) << RESET << endl;
+//    cout << CYAN << " n2: " << n2(0) << ", " << n2(1) << ", " << n2(2) << RESET << endl;
 }
 
 // indices of lm1 must bigger than that of lm2

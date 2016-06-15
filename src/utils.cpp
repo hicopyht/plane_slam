@@ -298,3 +298,45 @@ void cvToEigen(const cv::Mat& src, Eigen::Matrix3d& dst )
     src.convertTo( _dst, _dst.type() );
 }
 
+
+//// test point RT
+//void testSolvePointRT()
+//{
+//    std::vector<PointType> from_points;
+//    std::vector<PointType> to_points(3);
+//    PointType p1; p1.x = 0.1;           p1.y = 0.6;             p1.z = 2.0;
+//    PointType p2; p2.x = p1.x + 0.7;    p2.y = p1.y + 0.1,      p2.z = p1.z + 0.1;
+//    PointType p3; p3.x = p1.x + 0.2;    p3.y = p1.y + 1.2,      p3.z = p1.z - 0.1;
+//    from_points.push_back( p1 );    from_points.push_back( p2 );    from_points.push_back( p3 );
+//    //
+//    Eigen::Affine3d tr = Eigen::Translation3d(0.05, 0.06, 0.08)
+//            * Eigen::AngleAxisd( 0.3, Eigen::Vector3d::UnitZ())
+//            * Eigen::AngleAxisd( 0.2, Eigen::Vector3d::UnitY())
+//            * Eigen::AngleAxisd( 0.1, Eigen::Vector3d::UnitX());;
+//    //
+//    to_points[0] = transformPoint( from_points[0], tr.matrix() );
+//    to_points[1] = transformPoint( from_points[1], tr.matrix() );
+//    to_points[2] = transformPoint( from_points[2], tr.matrix() );
+//    //
+//    std::vector<Eigen::Vector3d> froms, tos;
+//    for( int i = 0; i < 3; i++)
+//    {
+//        froms.push_back( Eigen::Vector3d( from_points[i].x, from_points[i].y, from_points[i].z ) );
+//        tos.push_back( Eigen::Vector3d( to_points[i].x, to_points[i].y, to_points[i].z ) );
+//    }
+//    //
+//    RESULT_OF_PNP pmotion;
+//    solveRT( froms, tos, pmotion );
+//    // print motion
+//    gtsam::Rot3 rot3( pmotion.rotation );
+//    cout << YELLOW << " relative motion: " << endl;
+//    cout << "  - R:(rpy) " << endl;
+//    cout << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
+//    cout << "  - T: " << endl;
+//    cout << pmotion.translation << RESET << endl;
+//    cout << CYAN << " true motion: " << endl;
+//    cout << "  - R:(rpy) " << endl;
+//    cout << 0.1 << ", " << 0.2 << ", " << 0.3 << endl;
+//    cout << "  - T: " << "0.05, 0.06, 0.08" << RESET << endl;
+//}
+

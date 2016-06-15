@@ -119,6 +119,8 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
                                 const sensor_msgs::ImageConstPtr& depth_img_msg,
                                 const sensor_msgs::CameraInfoConstPtr& cam_info_msg)
 {
+    static int skip = 0;
+
     printf("no cloud msg: %d\n", depth_img_msg->header.seq);
 
     // Get odom pose
@@ -141,7 +143,9 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
 
 
     // Process data
-    processCloud( current_frame, odom_pose );
+    skip = (skip + 1) % 5;
+    if(!skip)
+        processCloud( current_frame, odom_pose );
 
     //
 //    if(!loop_one_message_)
@@ -277,6 +281,7 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
     map_viewer_->removeAllPointClouds();
     map_viewer_->removeAllShapes();
 
+
     // Do slam
     std::vector<PlaneType> landmarks;
     if( do_slam_ )
@@ -305,16 +310,15 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
             gtsam::Pose3 o_pose;
             plane_slam_->tfToPose3( odom_pose, o_pose );
             gtsam::Pose3 r_pose = estimated_pose.inverse() * o_pose;
-            estimated_pose = o_pose;
             RESULT_OF_PNP motion;
             bool res = solveRelativeTransformPlanes( frame, last_frame, motion );
             if( res )
             {
                 cout << CYAN << " true motion: " << endl;
-                cout << "  - R:(rpy) " << endl;
-                cout << r_pose.rotation().roll() << ", " << r_pose.rotation().pitch() << ", " << r_pose.rotation().yaw() << endl;
-                cout << "  - T: " << endl;
-                cout << r_pose.translation().vector() << RESET << endl;
+                cout << "  - R(rpy): " << r_pose.rotation().roll() << ", " << r_pose.rotation().pitch() << ", " << r_pose.rotation().yaw() << endl;
+                cout << "  - T:      " << r_pose.translation().x()
+                     << ", " << r_pose.translation().y()
+                     << ", " << r_pose.translation().z() << RESET << endl;
             }
             if( !res )
             {
@@ -339,6 +343,7 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
 //            last_frame = frame;
 
             // store frame
+            estimated_pose = o_pose;
             last_frame = frame;
         }
     }
@@ -372,10 +377,29 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
     cout << "----------------------------------- END -------------------------------------" << endl;
 }
 
+void KinectListener::solveRT(const std::vector<Eigen::Vector3d>& from_points,
+                             const std::vector<Eigen::Vector3d>& to_points,
+                             RESULT_OF_PNP &result)
+{
+    ROS_ASSERT( from_points.size() >= 3 && to_points.size() >=3 );
+
+    Eigen::MatrixXd src(3,3), dst(3,3);
+    for( int i = 0; i < 3; i++)
+    {
+        src.col(i) = from_points[i];
+        dst.col(i) = to_points[i];
+    }
+    Eigen::Matrix4d transform = Eigen::umeyama(src, dst, false);
+    result.rotation = transform.topLeftCorner(3,3);
+    result.translation = transform.col(3).head<3>();
+}
+
 void KinectListener::solveRT(const std::vector<PlaneCoefficients> &planes,
                              const std::vector<PlaneCoefficients> &last_planes,
                              RESULT_OF_PNP &result)
 {
+    ROS_ASSERT( planes.size() >= 3 && last_planes.size() >=3 );
+
     Eigen::MatrixXd R = Eigen::MatrixXd::Identity(3,3);
     Eigen::VectorXd T = Eigen::Vector3d::Zero(3);
     // algorithm: "Least-squares estimation of transformation parameters between two point patterns", Shinji Umeyama, PAMI 1991, DOI: 10.1109/34.88573
@@ -383,10 +407,10 @@ void KinectListener::solveRT(const std::vector<PlaneCoefficients> &planes,
     Eigen::VectorXd distance( 3 );
     for(int i = 0; i < 3; i++ )
     {
-        Eigen::Vector3d from = planes[i].head<3>();
-        Eigen::Vector3d to = last_planes[i].head<3>();
-        double d1 = planes[i](3);
-        double d2 = last_planes[i](3);
+        Eigen::Vector3d to = planes[i].head<3>();
+        Eigen::Vector3d from = last_planes[i].head<3>();
+        double d2 = planes[i](3);
+        double d1 = last_planes[i](3);
         B.col(i) = from;
         A.col(i) = to;
         distance(i) = d1 - d2;   // d_src - d_dst
@@ -458,14 +482,14 @@ bool KinectListener::solveMotionPlanes( const std::vector<PlaneCoefficients> &pl
     ITree::euclidianDistance( planes[0], planes[1], dir1, dis1 );
     ITree::euclidianDistance( planes[0], planes[2], dir2, dis2 );
     ITree::euclidianDistance( planes[1], planes[2], dir3, dis3 );
-    cout << BOLDBLUE << " dir: " << dir_thresh << " - " << dir1 << " " << dir2 << " " << dir3 << RESET << endl;
+    cout << BOLDBLUE << " dir " << dir_thresh << " : " << dir1 << " " << dir2 << " " << dir3 << RESET << endl;
     if( dir1 < dir_thresh || dir2 < dir_thresh || dir3 < dir_thresh )
         return false;
     // check co-planar
     ITree::euclidianDistance( last_planes[0], last_planes[1], dir1, dis1 );
     ITree::euclidianDistance( last_planes[0], last_planes[2], dir2, dis2 );
     ITree::euclidianDistance( last_planes[1], last_planes[2], dir3, dis3 );
-    cout << BOLDBLUE << " dir: " << dir_thresh << " - " << dir1 << " " << dir2 << " " << dir3 << RESET << endl;
+    cout << BOLDBLUE << " dir " << dir_thresh << " : " << dir1 << " " << dir2 << " " << dir3 << RESET << endl;
     if( dir1 < dir_thresh || dir2 < dir_thresh || dir3 < dir_thresh )
         return false;
 
@@ -513,18 +537,19 @@ bool KinectListener::solveRelativeTransformPlanes( KinectFrame& current_frame,
                 lasts.push_back( last_planes[p2.ilm].coefficients );
                 lasts.push_back( last_planes[p3.ilm].coefficients );
                 //
-                cout << YELLOW << " solve motion: (" << x1 << "/" << x2 << "/" << x3 << RESET << endl;
+                cout << YELLOW << " solve motion: (" << x1 << "/" << x2 << "/" << x3 << ")" << RESET << endl;
                 RESULT_OF_PNP motion;
-                bool res = solveMotionPlanes( currents, lasts, motion);
+//                bool res = solveMotionPlanes( currents, lasts, motion);
+                bool res = solveMotionPlanes( lasts, currents, motion);
                 if( res )
                 {
                     // print motion
                     gtsam::Rot3 rot3( motion.rotation );
                     cout << YELLOW << " relative motion: " << endl;
-                    cout << "  - R:(rpy) " << endl;
-                    cout << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
-                    cout << "  - T: " << endl;
-                    cout << motion.translation << RESET << endl;
+                    cout << "  - R(rpy): " << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
+                    cout << "  - T:      " << motion.translation[0]
+                         << ", " << motion.translation[1]
+                         << ", " << motion.translation[2] << RESET << endl;
                 }
             }
         }

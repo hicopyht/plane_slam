@@ -66,6 +66,10 @@ public:
 
     void organizedPlaneSegment(PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
+    void solveRT(const std::vector<Eigen::Vector3d>& from_points,
+                 const std::vector<Eigen::Vector3d>& to_points,
+                 RESULT_OF_PNP &result);
+
     void solveRT(const std::vector<PlaneCoefficients> &planes,
                  const std::vector<PlaneCoefficients> &last_planes,
                  RESULT_OF_PNP &result);
