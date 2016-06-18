@@ -42,19 +42,20 @@ KinectListener::KinectListener() :
     }
 
     private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
-    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/camera/rgb/image_color");
-    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth/image");
-    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/depth/camera_info");
+    private_nh_.param<string>("topic_image_visual", topic_image_visual_, ""); // /camera/rgb/image_color");
+    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth_registered/image");
+    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/depth_registered/camera_info");
     private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
 
-    pcl_viewer_->createViewPort(0, 0, 0.5, 0.5, viewer_v1_);
-    pcl_viewer_->addText("LinesAndNormals", 100, 3, "v1_text", viewer_v1_);
-    pcl_viewer_->createViewPort(0.5, 0, 1.0, 0.5, viewer_v2_);
-    pcl_viewer_->addText("LineBasedPlanes", 100, 3, "v2_text", viewer_v2_);
-    pcl_viewer_->createViewPort(0, 0.5, 0.5, 1.0, viewer_v3_);
-    pcl_viewer_->addText("RansacPlanes", 100, 3, "v3_text", viewer_v3_);
-    pcl_viewer_->createViewPort(0.5, 0.5, 1.0, 1.0, viewer_v4_);
-    pcl_viewer_->addText("OrganizedPlanes", 100, 3, "v4_text", viewer_v4_);
+
+    pcl_viewer_->createViewPort(0, 0.5, 0.5, 1.0, viewer_v1_);
+    pcl_viewer_->addText("RansacPlanes", 100, 3, "v3_text", viewer_v1_);
+    pcl_viewer_->createViewPort(0.5, 0.5, 1.0, 1.0, viewer_v2_);
+    pcl_viewer_->addText("OrganizedPlanes", 100, 3, "v4_text", viewer_v2_);
+    pcl_viewer_->createViewPort(0, 0, 0.5, 0.5, viewer_v3_);
+    pcl_viewer_->addText("LinesAndNormals", 100, 3, "v1_text", viewer_v3_);
+    pcl_viewer_->createViewPort(0.5, 0, 1.0, 0.5, viewer_v4_);
+    pcl_viewer_->addText("LineBasedPlanes", 100, 3, "v2_text", viewer_v4_);
     pcl_viewer_->addCoordinateSystem(0.000001);
     pcl_viewer_->initCameraParameters();
     pcl_viewer_->setCameraPosition(0.0, 0.0, -0.4, 0, 0, 0.6, 0, -1, 0);
@@ -78,7 +79,7 @@ KinectListener::KinectListener() :
     auto_spin_map_viewer_ss_ = nh_.advertiseService("auto_spin_map_viewer", &KinectListener::autoSpinMapViewerCallback, this);
 
     // config subscribers
-    if(!topic_point_cloud_.empty()) // pointcloud2
+    if( !topic_point_cloud_.empty() && !topic_image_visual_.empty() && !topic_camera_info_.empty() ) // pointcloud2
     {
         // use visual image, depth image, pointcloud2
         visual_sub_ = new image_sub_type(nh_, topic_image_visual_, subscriber_queue_size_);
@@ -88,7 +89,7 @@ KinectListener::KinectListener() :
         cloud_sync_->registerCallback(boost::bind(&KinectListener::cloudCallback, this, _1, _2, _3));
         ROS_INFO_STREAM("Listening to " << topic_image_visual_ << ", " << topic_point_cloud_ << " and " << topic_camera_info_ << ".");
     }
-    else if(!topic_camera_info_.empty())
+    else if( !topic_image_visual_.empty() && !topic_image_depth_.empty() && !topic_camera_info_.empty() )
     {
         //No cloud, use visual image, depth image, camera_info
         visual_sub_ = new image_sub_type(nh_, topic_image_visual_, subscriber_queue_size_);
@@ -97,6 +98,16 @@ KinectListener::KinectListener() :
         no_cloud_sync_ = new message_filters::Synchronizer<NoCloudSyncPolicy>(NoCloudSyncPolicy(subscriber_queue_size_),  *visual_sub_, *depth_sub_, *cinfo_sub_),
         no_cloud_sync_->registerCallback(boost::bind(&KinectListener::noCloudCallback, this, _1, _2, _3));
         ROS_INFO_STREAM("Listening to " << topic_image_visual_ << ", " << topic_image_depth_ << " and " << topic_camera_info_ << ".");
+    }
+    else if( !topic_image_depth_.empty() && !topic_camera_info_.empty() )
+    {
+        //Depth, depth image, camera_info
+        depth_sub_ = new image_sub_type (nh_, topic_image_depth_, subscriber_queue_size_);
+        cinfo_sub_ = new cinfo_sub_type(nh_, topic_camera_info_, subscriber_queue_size_);
+        depth_sync_ = new DepthSynchronizer(*depth_sub_, *cinfo_sub_, subscriber_queue_size_),
+        depth_sync_->registerCallback(boost::bind(&KinectListener::depthCallback, this, _1, _2));
+        ROS_INFO_STREAM("Listening to " << topic_image_depth_ << " and " << topic_camera_info_ << ".");
+
     }
     else
     {
@@ -193,7 +204,222 @@ void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img
 //        }
 }
 
+void KinectListener::depthCallback ( const sensor_msgs::ImageConstPtr& depth_img_msg,
+                                    const sensor_msgs::CameraInfoConstPtr& cam_info_msg)
+{
+    static int skip = 0;
+
+    printf("depth msg: %d\n", depth_img_msg->header.seq);
+
+    // Get odom pose
+    tf::Transform odom_pose;
+    if( !getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
+    {
+        odom_pose.setIdentity();
+        ROS_WARN("Odom_pose set to identity.");
+    }
+
+    // Get camera parameter
+    getCameraParameter( cam_info_msg, camera_parameters_);
+
+    // Current Frame
+    KinectFrame current_frame;
+
+    // Get Mat Image
+    current_frame.depth_image = cv_bridge::toCvCopy(depth_img_msg)->image; // to cv image
+    current_frame.visual_image = cv::Mat::ones( current_frame.depth_image.rows, current_frame.depth_image.cols, CV_8UC3 );
+    depthToCV8UC1( current_frame.depth_image, current_frame.depth_mono );
+    // Get PointCloud
+    current_frame.cloud = image2PointCloud( current_frame.visual_image, current_frame.depth_image, camera_parameters_);
+
+    // Process data
+    skip = (skip + 1) % 5;
+    if(!skip)
+        processCloud( current_frame, odom_pose );
+
+}
+
 void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom_pose )
+{
+    static gtsam::Pose3 estimated_pose;
+    static KinectFrame last_frame;
+//    bool use_odom = true;
+//    if( odom_pose == tf::Transform::getIdentity() )
+//        use_odom = false;
+
+    geometry_msgs::PoseStamped pstamped;
+    pstamped.pose.position.x = odom_pose.getOrigin().x();
+    pstamped.pose.position.y = odom_pose.getOrigin().y();
+    pstamped.pose.position.z = odom_pose.getOrigin().z();
+    tf::quaternionTFToMsg( odom_pose.getRotation(), pstamped.pose.orientation );
+    true_poses_.push_back( pstamped );
+    publishTruePath();
+
+    // if use downsample cloud
+    cloud_size_type_ = cloud_size_type_config_;
+    if( cloud_size_type_ == QVGA)
+    {
+        cout << GREEN << "QVGA" << RESET << endl;
+        downsampleOrganizedCloud( frame.cloud, frame.cloud_in, camera_parameters_, (int)QVGA);
+    }
+    else if( cloud_size_type_ == QQVGA)
+    {
+        cout << GREEN << "QQVGA" << RESET << endl;
+        downsampleOrganizedCloud( frame.cloud, frame.cloud_in, camera_parameters_, (int)QQVGA);
+    }
+    else
+    {
+        cout << GREEN << "VGA" << RESET << endl;
+        frame.cloud_in = frame.cloud; // copy pointer
+    }
+
+    double start_time = pcl::getTime();
+    pcl::console::TicToc time;
+    time.tic();
+    float segment_dura = 0;
+    float hull_dura = 0;
+    float keypoint_dura = 0;
+    float slam_dura = 0;
+    float display_dura = 0;
+    float total_dura = 0;
+
+    // Plane Segment
+    if( plane_segment_method_ == ORGANSIZED)
+    {
+        cout << GREEN << "Organized segmentation." << RESET << endl;
+        organizedPlaneSegment( frame.cloud_in, frame.segment_planes );
+        segment_dura = time.toc();
+        time.tic();
+    }
+    else if( plane_segment_method_ == LINE_BADED )
+    {
+        cout << GREEN << "Line based segmentation." << RESET << endl;
+        lineBasedPlaneSegment( frame.cloud_in, frame.segment_planes );
+        segment_dura = time.toc();
+        time.tic();
+    }
+    else
+    {
+        cout << RED << "[Error]: Invalid segmentation method error." << RESET << endl;
+        exit(0);
+    }
+
+    cout << GREEN << " segment planes: " << frame.segment_planes.size() << RESET << endl;
+
+    // extract Hull
+//    plane_slam_->extractPlaneHulls( cloud_in, segment_planes );
+    hull_dura = time.toc();
+    time.tic();
+
+
+    // display
+    pcl_viewer_->removeAllPointClouds();
+    pcl_viewer_->removeAllShapes();
+    map_viewer_->removeAllPointClouds();
+    map_viewer_->removeAllShapes();
+
+    // Do slam
+    std::vector<PlaneType> landmarks;
+    if( do_slam_ )
+    {
+        if(!is_initialized)
+        {
+//            gtsam::Pose3 init_pose;
+//            plane_slam_->tfToPose3( odom_pose, init_pose);
+//            if( plane_slam_->initialize( init_pose, frame ) )
+//            {
+//                is_initialized = true;
+//                estimated_pose = init_pose;
+//                last_frame = frame; // store frame
+//            }
+//            else
+//                return;
+
+            gtsam::Pose3 init_pose;
+            plane_slam_->tfToPose3( odom_pose, init_pose );
+            estimated_pose = init_pose;
+            is_initialized = true;
+
+        }
+        else
+        {
+            gtsam::Pose3 o_pose;
+            plane_slam_->tfToPose3( odom_pose, o_pose );
+            gtsam::Pose3 r_pose = estimated_pose.inverse() * o_pose;
+            RESULT_OF_PNP motion;
+            bool res = solveRelativeTransformPlanes( frame, last_frame, motion );
+            if( res )
+            {
+                cout << CYAN << " true motion: " << endl;
+                cout << "  - R(rpy): " << r_pose.rotation().roll() << ", " << r_pose.rotation().pitch() << ", " << r_pose.rotation().yaw() << endl;
+                cout << "  - T:      " << r_pose.translation().x()
+                     << ", " << r_pose.translation().y()
+                     << ", " << r_pose.translation().z() << RESET << endl;
+            }
+            if( !res )
+            {
+                cout << RED << " failed to estimate relative motion. " << RESET << endl;
+            }
+            //
+////            RESULT_OF_PNP motion = estimateMotion( frame, last_frame, camera_parameters_ );
+//            gtsam::Pose3 rel( gtsam::Rot3(motion.rotation), gtsam::Point3(motion.translation) );
+//            gtsam::Pose3 pose3 = estimated_pose * rel;
+//            estimated_pose = plane_slam_->planeSlam( pose3, frame );
+//            publishPose( estimated_pose );
+//            if(display_path_)
+//                plane_slam_->publishEstimatedPath();
+//            if(display_odom_path_)
+//                plane_slam_->publishOdomPath();
+
+//            // visualize landmark
+//            landmarks = plane_slam_->getLandmarks();
+//            // project and recalculate contour
+
+//            // store frame
+//            last_frame = frame;
+
+            // store frame
+            estimated_pose = o_pose;
+//            last_frame = frame;
+        }
+    }
+
+    slam_dura = time.toc();
+    time.tic();
+
+    // display landmarks
+    if(display_landmarks_ && landmarks.size() > 0)
+    {
+        displayLandmarks( landmarks, "landmark");
+        publishPlanarMap( landmarks );
+    }
+
+    // display
+    if(display_input_cloud_)
+    {
+//        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> rgba_color(frame_current.point_cloud, 255, 255, 255);
+        pcl_viewer_->addPointCloud( frame.cloud_in, "rgba_cloud", viewer_v1_ );
+        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "rgba_cloud", viewer_v1_);
+    }
+    displayPlanes( frame.cloud_in, frame.segment_planes, "planes", viewer_v2_ );
+    displayPlanes( frame.cloud_in, last_frame.segment_planes, "last_planes", viewer_v4_ );
+    pcl_viewer_->addText( "Current Frame", 200, 20, "viewer_v2_name", viewer_v2_);
+    pcl_viewer_->addText( "Last Frame", 200, 20, "viewer_v4_name", viewer_v4_);
+    pcl_viewer_->spinOnce(1);
+    map_viewer_->spinOnce(1);
+
+    display_dura = time.toc();
+    total_dura = (pcl::getTime() - start_time) * 1000;
+
+    cout << GREEN << "Total time: " << total_dura << ", segment: " << segment_dura << ", keypoints: "
+         << keypoint_dura << ", slam: "<< slam_dura << ", display: " << display_dura << RESET << endl;
+    cout << "----------------------------------- END -------------------------------------" << endl;
+
+    // For next calculation
+    last_frame = frame; // store frame
+}
+
+void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom_pose )
 {
     static gtsam::Pose3 estimated_pose;
     static KinectFrame last_frame;
@@ -281,75 +507,6 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
     map_viewer_->removeAllPointClouds();
     map_viewer_->removeAllShapes();
 
-    // test solveRT points&planes
-    {
-        /// 1: Define transform
-        Eigen::Affine3d tr = Eigen::Translation3d(0.05, 0.06, 0.08)
-                * Eigen::AngleAxisd( 0.3, Eigen::Vector3d::UnitZ())
-                * Eigen::AngleAxisd( 0.2, Eigen::Vector3d::UnitY())
-                * Eigen::AngleAxisd( 0.1, Eigen::Vector3d::UnitX());;
-
-        /// 2: Construct points
-        PointType p1, p2, p3;
-        PointType tp1, tp2, tp3;
-        p1.x = 0.1;           p1.y = 0.6;             p1.z = 2.0;
-        p2.x = p1.x + 0.7;    p2.y = p1.y + 0.1,      p2.z = p1.z + 0.1;
-        p3.x = p1.x + 0.2;    p3.y = p1.y + 1.2,      p3.z = p1.z - 0.1;
-        tp1 = transformPoint( p1, tr.matrix() );
-        tp2 = transformPoint( p2, tr.matrix() );
-        tp3 = transformPoint( p3, tr.matrix() );
-        // Select 2 points
-        std::vector<Eigen::Vector3d> from_points;
-        std::vector<Eigen::Vector3d> to_points;
-        from_points.push_back( Eigen::Vector3d(p1.x, p1.y, p1.z) );
-//        from_points.push_back( Eigen::Vector3d(p2.x, p2.y, p2.z) );
-//        from_points.push_back( Eigen::Vector3d(p3.x, p3.y, p3.z) );
-        to_points.push_back( Eigen::Vector3d(tp1.x, tp1.y, tp1.z) );
-//        to_points.push_back( Eigen::Vector3d(tp2.x, tp2.y, tp2.z) );
-//        to_points.push_back( Eigen::Vector3d(tp3.x, tp3.y, tp3.z) );
-
-        /// 3: Construct planes
-        PlaneCoefficients plane1, plane2, plane3;
-        PlaneCoefficients tplane1, tplane2, tplane3;
-        plane1.head<3>() = gtsam::Unit3( 0.1, -0.2, -0.8 ).unitVector();
-        plane1(3) = 1.8;
-        plane2.head<3>() = gtsam::Unit3( 0.8, -0.4, -0.8 ).unitVector();
-        plane2(3) = 2.2;
-        plane3.head<3>() = gtsam::Unit3( 0.1, -0.8, -0.1 ).unitVector();
-        plane3(3) = 0.8;
-        transformPlane( plane1, tr.matrix(), tplane1 );
-        transformPlane( plane2, tr.matrix(), tplane2 );
-        transformPlane( plane3, tr.matrix(), tplane3 );
-        // Select 1 plane
-        std::vector<PlaneCoefficients> planes, tplanes;
-//        planes.push_back( plane1 );
-        planes.push_back( plane2 );
-        planes.push_back( plane3 );
-//        tplanes.push_back( tplane1 );
-        tplanes.push_back( tplane2 );
-        tplanes.push_back( tplane3 );
-
-        /// 4: solve RT
-        RESULT_OF_PNP pmotion;
-        solveRT( tplanes, planes, from_points, to_points, pmotion );
-//        solveRT( tplanes, planes, pmotion );
-//        solveRT( from_points, to_points, pmotion );
-
-        /// 5: print result
-        gtsam::Rot3 rot3( pmotion.rotation );
-//        cout << YELLOW << " test relative motion 3 points: " << endl;
-//        cout << YELLOW << " test relative motion 3 planes: " << endl;
-//        cout << YELLOW << " test relative motion 2 points & 1 plane: " << endl;
-        cout << YELLOW << " test relative motion 1 point & 2 planes: " << endl;
-        cout << "  - R(rpy): " << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
-        cout << "  - T:      "
-             << pmotion.translation(0) << ", "
-             << pmotion.translation(1) << ", "
-             << pmotion.translation(2) << RESET << endl;
-        cout << CYAN << " true motion: " << endl;
-        cout << "  - R(rpy): " << 0.1 << ", " << 0.2 << ", " << 0.3 << endl;
-        cout << "  - T:      " << "0.05, 0.06, 0.08" << RESET << endl;
-    }
 
 
     // Do slam
@@ -668,19 +825,19 @@ bool KinectListener::solveMotionPlanes( const std::vector<PlaneCoefficients> &la
     /// 2: Check co-planar
     double dis1, dis2, dis3;
     double dir1, dir2, dir3;
-    const double dir_thresh = 20.0 * DEG_TO_RAD;
+    const double dir_thresh = 15.0 * DEG_TO_RAD;
     // check co-planar
     ITree::euclidianDistance( planes[0], planes[1], dir1, dis1 );
     ITree::euclidianDistance( planes[0], planes[2], dir2, dis2 );
     ITree::euclidianDistance( planes[1], planes[2], dir3, dis3 );
-    cout << BOLDBLUE << " dir " << dir_thresh << " : " << dir1 << " " << dir2 << " " << dir3 << RESET << endl;
+//    cout << BOLDBLUE << " dir " << dir_thresh << " : " << dir1 << " " << dir2 << " " << dir3 << RESET << endl;
     if( dir1 < dir_thresh || dir2 < dir_thresh || dir3 < dir_thresh )
         return false;
     // check co-planar
     ITree::euclidianDistance( last_planes[0], last_planes[1], dir1, dis1 );
     ITree::euclidianDistance( last_planes[0], last_planes[2], dir2, dis2 );
     ITree::euclidianDistance( last_planes[1], last_planes[2], dir3, dis3 );
-    cout << BOLDBLUE << " dir " << dir_thresh << " : " << dir1 << " " << dir2 << " " << dir3 << RESET << endl;
+//    cout << BOLDBLUE << " dir " << dir_thresh << " : " << dir1 << " " << dir2 << " " << dir3 << RESET << endl;
     if( dir1 < dir_thresh || dir2 < dir_thresh || dir3 < dir_thresh )
         return false;
 
@@ -728,14 +885,15 @@ bool KinectListener::solveRelativeTransformPlanes( KinectFrame& current_frame,
                 lasts.push_back( last_planes[p2.ilm].coefficients );
                 lasts.push_back( last_planes[p3.ilm].coefficients );
                 //
-                cout << YELLOW << " solve motion: (" << x1 << "/" << x2 << "/" << x3 << ")" << RESET << endl;
+//                cout << YELLOW << " solve motion: (" << x1 << "/" << x2 << "/" << x3 << ")" << RESET << endl;
                 RESULT_OF_PNP motion;
                 bool res = solveMotionPlanes( currents, lasts, motion);
                 if( res )
                 {
                     // print motion
                     gtsam::Rot3 rot3( motion.rotation );
-                    cout << YELLOW << " relative motion: " << endl;
+                    cout << YELLOW << " relative motion: (" << p1.iobs << "/" << p2.iobs << "/" << p3.iobs << "), ("
+                         << p1.ilm << "/" << p2.ilm << "/" << p3.ilm << ")" <<endl;
                     cout << "  - R(rpy): " << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
                     cout << "  - T:      " << motion.translation[0]
                          << ", " << motion.translation[1]
@@ -1094,6 +1252,7 @@ void KinectListener::planeSegmentReconfigCallback(plane_slam::PlaneSegmentConfig
     display_normal_ = config.display_normal;
     display_normal_arrow_ = config.display_normal_arrow;
     display_plane_ = config.display_plane;
+    display_plane_number_ = config.display_plane_number;
     display_plane_arrow_ = config.display_plane_arrow;
     display_plane_inlier_ = config.display_plane_inlier;
     display_plane_projected_inlier_ = config.display_plane_projected_inlier;
@@ -1245,7 +1404,7 @@ void KinectListener::displayPlanes( const PointCloudTypePtr &input, std::vector<
         {
             stringstream ss;
             ss << "_" << j;
-            pclViewerPlane( input, planes[j], prefix + ss.str(), viewport );
+            pclViewerPlane( input, planes[j], prefix + ss.str(), viewport, j);
         }
     }
 }
@@ -1420,7 +1579,7 @@ void KinectListener::pclViewerNormal( const PointCloudTypePtr &input, PlaneFromL
 
 }
 
-void KinectListener::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &plane, const std::string &id, int viewport)
+void KinectListener::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &plane, const std::string &id, int viewport, int number)
 {
     double r = rng.uniform(0.0, 255.0);
     double g = rng.uniform(0.0, 255.0);
@@ -1451,9 +1610,25 @@ void KinectListener::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &
             p2.x = p1.x + plane.coefficients[0]*0.2;
             p2.y = p1.y + plane.coefficients[1]*0.2;
             p2.z = p1.z + plane.coefficients[2]*0.2;
+            //
             pcl_viewer_->addArrow(p2, p1, r, g, b, false, id+"_arrow", viewport);
             // add a sphere
         //    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point", viewport);
+        }
+
+        if(display_plane_number_)
+        {
+            // add a plane number
+            PointType p1, p2;
+            p1 = plane.centroid;
+            //
+            p2.x = p1.x + plane.coefficients[0]*0.05;
+            p2.y = p1.y + plane.coefficients[1]*0.05;
+            p2.z = p1.z + plane.coefficients[2]*0.05;
+            // add plane number
+            stringstream ss;
+            ss << number;
+            pcl_viewer_->addText3D( ss.str(), p2, 0.05, 1.0, 1.0, 1.0, id+"_number", viewport+1);
         }
     }
     else if( display_plane_inlier_ )
@@ -1482,9 +1657,25 @@ void KinectListener::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &
             p2.x = p1.x + plane.coefficients[0]*0.2;
             p2.y = p1.y + plane.coefficients[1]*0.2;
             p2.z = p1.z + plane.coefficients[2]*0.2;
+            //
             pcl_viewer_->addArrow(p2, p1, r, g, b, false, id+"_arrow", viewport);
             // add a sphere
         //    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point", viewport);
+        }
+
+        if(display_plane_number_)
+        {
+            // add a plane number
+            PointType p1, p2;
+            p1 = plane.centroid;
+            //
+            p2.x = p1.x + plane.coefficients[0]*0.05;
+            p2.y = p1.y + plane.coefficients[1]*0.05;
+            p2.z = p1.z + plane.coefficients[2]*0.05;
+            // add plane number
+            stringstream ss;
+            ss << number;
+            pcl_viewer_->addText3D( ss.str(), p2, 0.05, 1.0, 1.0, 1.0, id+"_number", viewport+1);
         }
     }
 

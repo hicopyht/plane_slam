@@ -300,42 +300,75 @@ void cvToEigen(const cv::Mat& src, Eigen::Matrix3d& dst )
 
 
 //// test point RT
-//void testSolvePointRT()
+//// test solveRT points&planes
+//void testRT()
 //{
-//    std::vector<PointType> from_points;
-//    std::vector<PointType> to_points(3);
-//    PointType p1; p1.x = 0.1;           p1.y = 0.6;             p1.z = 2.0;
-//    PointType p2; p2.x = p1.x + 0.7;    p2.y = p1.y + 0.1,      p2.z = p1.z + 0.1;
-//    PointType p3; p3.x = p1.x + 0.2;    p3.y = p1.y + 1.2,      p3.z = p1.z - 0.1;
-//    from_points.push_back( p1 );    from_points.push_back( p2 );    from_points.push_back( p3 );
-//    //
+//    /// 1: Define transform
 //    Eigen::Affine3d tr = Eigen::Translation3d(0.05, 0.06, 0.08)
 //            * Eigen::AngleAxisd( 0.3, Eigen::Vector3d::UnitZ())
 //            * Eigen::AngleAxisd( 0.2, Eigen::Vector3d::UnitY())
 //            * Eigen::AngleAxisd( 0.1, Eigen::Vector3d::UnitX());;
-//    //
-//    to_points[0] = transformPoint( from_points[0], tr.matrix() );
-//    to_points[1] = transformPoint( from_points[1], tr.matrix() );
-//    to_points[2] = transformPoint( from_points[2], tr.matrix() );
-//    //
-//    std::vector<Eigen::Vector3d> froms, tos;
-//    for( int i = 0; i < 3; i++)
-//    {
-//        froms.push_back( Eigen::Vector3d( from_points[i].x, from_points[i].y, from_points[i].z ) );
-//        tos.push_back( Eigen::Vector3d( to_points[i].x, to_points[i].y, to_points[i].z ) );
-//    }
-//    //
+
+//    /// 2: Construct points
+//    PointType p1, p2, p3;
+//    PointType tp1, tp2, tp3;
+//    p1.x = 0.1;           p1.y = 0.6;             p1.z = 2.0;
+//    p2.x = p1.x + 0.7;    p2.y = p1.y + 0.1,      p2.z = p1.z + 0.1;
+//    p3.x = p1.x + 0.2;    p3.y = p1.y + 1.2,      p3.z = p1.z - 0.1;
+//    tp1 = transformPoint( p1, tr.matrix() );
+//    tp2 = transformPoint( p2, tr.matrix() );
+//    tp3 = transformPoint( p3, tr.matrix() );
+//    // Select 2 points
+//    std::vector<Eigen::Vector3d> from_points;
+//    std::vector<Eigen::Vector3d> to_points;
+//    from_points.push_back( Eigen::Vector3d(p1.x, p1.y, p1.z) );
+////        from_points.push_back( Eigen::Vector3d(p2.x, p2.y, p2.z) );
+////        from_points.push_back( Eigen::Vector3d(p3.x, p3.y, p3.z) );
+//    to_points.push_back( Eigen::Vector3d(tp1.x, tp1.y, tp1.z) );
+////        to_points.push_back( Eigen::Vector3d(tp2.x, tp2.y, tp2.z) );
+////        to_points.push_back( Eigen::Vector3d(tp3.x, tp3.y, tp3.z) );
+
+//    /// 3: Construct planes
+//    PlaneCoefficients plane1, plane2, plane3;
+//    PlaneCoefficients tplane1, tplane2, tplane3;
+//    plane1.head<3>() = gtsam::Unit3( 0.1, -0.2, -0.8 ).unitVector();
+//    plane1(3) = 1.8;
+//    plane2.head<3>() = gtsam::Unit3( 0.8, -0.4, -0.8 ).unitVector();
+//    plane2(3) = 2.2;
+//    plane3.head<3>() = gtsam::Unit3( 0.1, -0.8, -0.1 ).unitVector();
+//    plane3(3) = 0.8;
+//    transformPlane( plane1, tr.matrix(), tplane1 );
+//    transformPlane( plane2, tr.matrix(), tplane2 );
+//    transformPlane( plane3, tr.matrix(), tplane3 );
+//    // Select 1 plane
+//    std::vector<PlaneCoefficients> planes, tplanes;
+////        planes.push_back( plane1 );
+//    planes.push_back( plane2 );
+//    planes.push_back( plane3 );
+////        tplanes.push_back( tplane1 );
+//    tplanes.push_back( tplane2 );
+//    tplanes.push_back( tplane3 );
+
+//    /// 4: solve RT
 //    RESULT_OF_PNP pmotion;
-//    solveRT( froms, tos, pmotion );
+//    solveRT( tplanes, planes, from_points, to_points, pmotion );
+////        solveRT( tplanes, planes, pmotion );
+////        solveRT( from_points, to_points, pmotion );
+
+//    /// 5: print result
 //    gtsam::Rot3 rot3( pmotion.rotation );
-//    cout << YELLOW << " test relative motion 2 points & 1 plane: " << endl;
+////        cout << YELLOW << " test relative motion 3 points: " << endl;
+////        cout << YELLOW << " test relative motion 3 planes: " << endl;
+////        cout << YELLOW << " test relative motion 2 points & 1 plane: " << endl;
+//    cout << YELLOW << " test relative motion 1 point & 2 planes: " << endl;
 //    cout << "  - R(rpy): " << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
 //    cout << "  - T:      "
-//         << pmotion.translation(0)
-//         << pmotion.translation(1)
+//         << pmotion.translation(0) << ", "
+//         << pmotion.translation(1) << ", "
 //         << pmotion.translation(2) << RESET << endl;
 //    cout << CYAN << " true motion: " << endl;
 //    cout << "  - R(rpy): " << 0.1 << ", " << 0.2 << ", " << 0.3 << endl;
 //    cout << "  - T:      " << "0.05, 0.06, 0.08" << RESET << endl;
 //}
+
 

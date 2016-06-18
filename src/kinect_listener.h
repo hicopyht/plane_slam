@@ -7,6 +7,7 @@
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
+#include <message_filters/time_synchronizer.h>
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/image_encodings.h>
 #include <sensor_msgs/CameraInfo.h>
@@ -49,6 +50,9 @@ typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image,
                                                         sensor_msgs::Image,
                                                         sensor_msgs::CameraInfo> NoCloudSyncPolicy;
 
+typedef message_filters::TimeSynchronizer<sensor_msgs::Image,
+                                          sensor_msgs::CameraInfo> DepthSynchronizer;
+
 class KinectListener
 {
     enum { VGA = 0, QVGA = 1, QQVGA = 2};
@@ -60,6 +64,8 @@ public:
     ~KinectListener();
 
     void processCloud( KinectFrame &frame, const tf::Transform &odom_pose = tf::Transform::getIdentity() );
+
+    void processFrame( KinectFrame &frame, const tf::Transform &odom_pose = tf::Transform::getIdentity() );
 
     void lineBasedPlaneSegment(PointCloudTypePtr &input,
                                std::vector<PlaneType> &planes);
@@ -107,6 +113,9 @@ protected:
     void cloudCallback (const sensor_msgs::ImageConstPtr& visual_img_msg,
                         const sensor_msgs::PointCloud2ConstPtr& point_cloud,
                         const sensor_msgs::CameraInfoConstPtr& cam_info_msg);
+
+    void depthCallback (const sensor_msgs::ImageConstPtr& depth_img_msg,
+                         const sensor_msgs::CameraInfoConstPtr& cam_info_msg);
 
     void setlineBasedPlaneSegmentParameters();
 
@@ -161,7 +170,7 @@ protected:
 
     void pclViewerNormal( const PointCloudTypePtr &input, PlaneFromLineSegment::NormalType &normal, const std::string &id, int viewpoint);
 
-    void pclViewerPlane( const PointCloudTypePtr &input, PlaneType &plane, const std::string &id, int viewport);
+    void pclViewerPlane( const PointCloudTypePtr &input, PlaneType &plane, const std::string &id, int viewport, int number = 0);
 
     pcl::PointCloud<pcl::PointXYZRGBA>::Ptr image2PointCloud( const cv::Mat &rgb_img, const cv::Mat &depth_img,
                                                             const PlaneFromLineSegment::CAMERA_PARAMETERS& camera );
@@ -210,6 +219,7 @@ private:
     //
     message_filters::Synchronizer<CloudSyncPolicy>* cloud_sync_;
     message_filters::Synchronizer<NoCloudSyncPolicy>* no_cloud_sync_;
+    DepthSynchronizer *depth_sync_;
     //
     ros::Publisher true_path_publisher_;
     ros::Publisher pose_publisher_;
@@ -258,6 +268,7 @@ private:
     bool display_normal_;
     bool display_normal_arrow_;
     bool display_plane_;
+    bool display_plane_number_;
     bool display_plane_arrow_;
     bool display_plane_inlier_;
     bool display_plane_projected_inlier_;

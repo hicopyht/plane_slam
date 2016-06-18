@@ -32,7 +32,8 @@
 # - Use the standard CMAKE_PREFIX_PATH, or GTSAM_DIR, to find a specific gtsam
 #   directory.
 
-set(GTSAM_DIR "$ENV{HOME}/workspace/gtsam")
+#set(GTSAM_DIR "$ENV{HOME}/workspace/gtsam")
+set(GTSAM_DIR "/usr/local/include")
 set(GTSAM_BUILD_NAME build)
 
 # Get path suffixes to help look for gtsam
@@ -60,7 +61,7 @@ if(GTSAM_DIR)
 
   # Find libraries
   find_library(GTSAM_LIBS NAMES gtsam
-    HINTS "${GTSAM_DIR}/lib" "${GTSAM_DIR}" NO_DEFAULT_PATH
+    HINTS "${GTSAM_DIR}/lib" "${GTSAM_DIR}" "${GTSAM_DIR}/../lib" NO_DEFAULT_PATH
     PATH_SUFFIXES ${gtsam_build_names}
     DOC "GTSAM libraries")
 else()
