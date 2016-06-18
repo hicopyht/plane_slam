@@ -2,7 +2,7 @@
 
 
 const std::string KeypointWindow = "Keypoint";
-
+const std::string MatchesWindow = "MatchesFeatures";
 
 KinectListener::KinectListener() :
     private_nh_("~")
@@ -41,10 +41,16 @@ KinectListener::KinectListener() :
         line_based_segment_config_server_.setCallback(line_based_segment_config_callback_);
     }
 
+//    private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
+//    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "");
+//    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth_registered/image");
+//    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/depth_registered/camera_info");
+//    private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
+
     private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
-    private_nh_.param<string>("topic_image_visual", topic_image_visual_, ""); // /camera/rgb/image_color");
-    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth_registered/image");
-    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/depth_registered/camera_info");
+    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/camera/rgb/image_color");
+    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth/image");
+    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/depth/camera_info");
     private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
 
 
@@ -68,6 +74,7 @@ KinectListener::KinectListener() :
 
     //
     cv::namedWindow( KeypointWindow );
+    cv::namedWindow( MatchesWindow );
 
     // feature detector
     detector_ = createDetector( feature_detector_type_ );
@@ -156,7 +163,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
     // Process data
     skip = (skip + 1) % 5;
     if(!skip)
-        processCloud( current_frame, odom_pose );
+        processFrame( current_frame, odom_pose );
 
     //
 //    if(!loop_one_message_)
@@ -233,9 +240,10 @@ void KinectListener::depthCallback ( const sensor_msgs::ImageConstPtr& depth_img
     current_frame.cloud = image2PointCloud( current_frame.visual_image, current_frame.depth_image, camera_parameters_);
 
     // Process data
-    skip = (skip + 1) % 5;
-    if(!skip)
-        processCloud( current_frame, odom_pose );
+    processCloud( current_frame, odom_pose );
+//    skip = (skip + 1) % 5;
+//    if(!skip)
+//        processCloud( current_frame, odom_pose );
 
 }
 
@@ -350,6 +358,14 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
             bool res = solveRelativeTransformPlanes( frame, last_frame, motion );
             if( res )
             {
+                // print motion
+                gtsam::Rot3 rot3( motion.rotation );
+                cout << MAGENTA << " estimated motion, deviation = " << motion.deviation << endl;
+                cout << "  - R(rpy): " << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
+                cout << "  - T:      " << motion.translation[0]
+                     << ", " << motion.translation[1]
+                     << ", " << motion.translation[2] << RESET << endl;
+
                 cout << CYAN << " true motion: " << endl;
                 cout << "  - R(rpy): " << r_pose.rotation().roll() << ", " << r_pose.rotation().pitch() << ", " << r_pose.rotation().yaw() << endl;
                 cout << "  - T:      " << r_pose.translation().x()
@@ -397,12 +413,12 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
     // display
     if(display_input_cloud_)
     {
-//        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> rgba_color(frame_current.point_cloud, 255, 255, 255);
-        pcl_viewer_->addPointCloud( frame.cloud_in, "rgba_cloud", viewer_v1_ );
-        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "rgba_cloud", viewer_v1_);
+//        pcl_viewer_->addPointCloud( frame.cloud_in, "rgba_cloud", viewer_v1_ );
+//        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "rgba_cloud", viewer_v1_);
     }
     displayPlanes( frame.cloud_in, frame.segment_planes, "planes", viewer_v2_ );
     displayPlanes( frame.cloud_in, last_frame.segment_planes, "last_planes", viewer_v4_ );
+
     pcl_viewer_->addText( "Current Frame", 200, 20, "viewer_v2_name", viewer_v2_);
     pcl_viewer_->addText( "Last Frame", 200, 20, "viewer_v4_name", viewer_v4_);
     pcl_viewer_->spinOnce(1);
@@ -494,19 +510,34 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     hull_dura = time.toc();
     time.tic();
 
-//    // Compute Keypoints
-//    computeKeypoint( frame.visual_image, frame.feature_locations_2d, frame.feature_descriptors, frame.depth_mono );
-//    projectTo3D( frame.cloud, frame.feature_locations_2d, frame.feature_locations_3d ); // project to 3d
-//    displayKeypoint( frame.visual_image, frame.feature_locations_2d );
-//    keypoint_dura = time.toc();
-//    time.tic();
+    // Compute Keypoints
+    computeKeypoint( frame.visual_image, frame.cloud, frame.feature_locations_2d,
+                     frame.feature_locations_3d, frame.feature_descriptors, frame.depth_mono );
+    displayKeypoint( frame.visual_image, frame.feature_locations_2d );
+    keypoint_dura = time.toc();
+    time.tic();
+
+    // Match features
+    vector<cv::DMatch> good_matches;
+    if( is_initialized )
+    {
+        matchImageFeatures( last_frame, frame, good_matches, feature_good_match_threshold_);
+        cout << GREEN << "Match features th = " << feature_good_match_threshold_
+             << ", good matches = " << good_matches.size() << RESET << endl;
+        cv::Mat image_matches;
+        cv::drawMatches( last_frame.visual_image, last_frame.feature_locations_2d,
+                         frame.visual_image, frame.feature_locations_2d,
+                         good_matches, image_matches, cv::Scalar::all(-1), cv::Scalar::all(-1),
+                         vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
+        cv::imshow( MatchesWindow, image_matches );
+        cv::waitKey( 1 );
+    }
 
     // display
     pcl_viewer_->removeAllPointClouds();
     pcl_viewer_->removeAllShapes();
     map_viewer_->removeAllPointClouds();
     map_viewer_->removeAllShapes();
-
 
 
     // Do slam
@@ -530,7 +561,7 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
             plane_slam_->tfToPose3( odom_pose, init_pose );
             estimated_pose = init_pose;
             is_initialized = true;
-            last_frame = frame; // store frame
+
         }
         else
         {
@@ -541,6 +572,14 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
             bool res = solveRelativeTransformPlanes( frame, last_frame, motion );
             if( res )
             {
+                // print motion
+                gtsam::Rot3 rot3( motion.rotation );
+                cout << MAGENTA << " estimated motion, deviation = " << motion.deviation << endl;
+                cout << "  - R(rpy): " << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
+                cout << "  - T:      " << motion.translation[0]
+                     << ", " << motion.translation[1]
+                     << ", " << motion.translation[2] << RESET << endl;
+
                 cout << CYAN << " true motion: " << endl;
                 cout << "  - R(rpy): " << r_pose.rotation().roll() << ", " << r_pose.rotation().pitch() << ", " << r_pose.rotation().yaw() << endl;
                 cout << "  - T:      " << r_pose.translation().x()
@@ -571,7 +610,7 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
 
             // store frame
             estimated_pose = o_pose;
-            last_frame = frame;
+//            last_frame = frame;
         }
     }
 
@@ -592,7 +631,16 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
         pcl_viewer_->addPointCloud( frame.cloud_in, "rgba_cloud", viewer_v1_ );
         pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "rgba_cloud", viewer_v1_);
     }
-    displayPlanes( frame.cloud_in, frame.segment_planes, "segment_plane", viewer_v2_ );
+    displayPlanes( last_frame.cloud_in, last_frame.segment_planes, "last_planes", viewer_v2_ );
+    displayPlanes( frame.cloud_in, frame.segment_planes, "planes", viewer_v4_ );
+    pcl_viewer_->addText( "Last Frame", 200, 20, "viewer_v2_name", viewer_v2_);
+    pcl_viewer_->addText( "Current Frame", 200, 20, "viewer_v4_name", viewer_v4_);
+    //
+//    display3DKeypoint( frame.feature_locations_3d, "current", viewer_v1_ );
+//    display3DKeypoint( last_frame.feature_locations_3d, "last", viewer_v3_ );
+    displayMatched3DKeypoint( last_frame.feature_locations_3d, frame.feature_locations_3d, good_matches );
+    pcl_viewer_->addText( "Last 3D Features", 200, 20, "viewer_v1_name", viewer_v1_);
+    pcl_viewer_->addText( "Current 3D Features", 200, 20, "viewer_v3_name", viewer_v3_);
     pcl_viewer_->spinOnce(1);
     map_viewer_->spinOnce(1);
 
@@ -602,6 +650,8 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     cout << GREEN << "Total time: " << total_dura << ", segment: " << segment_dura << ", keypoints: "
          << keypoint_dura << ", slam: "<< slam_dura << ", display: " << display_dura << RESET << endl;
     cout << "----------------------------------- END -------------------------------------" << endl;
+
+    last_frame = frame; // store frame
 }
 
 void KinectListener::solveRT( const std::vector<PlaneCoefficients> &before,
@@ -867,6 +917,8 @@ bool KinectListener::solveRelativeTransformPlanes( KinectFrame& current_frame,
     cout << GREEN << " pairs size: " << pairs_num << RESET << endl;
 
     /// 2: Estimate motion
+    RESULT_OF_PNP best_transform;
+    best_transform.deviation = 1e6; // no inlier
     for( int x1 = 0; x1 < pairs_num-2; x1++)
     {
         PlanePair &p1 = pairs[x1];
@@ -888,12 +940,19 @@ bool KinectListener::solveRelativeTransformPlanes( KinectFrame& current_frame,
 //                cout << YELLOW << " solve motion: (" << x1 << "/" << x2 << "/" << x3 << ")" << RESET << endl;
                 RESULT_OF_PNP motion;
                 bool res = solveMotionPlanes( currents, lasts, motion);
+
                 if( res )
                 {
+                    // check if better
+                    motion.deviation = computeEuclidianDistance( last_planes, planes, pairs, motion );
+                    if( motion.deviation < best_transform.deviation )
+                        best_transform = motion;
+
                     // print motion
                     gtsam::Rot3 rot3( motion.rotation );
                     cout << YELLOW << " relative motion: (" << p1.iobs << "/" << p2.iobs << "/" << p3.iobs << "), ("
-                         << p1.ilm << "/" << p2.ilm << "/" << p3.ilm << ")" <<endl;
+                         << p1.ilm << "/" << p2.ilm << "/" << p3.ilm << ")"
+                         << ", deviation = " << motion.deviation << endl;
                     cout << "  - R(rpy): " << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
                     cout << "  - T:      " << motion.translation[0]
                          << ", " << motion.translation[1]
@@ -904,7 +963,7 @@ bool KinectListener::solveRelativeTransformPlanes( KinectFrame& current_frame,
     }
 
 //    Eigen::umeyama
-
+    result = best_transform;
     return true;
 }
 
@@ -951,6 +1010,33 @@ bool KinectListener::estimateRelativeTransform( KinectFrame& current_frame, Kine
 
     /// 4: Registeration using points & planes
 
+}
+
+double KinectListener::computeEuclidianDistance( std::vector<PlaneType>& last_planes,
+                                                 std::vector<PlaneType>& planes,
+                                                 std::vector<PlanePair>& pairs,
+                                                 RESULT_OF_PNP &relative )
+{
+    double deviation = 0;
+    Eigen::Matrix4d transform = relative.transform();
+    for( int i = 0; i < pairs.size(); i++)
+    {
+        PlaneType &plane = planes[ pairs[i].iobs ];
+        PlaneType &last_plane = last_planes[ pairs[i].ilm ];
+        PlaneType transformed_plane;
+        transformPlane( last_plane.coefficients, transform, transformed_plane.coefficients );
+//        cout << GREEN << " - tr p: " << pairs[i].iobs << "/" << pairs[i].ilm << ": " << endl;
+//        cout << " current: " << plane.coefficients[0] << ", " << plane.coefficients[1]
+//             << ", " << plane.coefficients[2] << ", " << plane.coefficients[3] << endl;
+//        cout << " transformed: " << transformed_plane.coefficients[0] << ", " << transformed_plane.coefficients[1]
+//             << ", " << transformed_plane.coefficients[2] << ", " << transformed_plane.coefficients[3]
+//             << RESET << endl;
+        double direction, distance;
+        ITree::euclidianDistance( plane, transformed_plane, direction, distance );
+        deviation = direction + distance;
+    }
+
+    return deviation / static_cast<int>( pairs.size() );
 }
 
 // estimateMotion 计算两个帧之间的运动
@@ -1032,7 +1118,12 @@ RESULT_OF_PNP KinectListener::estimateMotion( KinectFrame& current_frame, Kinect
     return result;
 }
 
-void KinectListener::computeKeypoint( const cv::Mat &visual, std::vector<cv::KeyPoint> &keypoints, cv::Mat &feature_descriptors, const cv::Mat &mask)
+void KinectListener::computeKeypoint( const cv::Mat &visual,
+                                      const PointCloudTypePtr &cloud_in,
+                                      std::vector<cv::KeyPoint> &keypoints,
+                                      std_vector_of_eigen_vector4f &locations_3d,
+                                      cv::Mat &feature_descriptors,
+                                      const cv::Mat& mask )
 {
     // Get gray image
     cv::Mat gray_img;
@@ -1041,8 +1132,15 @@ void KinectListener::computeKeypoint( const cv::Mat &visual, std::vector<cv::Key
     else
         gray_img = visual;
 
-    // Compute features
+    // Compute eeypoints
+    keypoints.clear();
+    feature_descriptors= cv::Mat();
     detector_->detect( gray_img, keypoints, mask );// fill 2d locations
+
+    // Project to 3D
+    projectTo3D( cloud_in, keypoints, locations_3d);
+
+    // Compute descriptors
     extractor_->compute( gray_img, keypoints, feature_descriptors ); //fill feature_descriptors_ with information
 
 //    // Detect feature for all planes
@@ -1084,6 +1182,41 @@ void KinectListener::projectTo3D( const PointCloudTypePtr &cloud,
     }
 }
 
+
+void KinectListener::matchImageFeatures( KinectFrame& last_frame,
+                                         KinectFrame& current_frame,
+                                         vector< cv::DMatch > &goodMatches,
+                                         double good_match_threshold)
+{
+    vector< cv::DMatch > matches;
+    cv::FlannBasedMatcher matcher;
+//    cout << MAGENTA << " features: " << last_frame.feature_locations_2d.size() << ", "
+//         << current_frame.feature_locations_2d.size() << RESET << endl;
+//    cout << MAGENTA << " descriptors: " << last_frame.feature_descriptors.rows << ", "
+//         << current_frame.feature_descriptors.rows << RESET << endl;
+    matcher.match( last_frame.feature_descriptors, current_frame.feature_descriptors, matches );
+
+    const int query_num = last_frame.feature_descriptors.rows;
+    const int train_num = current_frame.feature_descriptors.rows;
+
+//    cout << "find total " << matches.size() << " matches." <<endl;
+    double minDis = 9999;
+    for ( size_t i=0; i<matches.size(); i++ )
+    {
+        if ( matches[i].distance < minDis )
+            minDis = matches[i].distance;
+    }
+
+    for ( size_t i=0; i<matches.size(); i++ )
+    {
+        if (matches[i].distance < good_match_threshold*minDis
+                && matches[i].queryIdx < query_num
+                && matches[i].trainIdx < train_num )
+            goodMatches.push_back( matches[i] );
+    }
+
+//    cout << "good matches: " << goodMatches.size() << endl;
+}
 
 void KinectListener::setlineBasedPlaneSegmentParameters()
 {
@@ -1247,6 +1380,7 @@ void KinectListener::planeSegmentReconfigCallback(plane_slam::PlaneSegmentConfig
     plane_segment_method_ = config.segment_method;
     feature_detector_type_ = config.feature_detector_type;
     feature_extractor_type_ = config.feature_extractor_type;
+    feature_good_match_threshold_ = config.feature_good_match_threshold;
     display_input_cloud_ = config.display_input_cloud;
     display_line_cloud_ = config.display_line_cloud;
     display_normal_ = config.display_normal;
@@ -1356,12 +1490,83 @@ void KinectListener::publishPlanarMap( const std::vector<PlaneType> &landmarks)
     planar_map_publisher_.publish( cloud2 );
 }
 
+void KinectListener::displayMatched3DKeypoint( std_vector_of_eigen_vector4f &query,
+                                               std_vector_of_eigen_vector4f &train,
+                                               std::vector<cv::DMatch> &matches,
+                                               const std::string &id)
+{
+    PointCloudXYZPtr query_cloud( new PointCloudXYZ ), train_cloud( new PointCloudXYZ );
+    query_cloud->is_dense = false;
+    query_cloud->points.resize( matches.size() );
+    query_cloud->height = 1;
+    query_cloud->width = matches.size();
+    train_cloud->is_dense = false;
+    train_cloud->points.resize( matches.size() );
+    train_cloud->height = 1;
+    train_cloud->width = matches.size();
+    //
+    PointCloudXYZ::iterator query_it = query_cloud->begin(), train_it = train_cloud->begin();
+    for(int i = 0; i < matches.size(); i++, query_it++, train_it++)
+    {
+        if( query_it == query_cloud->end() )
+            break;
+        if( train_it == train_cloud->end() )
+            break;
+
+        pcl::PointXYZ &qp = *query_it;
+        pcl::PointXYZ &tp = *train_it;
+        const int qIdx = matches[i].queryIdx;
+        const int tIdx = matches[i].trainIdx;
+        qp.x = query[qIdx](0);
+        qp.y = query[qIdx](1);
+        qp.z = query[qIdx](2);
+        tp.x = train[tIdx](0);
+        tp.y = train[tIdx](1);
+        tp.z = train[tIdx](2);
+    }
+    //
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> query_color( query_cloud, 0, 255, 0);
+    pcl_viewer_->addPointCloud( query_cloud, query_color, id+"_query", viewer_v1_ );
+    pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_query", viewer_v1_ );
+    //
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> train_color( train_cloud, 255, 255, 0);
+    pcl_viewer_->addPointCloud( train_cloud, train_color, id+"_train", viewer_v3_ );
+    pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_train", viewer_v3_ );
+
+}
+
+void KinectListener::display3DKeypoint( std_vector_of_eigen_vector4f &feature_location_3d, const std::string &id, int viewport )
+{
+    PointCloudXYZPtr cloud( new PointCloudXYZ );
+    cloud->is_dense = false;
+    cloud->points.resize( feature_location_3d.size() );
+    cloud->height = 1;
+    cloud->width = feature_location_3d.size();
+
+    PointCloudXYZ::iterator it = cloud->begin();
+    for(int i = 0; i < feature_location_3d.size(); i++, it++)
+    {
+        if( it == cloud->end() )
+            break;
+        pcl::PointXYZ &pt = *it;
+        pt.x = feature_location_3d[i](0);
+        pt.y = feature_location_3d[i](1);
+        pt.z = feature_location_3d[i](2);
+    }
+
+    //
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> color( cloud, 255, 255, 0);
+    pcl_viewer_->addPointCloud( cloud, color, id+"_3Dfeatures", viewport );
+    pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_3Dfeatures", viewport );
+
+}
+
 void KinectListener::displayKeypoint( const cv::Mat &visual, std::vector<cv::KeyPoint> &keypoints )
 {
     cv::Mat image;
     cv::drawKeypoints( visual, keypoints, image, cv::Scalar::all(-1), cv::DrawMatchesFlags::DEFAULT );
     cv::imshow( KeypointWindow, image );
-    cv::waitKey(1);
+//    cv::waitKey(1);
 }
 
 void KinectListener::displayLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix)

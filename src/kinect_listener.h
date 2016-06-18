@@ -97,13 +97,28 @@ public:
 
     bool estimateRelativeTransform( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result);
 
+    double computeEuclidianDistance( std::vector<PlaneType>& last_planes,
+                                     std::vector<PlaneType>& planes,
+                                     std::vector<PlanePair>& pairs,
+                                     RESULT_OF_PNP &relative );
+
     RESULT_OF_PNP estimateMotion( KinectFrame& current_frame, KinectFrame& last_frame, PlaneFromLineSegment::CAMERA_PARAMETERS& camera );
 
-    void computeKeypoint( const cv::Mat &visual, std::vector<cv::KeyPoint> &keypoints, cv::Mat &feature_descriptors, const cv::Mat& mask=cv::Mat());
+    void computeKeypoint( const cv::Mat &visual,
+                          const PointCloudTypePtr &cloud_in,
+                          std::vector<cv::KeyPoint> &keypoints,
+                          std_vector_of_eigen_vector4f &locations_3d,
+                          cv::Mat &feature_descriptors,
+                          const cv::Mat& mask=cv::Mat());
 
-    void projectTo3D( const PointCloudTypePtr &cloud,
+    void projectTo3D(const PointCloudTypePtr &cloud,
                       std::vector<cv::KeyPoint> &locations_2d,
                       std_vector_of_eigen_vector4f &locations_3d);
+
+    void matchImageFeatures( KinectFrame& last_frame,
+                             KinectFrame& current_frame,
+                             vector< cv::DMatch > &goodMatches,
+                             double good_match_threshold = 4.0);
 
 protected:
     void noCloudCallback (const sensor_msgs::ImageConstPtr& visual_img_msg,
@@ -152,6 +167,13 @@ protected:
     void publishPose( gtsam::Pose3 &pose);
 
     void publishPlanarMap( const std::vector<PlaneType> &landmarks);
+
+    void displayMatched3DKeypoint( std_vector_of_eigen_vector4f &query,
+                                   std_vector_of_eigen_vector4f &train,
+                                   std::vector<cv::DMatch> &matches,
+                                   const std::string &id = "matched_features");
+
+    void display3DKeypoint( std_vector_of_eigen_vector4f &feature_location_3d, const std::string &id, int viewport );
 
     void displayKeypoint( const cv::Mat &visual, std::vector<cv::KeyPoint> &keypoints );
 
@@ -262,6 +284,7 @@ private:
     int plane_segment_method_;
     std::string feature_detector_type_;
     std::string feature_extractor_type_;
+    double feature_good_match_threshold_;
 
     bool display_input_cloud_;
     bool display_line_cloud_;

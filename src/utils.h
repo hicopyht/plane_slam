@@ -153,6 +153,21 @@ struct RESULT_OF_PNP
     Eigen::Matrix3d rotation;
     Eigen::Vector3d translation;
     int inliers;
+    double  deviation;
+
+    RESULT_OF_PNP() : inliers(0), deviation(1e6)
+    {
+        rotation = Eigen::Matrix3d::Identity();
+        translation = Eigen::Vector3d::Zero();
+    }
+
+    Eigen::Matrix4d transform()
+    {
+        Eigen::Matrix4d tr;
+        tr.topLeftCorner(3,3) = rotation;
+        tr.col(3).head<3>() = translation;
+        return tr;
+    }
 };
 
 void matrixTF2Eigen(const tf::Matrix3x3 &t, Eigen::Matrix3d &e);
