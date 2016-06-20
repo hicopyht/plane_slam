@@ -125,6 +125,7 @@ KinectListener::KinectListener() :
     async_spinner_ =  new ros::AsyncSpinner(4, &my_callback_queue_);
     async_spinner_->start();
 
+    std::srand( std::time(0) );
 }
 
 KinectListener::~KinectListener()
@@ -967,6 +968,67 @@ bool KinectListener::solveRelativeTransformPlanes( KinectFrame& current_frame,
     return true;
 }
 
+void KinectListener::computeCorrespondenceInliersAndError( const std::vector<cv::DMatch> & matches,
+                                  const Eigen::Matrix4d& transform,
+                                  const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& froms,
+                                  const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& tos,
+                                  std::vector<cv::DMatch>& inliers, //pure output var
+                                  double& mean_error,//pure output var: rms-mahalanobis-distance
+                                  double squared_max_distance) const
+{
+    inliers.clear();
+    std::vector<std::pair<float,int> > dists;
+    assert(matches.size() > 0);
+    mean_error = 0.0;
+
+    Eigen::Matrix4f trans_inv;//= transform.inverse().cast<float>();
+    BOOST_FOREACH(const cv::DMatch& m, matches)
+    {
+        const Eigen::Vector4f& from = froms[m.queryIdx];
+        const Eigen::Vector4f& to = tos[m.trainIdx];
+//    if(from(2) == 0.0 || to(2) == 0.0 || isnan(from(2)) || isnan(to(2)))
+//    {
+//       continue;
+//    }
+        double euclidian_dist = ITree::euclidianSquaredDistance( from, to, trans_inv );
+        if(euclidian_dist > squared_max_distance)
+            continue; //ignore outliers
+        if(!(euclidian_dist >= 0.0))
+        {
+            continue;
+        }
+        inliers.push_back(m); //include inlier
+        mean_error += euclidian_dist;
+    }
+
+    if ( inliers.size() < 3 )
+    {
+        //at least the samples should be inliers
+        ROS_WARN_COND( inliers.size() > 3, "No inliers at all in %d matches!", (int)matches.size()); // only warn if this checks for all initial matches
+        mean_error = 1e9;
+    }
+    else
+    {
+        mean_error /= inliers.size();
+        mean_error = sqrt(mean_error);
+    }
+}
+
+bool KinectListener::solveRelativeTransformPointsRansac(KinectFrame& last_frame,
+                                             KinectFrame& frame,
+                                             RESULT_OF_PNP &result,
+                                             const Eigen::Matrix4d &estimated_transform)
+{
+    // match feature
+    std::vector<cv::DMatch> good_matches;
+    matchImageFeatures( last_frame, frame, good_matches, feature_good_match_threshold_);
+
+    // sort
+    std::sort(good_matches.begin(), good_matches.end()); //sort by distance, which is the nn_ratio
+
+    //
+}
+
 bool KinectListener::estimateRelativeTransform( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result )
 {
     /// 1: Find matches
@@ -1169,7 +1231,7 @@ void KinectListener::projectTo3D( const PointCloudTypePtr &cloud,
         PointType p3d = cloud->at((int) p2d.x,(int) p2d.y);
 
         // Check for invalid measurements
-        if ( isnan(p3d.x) || isnan(p3d.y) || isnan(p3d.z))
+        if ( isnan(p3d.x) || isnan(p3d.y) || isnan(p3d.z) || p3d.z == 0)
         {
             locations_2d.erase( locations_2d.begin()+i );
             continue;
@@ -1216,6 +1278,60 @@ void KinectListener::matchImageFeatures( KinectFrame& last_frame,
     }
 
 //    cout << "good matches: " << goodMatches.size() << endl;
+}
+
+std::vector<cv::DMatch> KinectListener::randomChooseMatchesPreferGood( unsigned int sample_size,
+                                         vector< cv::DMatch > &matches_with_depth )
+{
+    std::set<std::vector<cv::DMatch>::size_type> sampled_ids;
+    int safety_net = 0;
+    while(sampled_ids.size() < sample_size && matches_with_depth.size() >= sample_size)
+    {
+        int id1 = rand() % matches_with_depth.size();
+        int id2 = rand() % matches_with_depth.size();
+        if(id1 > id2) id1 = id2; //use smaller one => increases chance for lower id
+            sampled_ids.insert(id1);
+        if(++safety_net > 10000)
+        {
+            ROS_ERROR("Infinite Sampling");
+            break;
+        }
+    }
+
+    std::vector<cv::DMatch> sampled_matches;
+    sampled_matches.reserve( sampled_ids.size() );
+    BOOST_FOREACH(std::vector<cv::DMatch>::size_type id, sampled_ids)
+    {
+        sampled_matches.push_back(matches_with_depth[id]);
+    }
+    return sampled_matches;
+}
+
+std::vector<cv::DMatch> KinectListener::randomChooseMatches( unsigned int sample_size,
+                                         vector< cv::DMatch > &matches )
+{
+    std::set<std::vector<cv::DMatch>::size_type> sampled_ids;
+    int safety_net = 0;
+    while(sampled_ids.size() < sample_size && matches.size() >= sample_size)
+    {
+        int id1 = rand() % matches.size();
+        int id2 = rand() % matches.size();
+        if(id1 > id2) id1 = id2; //use smaller one => increases chance for lower id
+            sampled_ids.insert(id1);
+        if(++safety_net > 10000)
+        {
+            ROS_ERROR("Infinite Sampling");
+            break;
+        }
+    }
+
+    std::vector<cv::DMatch> sampled_matches;
+    sampled_matches.reserve( sampled_ids.size() );
+    BOOST_FOREACH(std::vector<cv::DMatch>::size_type id, sampled_ids)
+    {
+        sampled_matches.push_back(matches[id]);
+    }
+    return sampled_matches;
 }
 
 void KinectListener::setlineBasedPlaneSegmentParameters()
@@ -2184,7 +2300,7 @@ cv::FeatureDetector* KinectListener::createDetector( const std::string& detector
     }
     else if( !detectorType.compare( "SURF" ) )
     {
-        fd = new cv::SurfFeatureDetector(200.0, 6, 5);
+        fd = new cv::SurfFeatureDetector(300.0, 6, 5);
 //        fd = new cv::SurfFeatureDetector();
     }
     else if( !detectorType.compare( "ORB" ) )

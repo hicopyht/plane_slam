@@ -31,6 +31,8 @@
 #include <Eigen/Geometry>
 #include <stdio.h>
 #include <vector>
+#include <stdlib.h>
+#include <cstdlib>
 
 using namespace std;
 using namespace Eigen;
@@ -175,8 +177,13 @@ Eigen::Matrix3d matrixTF2Eigen(const tf::Matrix3x3 &t);
 void matrixEigen2TF( const Eigen::Matrix3d &e, tf::Matrix3x3 &t);
 tf::Matrix3x3 matrixEigen2TF(const Eigen::Matrix3d &m33);
 
-PointType transformPoint (const PointType &point,
+template <typename PointT>
+PointT transformPoint (const PointT &point,
                      const Eigen::Matrix4d &transform);
+
+template <typename PointT>
+PointT transformPoint (const PointT &point,
+                     const Eigen::Matrix4f &transform);
 
 void transformPointCloud (const PointCloudType &cloud_in,
                           PointCloudType &cloud_out,

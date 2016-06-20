@@ -41,10 +41,24 @@ tf::Matrix3x3 matrixEigen2TF(const Eigen::Matrix3d &m33)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
-PointType transformPoint (const PointType &point,
+template <typename PointT>
+PointT transformPoint (const PointT &point,
                      const Eigen::Matrix4d &transform)
 {
-  PointType ret = point;
+  PointT ret = point;
+  //ret.getVector3fMap () = transform * point.getVector3fMap ();
+  ret.x = static_cast<float> (transform (0, 0) * point.x + transform (0, 1) * point.y + transform (0, 2) * point.z + transform (0, 3));
+  ret.y = static_cast<float> (transform (1, 0) * point.x + transform (1, 1) * point.y + transform (1, 2) * point.z + transform (1, 3));
+  ret.z = static_cast<float> (transform (2, 0) * point.x + transform (2, 1) * point.y + transform (2, 2) * point.z + transform (2, 3));
+
+  return (ret);
+}
+
+template <typename PointT>
+PointT transformPoint (const PointT &point,
+                     const Eigen::Matrix4f &transform)
+{
+  PointT ret = point;
   //ret.getVector3fMap () = transform * point.getVector3fMap ();
   ret.x = static_cast<float> (transform (0, 0) * point.x + transform (0, 1) * point.y + transform (0, 2) * point.z + transform (0, 3));
   ret.y = static_cast<float> (transform (1, 0) * point.x + transform (1, 1) * point.y + transform (1, 2) * point.z + transform (1, 3));

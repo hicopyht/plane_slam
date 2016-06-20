@@ -137,7 +137,72 @@ bool ITree::checkPlanesOverlap( const PlaneType &lm1, const PlaneType &lm2, cons
     return false;
 }
 
-void ITree::mahalanobisDistance(const PlaneType &p1, const PlaneType &p2, double &direction, double &distance)
-{
 
+/////////////////////////////////////////////////////////////////////////////////////
+
+bool ITree::checkPointCorrespondences( const std_vector_of_eigen_vector4f &froms,
+                                    const std_vector_of_eigen_vector4f &tos,
+                                    const double distance_threshold)
+{
+    // check point-to-point distance constrains
+    const double squared_distance = 0.2;    // 0.2m
+
+    const double df1 = ( froms[0] - froms[1] ).norm();
+    const double df2 = ( froms[0] - froms[2] ).norm();
+    const double df3 = ( froms[1] - froms[2] ).norm();
+
+    if( df1 < squared_distance || df2 < squared_distance || df3 < squared_distance )
+        return false;
+
+    const double dt1 = ( tos[0] - tos[1] ).norm();
+    const double dt2 = ( tos[0] - tos[2] ).norm();
+    const double dt3 = ( tos[1] - tos[2] ).norm();
+
+    if( dt1 < squared_distance || dt2 < squared_distance || dt3 < squared_distance )
+        return false;
+
+    // check correspondence distance constrains
+    const double correspondences_threshold = distance_threshold;
+    if( fabs(df1 - dt1) > correspondences_threshold
+            || fabs(df2 - dt2) > correspondences_threshold
+            || fabs(df3 - dt3) > correspondences_threshold )
+        return false;
+
+    // pass check
+    return true;
 }
+
+template <typename PointT>
+bool ITree::checkPointCorrespondences( const std::vector<PointT> &froms,
+                                       const std::vector<PointT> &tos,
+                                       const double distance_threshold)
+{
+    // check point-to-point distance constrains
+    const double squared_distance = 0.2;    // 0.2m
+
+    const double df1 = euclidianDistance( froms[0] - froms[1] );
+    const double df2 = euclidianDistance( froms[0] - froms[2] );
+    const double df3 = euclidianDistance( froms[1] - froms[2] );
+
+    if( df1 < squared_distance || df2 < squared_distance || df3 < squared_distance )
+        return false;
+
+    const double dt1 = euclidianDistance( tos[0] - tos[1] );
+    const double dt2 = euclidianDistance( tos[0] - tos[2] );
+    const double dt3 = euclidianDistance( tos[1] - tos[2] );
+
+    if( dt1 < squared_distance || dt2 < squared_distance || dt3 < squared_distance )
+        return false;
+
+    // check correspondence distance constrains
+    const double correspondences_threshold = distance_threshold;
+    if( fabs(df1 - dt1) > correspondences_threshold
+            || fabs(df2 - dt2) > correspondences_threshold
+            || fabs(df3 - dt3) > correspondences_threshold )
+        return false;
+
+    // pass check
+    return true;
+}
+
+

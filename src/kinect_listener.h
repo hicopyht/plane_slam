@@ -95,6 +95,19 @@ public:
                                        RESULT_OF_PNP &result,
                                        const Eigen::Matrix4d &estimated_transform = Eigen::MatrixXd::Identity(4,4));
 
+    void computeCorrespondenceInliersAndError( const std::vector<cv::DMatch> & matches,
+                                      const Eigen::Matrix4d& transform,
+                                      const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& froms,
+                                      const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& tos,
+                                      std::vector<cv::DMatch>& inliers, //pure output var
+                                      double& mean_error,//pure output var: rms-mahalanobis-distance
+                                      double squared_max_distance) const;
+
+    bool solveRelativeTransformPointsRansac( KinectFrame& last_frame,
+                                             KinectFrame& frame,
+                                             RESULT_OF_PNP &result,
+                                             const Eigen::Matrix4d &estimated_transform = Eigen::MatrixXd::Identity(4,4));
+
     bool estimateRelativeTransform( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result);
 
     double computeEuclidianDistance( std::vector<PlaneType>& last_planes,
@@ -119,6 +132,12 @@ public:
                              KinectFrame& current_frame,
                              vector< cv::DMatch > &goodMatches,
                              double good_match_threshold = 4.0);
+
+    std::vector<cv::DMatch> randomChooseMatches( unsigned int sample_size,
+                                             vector< cv::DMatch > &matches );
+
+    std::vector<cv::DMatch> randomChooseMatchesPreferGood( unsigned int sample_size,
+                                             vector< cv::DMatch > &matches_with_depth );
 
 protected:
     void noCloudCallback (const sensor_msgs::ImageConstPtr& visual_img_msg,

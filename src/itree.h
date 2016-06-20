@@ -23,13 +23,47 @@ public:
 
     bool binaryMatch( const PlaneType &obs1, const PlaneType &obs2, const PlaneType &lm1, const PlaneType &lm2);
 
+    static bool checkPlanesOverlap( const PlaneType &lm1, const PlaneType &lm2, const double &overlap = 0.5);
+
     static void euclidianDistance(const PlaneType &p1, const PlaneType &p2, double &direction, double &distance);
 
     static void euclidianDistance(const PlaneCoefficients &p1, const PlaneCoefficients &p2, double &direction, double &distance);
 
-    static bool checkPlanesOverlap( const PlaneType &lm1, const PlaneType &lm2, const double &overlap = 0.5);
+    /////////////////////////////////////////////////////////
 
-    static void mahalanobisDistance( const PlaneType &p1, const PlaneType &p2, double &direction, double &distance );
+    static bool checkPointCorrespondences( const std_vector_of_eigen_vector4f &froms,
+                                    const std_vector_of_eigen_vector4f &tos,
+                                    const double distance_threshold = 0.1);
+
+    template <typename PointT>
+    static bool checkPointCorrespondences( const std::vector<PointT> &froms,
+                                    const std::vector<PointT> &tos,
+                                    const double distance_threshold = 0.1);
+
+    template <typename PointT>
+    static float euclidianDistance( const PointT &p1, const PointT &p2)
+    {
+        return ( (p1.getVector4fMap() - p2.getVector4fMap()).norm() );
+    }
+
+    template <typename PointT>
+    static float euclidianSquaredDistance( const PointT &p1, const PointT &p2 )
+    {
+        return ( (p1.getVector4fMap() - p2.getVector4fMap()).squaredNorm() );
+    }
+
+    template <typename PointT>
+    static float euclidianSquaredDistance( const PointT &from, const PointT &to, const Eigen::Matrix4f &transform )
+    {
+        PointT pp = transformPoint( from, transform.inverse() );
+        return ( (pp.getVector4fMap() - to.getVector4fMap()).squaredNorm() );
+    }
+
+    static float euclidianSquaredDistance( const Eigen::Vector4f &from, const Eigen::Vector4f &to, const Eigen::Matrix4f &trans_inv )
+    {
+        Eigen::Vector4f tto = trans_inv * from;
+        return ( ( tto - to ).squaredNorm() );
+    }
 
 private:
 
