@@ -968,49 +968,62 @@ bool KinectListener::solveRelativeTransformPlanes( KinectFrame& current_frame,
     return true;
 }
 
+// from: https://github.com/felixendres/rgbdslam_v2/src/node.cpp
 void KinectListener::computeCorrespondenceInliersAndError( const std::vector<cv::DMatch> & matches,
-                                  const Eigen::Matrix4d& transform,
+                                  const Eigen::Matrix4d& transform4d,
                                   const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& froms,
                                   const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& tos,
+                                  size_t min_inliers,
                                   std::vector<cv::DMatch>& inliers, //pure output var
-                                  double& mean_error,//pure output var: rms-mahalanobis-distance
+                                  double& return_mean_error,//pure output var: rms-mahalanobis-distance
                                   double squared_max_distance) const
 {
     inliers.clear();
-    std::vector<std::pair<float,int> > dists;
     assert(matches.size() > 0);
-    mean_error = 0.0;
+    inliers.reserve(matches.size());
+    //errors.clear();
+    const size_t all_matches_size = matches.size();
+    double mean_error = 0.0;
 
-    Eigen::Matrix4f trans_inv;//= transform.inverse().cast<float>();
-    BOOST_FOREACH(const cv::DMatch& m, matches)
+    //parallelization is detrimental here
+    //#pragma omp parallel for reduction (+: mean_error)
+    for(int i=0; i < all_matches_size; ++i)
+    //BOOST_FOREACH(const cv::DMatch& m, all_matches)
     {
+        const cv::DMatch& m = matches[i];
         const Eigen::Vector4f& from = froms[m.queryIdx];
         const Eigen::Vector4f& to = tos[m.trainIdx];
-//    if(from(2) == 0.0 || to(2) == 0.0 || isnan(from(2)) || isnan(to(2)))
-//    {
-//       continue;
-//    }
-        double euclidian_dist = ITree::euclidianSquaredDistance( from, to, trans_inv );
-        if(euclidian_dist > squared_max_distance)
-            continue; //ignore outliers
-        if(!(euclidian_dist >= 0.0))
-        {
+        if(from(2) == 0.0 || to(2) == 0.0)
+        { //does NOT trigger on NaN
             continue;
         }
+        double mahal_dist = errorFunction2(from, to, transform4d);
+        if(mahal_dist > squared_max_distance)
+        {
+            continue; //ignore outliers
+        }
+        if(!(mahal_dist >= 0.0))
+        {
+            ROS_WARN_STREAM("Mahalanobis_ML_Error: "<<mahal_dist);
+            ROS_WARN_STREAM("Transformation for error !>= 0:\n" << transform4d << "Matches: " << i);
+            continue;
+        }
+        mean_error += mahal_dist;
+        //#pragma omp critical
         inliers.push_back(m); //include inlier
-        mean_error += euclidian_dist;
     }
 
-    if ( inliers.size() < 3 )
+
+    if ( inliers.size()<3 )
     {
         //at least the samples should be inliers
-        ROS_WARN_COND( inliers.size() > 3, "No inliers at all in %d matches!", (int)matches.size()); // only warn if this checks for all initial matches
-        mean_error = 1e9;
+        ROS_DEBUG("No inliers at all in %d matches!", (int)all_matches_size); // only warn if this checks for all initial matches
+        return_mean_error = 1e9;
     }
     else
     {
         mean_error /= inliers.size();
-        mean_error = sqrt(mean_error);
+        return_mean_error = sqrt(mean_error);
     }
 }
 

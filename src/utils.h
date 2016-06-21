@@ -32,7 +32,6 @@
 #include <stdio.h>
 #include <vector>
 #include <stdlib.h>
-#include <cstdlib>
 
 using namespace std;
 using namespace Eigen;
@@ -213,6 +212,27 @@ void projectPoints ( const PointCloudType &input, const std::vector<int> &inlier
                      const Eigen::Vector4f &model_coefficients, PointCloudType &projected_points );
 
 void depthToCV8UC1(cv::Mat& depth_img, cv::Mat& mono8_img);
+
+inline double depth_std_dev(double depth)
+{
+  // From Khoselham and Elberink?
+  static double depth_std_dev = 0.01;
+  // Previously used 0.006 from information on http://www.ros.org/wiki/openni_kinect/kinect_accuracy;
+  // ...using 2sigma = 95%ile
+  //static const double depth_std_dev  = 0.006;
+  return depth_std_dev * depth * depth;
+}
+//Functions without dependencies
+inline double depth_covariance(double depth)
+{
+  static double stddev = depth_std_dev(depth);
+  static double cov = stddev * stddev;
+  return cov;
+}
+
+double errorFunction2(const Eigen::Vector4f& x1,
+                      const Eigen::Vector4f& x2,
+                      const Eigen::Matrix4d& tf_1_to_2);
 
 void cvToEigen(const cv::Mat& src, Eigen::Matrix3d& dst );
 

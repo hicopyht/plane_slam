@@ -96,12 +96,13 @@ public:
                                        const Eigen::Matrix4d &estimated_transform = Eigen::MatrixXd::Identity(4,4));
 
     void computeCorrespondenceInliersAndError( const std::vector<cv::DMatch> & matches,
-                                      const Eigen::Matrix4d& transform,
-                                      const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& froms,
-                                      const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& tos,
-                                      std::vector<cv::DMatch>& inliers, //pure output var
-                                      double& mean_error,//pure output var: rms-mahalanobis-distance
-                                      double squared_max_distance) const;
+                                               const Eigen::Matrix4d& transform4d,
+                                               const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& froms,
+                                               const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& tos,
+                                               size_t min_inliers,
+                                               std::vector<cv::DMatch>& inliers, //pure output var
+                                               double& return_mean_error,//pure output var: rms-mahalanobis-distance
+                                               double squared_max_distance) const;
 
     bool solveRelativeTransformPointsRansac( KinectFrame& last_frame,
                                              KinectFrame& frame,
