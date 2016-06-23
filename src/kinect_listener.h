@@ -136,7 +136,8 @@ public:
     void matchImageFeatures( KinectFrame& last_frame,
                              KinectFrame& current_frame,
                              vector< cv::DMatch > &goodMatches,
-                             double good_match_threshold = 4.0);
+                             double good_match_threshold = 4.0,
+                             int min_match_size = 0);
 
     std::vector<cv::DMatch> randomChooseMatches( const unsigned int sample_size,
                                              vector< cv::DMatch > &matches );
@@ -313,6 +314,7 @@ private:
     std::string feature_detector_type_;
     std::string feature_extractor_type_;
     double feature_good_match_threshold_;
+    int feature_min_good_match_size_;
 
     bool display_input_cloud_;
     bool display_line_cloud_;

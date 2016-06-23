@@ -392,6 +392,29 @@ void cvToEigen(const cv::Mat& src, Eigen::Matrix3d& dst )
     src.convertTo( _dst, _dst.type() );
 }
 
+static inline int hamming_distance_orb32x8_popcountll(const uint64_t* v1, const uint64_t* v2) {
+  return (__builtin_popcountll(v1[0] ^ v2[0]) + __builtin_popcountll(v1[1] ^ v2[1])) +
+         (__builtin_popcountll(v1[2] ^ v2[2]) + __builtin_popcountll(v1[3] ^ v2[3]));
+}
+
+int bruteForceSearchORB(const uint64_t* v, const uint64_t* search_array, const unsigned int& size, int& result_index)
+{
+    //constexpr unsigned int howmany64bitwords = 4;//32*8/64;
+    const unsigned int howmany64bitwords = 4;//32*8/64;
+    result_index = -1;//impossible
+    int min_distance = 1 + 256;//More than maximum distance
+    for(unsigned int i = 0; i < size-1; i+=1, search_array+=4)
+    {
+        int hamming_distance_i = hamming_distance_orb32x8_popcountll(v, search_array);
+        if(hamming_distance_i < min_distance)
+        {
+            min_distance = hamming_distance_i;
+            result_index = i;
+        }
+    }
+    return min_distance;
+}
+
 
 //// test point RT
 //// test solveRT points&planes

@@ -25,7 +25,7 @@ PlaneSlam::PlaneSlam() :
 {
     isam2_parameters_.relinearizeThreshold = 0.05;
     isam2_parameters_.relinearizeSkip = 1;
-    isam2_parameters_.print( "ISAM2 parameters:" );
+//    isam2_parameters_.print( "ISAM2 parameters:" );
     isam2_ = new ISAM2( isam2_parameters_ );
 
     //

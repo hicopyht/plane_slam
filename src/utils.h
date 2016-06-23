@@ -236,6 +236,8 @@ double errorFunction2(const Eigen::Vector4f& x1,
 
 void cvToEigen(const cv::Mat& src, Eigen::Matrix3d& dst );
 
+int bruteForceSearchORB(const uint64_t* v, const uint64_t* search_array, const unsigned int& size, int& result_index);
+
 
 //the following are UBUNTU/LINUX ONLY terminal color
 #define RESET "\033[0m"

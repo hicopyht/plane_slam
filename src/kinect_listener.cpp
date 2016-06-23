@@ -49,8 +49,8 @@ KinectListener::KinectListener() :
 //    private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
 
     private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
-//    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/camera/rgb/image_color");
-    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "");
+    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/camera/rgb/image_color");
+//    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "");
     private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth/image");
     private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/depth/camera_info");
     private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
@@ -81,6 +81,8 @@ KinectListener::KinectListener() :
     // feature detector
     detector_ = createDetector( feature_detector_type_ );
     extractor_ = createDescriptorExtractor( feature_extractor_type_ );
+    cout << GREEN << "Create feature detector: " << feature_detector_type_
+         << ", descriptor: " << feature_extractor_type_ << RESET << endl;
 
     true_path_publisher_ = nh_.advertise<nav_msgs::Path>("true_path", 10);
     pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("estimate_pose", 10);
@@ -492,6 +494,7 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     float segment_dura = 0;
     float hull_dura = 0;
     float keypoint_dura = 0;
+    float match_dura = 0;
     float slam_dura = 0;
     float display_dura = 0;
     float total_dura = 0;
@@ -535,7 +538,10 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     vector<cv::DMatch> good_matches;
     if( is_initialized )
     {
-        matchImageFeatures( last_frame, frame, good_matches, feature_good_match_threshold_);
+        cout << GREEN << "Last features = " << last_frame.feature_locations_3d.size()
+             << ", current features = " << frame.feature_locations_3d.size() << RESET << endl;
+        matchImageFeatures( last_frame, frame, good_matches,
+                            feature_good_match_threshold_, feature_min_good_match_size_ );
         cout << GREEN << "Match features th = " << feature_good_match_threshold_
              << ", good matches = " << good_matches.size() << RESET << endl;
         cv::Mat image_matches;
@@ -544,8 +550,11 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
                          good_matches, image_matches, cv::Scalar::all(-1), cv::Scalar::all(-1),
                          vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
         cv::imshow( MatchesWindow, image_matches );
-        cv::waitKey( 1 );
+//        cv::waitKey( 1 );
     }
+    cv::waitKey( 1 );
+    match_dura = time.toc();
+    time.tic();
 
     // display
     pcl_viewer_->removeAllPointClouds();
@@ -661,8 +670,9 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     display_dura = time.toc();
     total_dura = (pcl::getTime() - start_time) * 1000;
 
-    cout << GREEN << "Total time: " << total_dura << ", segment: " << segment_dura << ", keypoints: "
-         << keypoint_dura << ", slam: "<< slam_dura << ", display: " << display_dura << RESET << endl;
+    cout << GREEN << "Total time: " << total_dura << ", segment: " << segment_dura
+         << ", keypoints: " << keypoint_dura << ", match: "<< match_dura
+         << ", slam: " << slam_dura << ", display: " << display_dura << RESET << endl;
     cout << "----------------------------------- END -------------------------------------" << endl;
 
     last_frame = frame; // store frame
@@ -1261,7 +1271,7 @@ void KinectListener::computeKeypoint( const cv::Mat &visual,
 
 void KinectListener::projectTo3D( const PointCloudTypePtr &cloud,
                                   std::vector<cv::KeyPoint> &locations_2d,
-                                  std_vector_of_eigen_vector4f &locations_3d)
+                                  std_vector_of_eigen_vector4f &locations_3d )
 {
     // Clear
     if(locations_3d.size())
@@ -1291,33 +1301,70 @@ void KinectListener::projectTo3D( const PointCloudTypePtr &cloud,
 void KinectListener::matchImageFeatures( KinectFrame& last_frame,
                                          KinectFrame& current_frame,
                                          vector< cv::DMatch > &goodMatches,
-                                         double good_match_threshold)
+                                         double good_match_threshold,
+                                         int min_match_size)
 {
     vector< cv::DMatch > matches;
-    cv::FlannBasedMatcher matcher;
-//    cout << MAGENTA << " features: " << last_frame.feature_locations_2d.size() << ", "
-//         << current_frame.feature_locations_2d.size() << RESET << endl;
-//    cout << MAGENTA << " descriptors: " << last_frame.feature_descriptors.rows << ", "
-//         << current_frame.feature_descriptors.rows << RESET << endl;
-    matcher.match( last_frame.feature_descriptors, current_frame.feature_descriptors, matches );
-
-    const int query_num = last_frame.feature_descriptors.rows;
-    const int train_num = current_frame.feature_descriptors.rows;
-
-//    cout << "find total " << matches.size() << " matches." <<endl;
-    double minDis = 9999;
-    for ( size_t i=0; i<matches.size(); i++ )
+    if( !feature_extractor_type_.compare(("ORB")))
     {
-        if ( matches[i].distance < minDis )
-            minDis = matches[i].distance;
+        uint64_t* query_value =  reinterpret_cast<uint64_t*>(last_frame.feature_descriptors.data);
+        uint64_t* search_array = reinterpret_cast<uint64_t*>(current_frame.feature_descriptors.data);
+        for(unsigned int i = 0; i < last_frame.feature_locations_2d.size(); ++i, query_value += 4)
+        {   //ORB feature = 32*8bit = 4*64bit
+            int result_index = -1;
+            int hd = bruteForceSearchORB(query_value, search_array, current_frame.feature_locations_2d.size(), result_index);
+            if(hd >= 128)
+                continue;//not more than half of the bits matching: Random
+            cv::DMatch match(i, result_index, hd /256.0 + (float)rand()/(1000.0*RAND_MAX));
+            matches.push_back(match);
+        }
+    }
+    else
+    {
+        cv::FlannBasedMatcher matcher;
+    //    cout << MAGENTA << " features: " << last_frame.feature_locations_2d.size() << ", "
+    //         << current_frame.feature_locations_2d.size() << RESET << endl;
+    //    cout << MAGENTA << " descriptors: " << last_frame.feature_descriptors.rows << ", "
+    //         << current_frame.feature_descriptors.rows << RESET << endl;
+        matcher.match( last_frame.feature_descriptors, current_frame.feature_descriptors, matches );
     }
 
-    for ( size_t i=0; i<matches.size(); i++ )
+    if( min_match_size != 0)
     {
-        if (matches[i].distance < good_match_threshold*minDis
-                && matches[i].queryIdx < query_num
-                && matches[i].trainIdx < train_num )
-            goodMatches.push_back( matches[i] );
+        std::sort( matches.begin(), matches.end() );
+        if( matches.size() < min_match_size )
+            goodMatches = matches;
+        else
+        {
+            for( int i = 0; i < min_match_size; i++)
+            {
+                goodMatches.push_back( matches[i] );
+            }
+        }
+    }
+    else
+    {
+        // Get good matches
+        const int query_num = last_frame.feature_locations_2d.size();
+        const int train_num = current_frame.feature_locations_2d.size();
+
+    //    cout << "find total " << matches.size() << " matches." <<endl;
+
+        double minDis = 9999;
+        for ( size_t i=0; i<matches.size(); i++ )
+        {
+            if ( matches[i].distance < minDis )
+                minDis = matches[i].distance;
+        }
+
+        for ( size_t i=0; i<matches.size(); i++ )
+        {
+            if (matches[i].distance < good_match_threshold*minDis
+    //                    && matches[i].queryIdx < query_num
+    //                    && matches[i].trainIdx < train_num
+                    )
+                goodMatches.push_back( matches[i] );
+        }
     }
 
 //    cout << "good matches: " << goodMatches.size() << endl;
@@ -1542,6 +1589,7 @@ void KinectListener::planeSegmentReconfigCallback(plane_slam::PlaneSegmentConfig
     feature_detector_type_ = config.feature_detector_type;
     feature_extractor_type_ = config.feature_extractor_type;
     feature_good_match_threshold_ = config.feature_good_match_threshold;
+    feature_min_good_match_size_ = config.feature_min_good_match_size;
     display_input_cloud_ = config.display_input_cloud;
     display_line_cloud_ = config.display_line_cloud;
     display_normal_ = config.display_normal;
@@ -2374,8 +2422,8 @@ cv::FeatureDetector* KinectListener::createDetector( const std::string& detector
     cv::FeatureDetector* fd = 0;
     if( !detectorType.compare( "FAST" ) )
     {
-//        fd = new cv::FastFeatureDetector( 20/*threshold*/, true/*nonmax_suppression*/ );
-        fd = new cv::FastFeatureDetector();
+        fd = new cv::FastFeatureDetector( 20/*threshold*/, true/*nonmax_suppression*/ );
+//        fd = new cv::FastFeatureDetector();
     }
     else if( !detectorType.compare( "SURF" ) )
     {
@@ -2384,7 +2432,9 @@ cv::FeatureDetector* KinectListener::createDetector( const std::string& detector
     }
     else if( !detectorType.compare( "ORB" ) )
     {
-        fd = new cv::OrbFeatureDetector();
+//        detAdj = new DetectorAdjuster("AORB", 20);
+        fd = new cv::OrbFeatureDetector( 10000, 1.2, 8, 15, 0, 2, cv::ORB::HARRIS_SCORE, 31 );
+//        fd = new cv::OrbFeatureDetector();
     }
     else if( !detectorType.compare( "SIFT" ) )
     {
@@ -2408,7 +2458,8 @@ cv::DescriptorExtractor* KinectListener::createDescriptorExtractor( const string
     }
     else if( !descriptorType.compare( "ORB" ) )
     {
-        extractor = new cv::OrbDescriptorExtractor();
+        extractor = new cv::OrbDescriptorExtractor( 1000, 1.2, 8, 31, 0, 2, cv::ORB::HARRIS_SCORE, 31 );
+//        extractor = new cv::OrbDescriptorExtractor();
     }
     else if( !descriptorType.compare( "SIFT" ) )
     {
