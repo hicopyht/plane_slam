@@ -18,6 +18,7 @@ PlaneSlam::PlaneSlam() :
   , plane_match_direction_threshold_( 0.1 )
   , plane_match_distance_threshold_( 0.05 )
   , plane_match_check_overlap_( true )
+  , plane_match_overlap_alpha_( 0.5 )
   , plane_inlier_leaf_size_( 0.02f )
   , plane_hull_alpha_( 0.5 )
   , rng(12345)
@@ -39,6 +40,16 @@ bool PlaneSlam::initialize(Pose3 &init_pose, KinectFrame &frame)
 
     if(planes.size() == 0)
         return false;
+
+    // clear
+    pose_count_ = 0;
+    landmark_max_count_ = 0;
+    initial_estimate_.clear();
+    estimated_poses_.clear();
+    odom_poses_.clear();
+    landmarks_.clear();
+    estimated_planes_.clear();
+
 
     // Add a prior factor
     pose_count_ = 0;
@@ -132,8 +143,12 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, KinectFrame &frame)
         ROS_ERROR("You should call initialize() before doing slam.");
         exit(1);
     }
-    // calculate relative pose
+    // calculate relative pose and new pose
     Pose3 rel_pose = odom_pose_.inverse() * odom_pose;
+    Pose3 new_pose = last_estimate_pose_ * rel_pose;
+    // Store odom_pose
+    odom_pose_ = odom_pose;
+    odom_poses_.push_back( odom_pose_ );
 
     // convert to gtsam plane type
     std::vector<OrientedPlane3> observations;
@@ -141,6 +156,20 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, KinectFrame &frame)
     {
         observations.push_back( OrientedPlane3(planes[i].coefficients) );
     }
+
+    // Transform modeled landmakr to pose frame
+    std::vector<OrientedPlane3> predicted_observations;
+    predictObservation( estimated_planes_, new_pose, predicted_observations);
+//    getPredictedObservation( new_pose, predicted_observations );
+
+    // Match modelled landmark with measurement
+    std::vector<PlanePair> pairs;
+    matchPlanes( predicted_observations, landmarks_, observations, planes, odom_pose, pairs);
+
+    // check pairs
+    if( pairs.size() < 3 )
+        return new_pose;
+
 
     // Add odometry factors
     Vector odom_sigmas(6);
@@ -152,22 +181,8 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, KinectFrame &frame)
     Key last_key = Symbol('x', pose_count_-1);
     graph_.push_back(BetweenFactor<Pose3>(last_key, pose_key, rel_pose, odometry_noise));
     // Add pose guess
-    Pose3 new_pose = last_estimate_pose_ * rel_pose;
     initial_estimate_.insert<Pose3>( pose_key, new_pose );
     pose_count_ ++;
-
-    // Add odom_pose
-    odom_pose_ = odom_pose;
-    odom_poses_.push_back( odom_pose_ );
-
-    // Transform modeled landmakr to pose frame
-    std::vector<OrientedPlane3> predicted_observations;
-    predictObservation( estimated_planes_, new_pose, predicted_observations);
-//    getPredictedObservation( new_pose, predicted_observations );
-
-    // Match modelled landmark with measurement
-    std::vector<PlanePair> pairs;
-    matchPlanes( predicted_observations, landmarks_, observations, planes, odom_pose, pairs);
 
     // Add factor to exist landmark
     Eigen::VectorXi unpairs = Eigen::VectorXi::Ones( planes.size() );
@@ -371,7 +386,7 @@ void PlaneSlam::matchPlanes( const std::vector<OrientedPlane3> &predicted_observ
             double ds_error = fabs( lobs.distance() - llm.distance() );
 //            cout << CYAN << "  - " << i << "*" << l << ": " << dr_error << "("<< plane_match_direction_threshold_ << "), "
 //                 << ds_error << "(" << plane_match_distance_threshold_ << ")" << RESET << endl;
-            //
+
 //            double dir_error = acos( obs.normal().dot( plm.normal() ));
 //            double dis_error = fabs( obs.distance() - plm.distance() );
 //            cout << YELLOW << "  - " << i << "*" << l << ": " << dir_error << "("<< plane_match_direction_threshold_ << "), "
@@ -693,7 +708,7 @@ bool PlaneSlam::checkOverlap( const PointCloudTypePtr &landmark_cloud, const Ori
             collision ++;
     }
 
-//    cout << GREEN << "  - collision: " << collision << "/" << cloud_projected->size() << RESET << endl;
+    cout << GREEN << "  - collision: " << collision << "/" << cloud_projected->size() << RESET << endl;
 
     double alpha = ((float)collision) / (float)cloud_projected->size();
     if( alpha < plane_match_overlap_alpha_ )

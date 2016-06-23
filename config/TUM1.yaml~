@@ -1,0 +1,9 @@
+#--------------------------------------------------------------------------------------------
+# Camera Parameters. Adjust them!
+camera.fx: 517.306408
+camera.fy: 516.469215
+camera.cx: 318.643040
+camera.cy: 255.313989
+camera.scale: 1.0
+camera.width: 640
+camera.height: 480

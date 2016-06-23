@@ -63,6 +63,9 @@ public:
 
     ~KinectListener();
 
+    void trackDepthImage( const sensor_msgs::ImageConstPtr &depth_img_msg,
+                          PlaneFromLineSegment::CAMERA_PARAMETERS &camera_parameters );
+
     void processCloud( KinectFrame &frame, const tf::Transform &odom_pose = tf::Transform::getIdentity() );
 
     void processFrame( KinectFrame &frame, const tf::Transform &odom_pose = tf::Transform::getIdentity() );
@@ -107,6 +110,7 @@ public:
     bool solveRelativeTransformPointsRansac( KinectFrame& last_frame,
                                              KinectFrame& frame,
                                              RESULT_OF_PNP &result,
+                                             std::vector<cv::DMatch> &matches,
                                              const Eigen::Matrix4d &estimated_transform = Eigen::MatrixXd::Identity(4,4));
 
     bool estimateRelativeTransform( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result);
@@ -134,10 +138,10 @@ public:
                              vector< cv::DMatch > &goodMatches,
                              double good_match_threshold = 4.0);
 
-    std::vector<cv::DMatch> randomChooseMatches( unsigned int sample_size,
+    std::vector<cv::DMatch> randomChooseMatches( const unsigned int sample_size,
                                              vector< cv::DMatch > &matches );
 
-    std::vector<cv::DMatch> randomChooseMatchesPreferGood( unsigned int sample_size,
+    std::vector<cv::DMatch> randomChooseMatchesPreferGood( const unsigned int sample_size,
                                              vector< cv::DMatch > &matches_with_depth );
 
 protected:
@@ -179,6 +183,9 @@ protected:
     void downsampleOrganizedCloud(const PointCloudTypePtr &input, PointCloudTypePtr &output,
                                   PlaneFromLineSegment::CAMERA_PARAMETERS &out_camera, int size_type);
 
+    void downsampleOrganizedCloud(const PointCloudTypePtr &input, PlaneFromLineSegment::CAMERA_PARAMETERS &in_camera,
+                                  PointCloudTypePtr &output, PlaneFromLineSegment::CAMERA_PARAMETERS &out_camera, int size_type);
+
     void downsampleImage(const cv::Mat &input, cv::Mat &output, int size_type);
 
     void getCameraParameter(const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
@@ -206,13 +213,13 @@ protected:
                                  std::vector<PlaneFromLineSegment::NormalType> &normals,
                                  int viewport);
 
-    void pclViewerLandmark( const PlaneType &plane, const std::string &id );
+    void pclViewerLandmark( const PlaneType &plane, const std::string &id, const int number = -1);
 
     void pclViewerLineRegion( const PointCloudTypePtr &input, PlaneFromLineSegment::LineType &line, const std::string &id, int viewpoint);
 
     void pclViewerNormal( const PointCloudTypePtr &input, PlaneFromLineSegment::NormalType &normal, const std::string &id, int viewpoint);
 
-    void pclViewerPlane( const PointCloudTypePtr &input, PlaneType &plane, const std::string &id, int viewport, int number = 0);
+    void pclViewerPlane( const PointCloudTypePtr &input, PlaneType &plane, const std::string &id, int viewport, int number = -1);
 
     pcl::PointCloud<pcl::PointXYZRGBA>::Ptr image2PointCloud( const cv::Mat &rgb_img, const cv::Mat &depth_img,
                                                             const PlaneFromLineSegment::CAMERA_PARAMETERS& camera );
@@ -295,6 +302,7 @@ private:
     bool display_landmarks_;
     bool display_landmark_inlier_;
     bool display_landmark_arrow_;
+    bool display_landmark_number_;
     bool display_landmark_boundary_;
     bool display_landmark_hull_;
 
@@ -325,6 +333,7 @@ private:
     //
     // Plane segment based line segment
     PlaneFromLineSegment::CAMERA_PARAMETERS camera_parameters_;
+    PlaneFromLineSegment::CAMERA_PARAMETERS real_camera_parameters_;
     PlaneFromLineSegment plane_from_line_segment_;
     bool is_update_line_based_parameters_;
     // LineBased segment

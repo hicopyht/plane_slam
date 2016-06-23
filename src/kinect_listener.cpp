@@ -20,6 +20,7 @@ KinectListener::KinectListener() :
   , rng(12345)
   , prttcp_ (new pcl::DefaultPointRepresentation<PointType>)
   , camera_parameters_()
+  , real_camera_parameters_()
   , organized_plane_segment_()
   , is_initialized( false )
   , plane_slam_( new PlaneSlam() )
@@ -48,7 +49,8 @@ KinectListener::KinectListener() :
 //    private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
 
     private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
-    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/camera/rgb/image_color");
+//    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/camera/rgb/image_color");
+    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "");
     private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth/image");
     private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/depth/camera_info");
     private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
@@ -142,6 +144,10 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
 
     printf("no cloud msg: %d\n", depth_img_msg->header.seq);
 
+    skip = (skip + 1) % 3;
+    if( skip )
+        return;
+
     // Get odom pose
     tf::Transform odom_pose;
     if( !getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
@@ -160,21 +166,9 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
     // Get PointCloud
     current_frame.cloud = image2PointCloud( current_frame.visual_image, current_frame.depth_image, camera_parameters_);
 
-
     // Process data
-    skip = (skip + 1) % 5;
-    if(!skip)
-        processFrame( current_frame, odom_pose );
+    processFrame( current_frame, odom_pose );
 
-    //
-//    if(!loop_one_message_)
-//        processCloud( current_frame, odom_pose );
-//    else
-//        while(loop_one_message_ && ros::ok())
-//        {
-//            ros::Duration(0.2).sleep();
-//            processCloud( current_frame, odom_pose );
-//        }
 }
 
 void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img_msg,
@@ -219,12 +213,16 @@ void KinectListener::depthCallback ( const sensor_msgs::ImageConstPtr& depth_img
 
     printf("depth msg: %d\n", depth_img_msg->header.seq);
 
+    skip = (skip + 1) % 3;
+    if( skip )
+        return;
+
     // Get odom pose
     tf::Transform odom_pose;
     if( !getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
     {
         odom_pose.setIdentity();
-        ROS_WARN("Odom_pose set to identity.");
+        ROS_WARN("Set odom pose to identity.");
     }
 
     // Get camera parameter
@@ -241,10 +239,32 @@ void KinectListener::depthCallback ( const sensor_msgs::ImageConstPtr& depth_img
     current_frame.cloud = image2PointCloud( current_frame.visual_image, current_frame.depth_image, camera_parameters_);
 
     // Process data
-    processCloud( current_frame, odom_pose );
-//    skip = (skip + 1) % 5;
-//    if(!skip)
-//        processCloud( current_frame, odom_pose );
+    processCloud( current_frame );
+}
+
+void KinectListener::trackDepthImage( const sensor_msgs::ImageConstPtr &depth_img_msg,
+                                      PlaneFromLineSegment::CAMERA_PARAMETERS &camera_parameters )
+{
+    static int skip = 0;
+
+    printf("depth msg: %d\n", depth_img_msg->header.seq);
+
+    skip = (skip + 1) % 3;
+    if( skip )
+        return;
+
+    // Current Frame
+    KinectFrame current_frame;
+
+    // Get Mat Image
+    current_frame.depth_image = cv_bridge::toCvCopy(depth_img_msg)->image; // to cv image
+    current_frame.visual_image = cv::Mat::ones( current_frame.depth_image.rows, current_frame.depth_image.cols, CV_8UC3 );
+    depthToCV8UC1( current_frame.depth_image, current_frame.depth_mono );
+    // Get PointCloud
+    current_frame.cloud = image2PointCloud( current_frame.visual_image, current_frame.depth_image, camera_parameters_);
+
+    // Process data
+    processCloud( current_frame );
 
 }
 
@@ -252,34 +272,28 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
 {
     static gtsam::Pose3 estimated_pose;
     static KinectFrame last_frame;
-//    bool use_odom = true;
-//    if( odom_pose == tf::Transform::getIdentity() )
-//        use_odom = false;
 
-    geometry_msgs::PoseStamped pstamped;
-    pstamped.pose.position.x = odom_pose.getOrigin().x();
-    pstamped.pose.position.y = odom_pose.getOrigin().y();
-    pstamped.pose.position.z = odom_pose.getOrigin().z();
-    tf::quaternionTFToMsg( odom_pose.getRotation(), pstamped.pose.orientation );
-    true_poses_.push_back( pstamped );
-    publishTruePath();
+    static int frame_count = 0;
+    static int good_frame_count = 0;
+    frame_count ++;
 
     // if use downsample cloud
     cloud_size_type_ = cloud_size_type_config_;
     if( cloud_size_type_ == QVGA)
     {
         cout << GREEN << "QVGA" << RESET << endl;
-        downsampleOrganizedCloud( frame.cloud, frame.cloud_in, camera_parameters_, (int)QVGA);
+        downsampleOrganizedCloud( frame.cloud, camera_parameters_, frame.cloud_in, real_camera_parameters_, (int)QVGA);
     }
     else if( cloud_size_type_ == QQVGA)
     {
         cout << GREEN << "QQVGA" << RESET << endl;
-        downsampleOrganizedCloud( frame.cloud, frame.cloud_in, camera_parameters_, (int)QQVGA);
+        downsampleOrganizedCloud( frame.cloud, camera_parameters_, frame.cloud_in, real_camera_parameters_, (int)QQVGA);
     }
     else
     {
         cout << GREEN << "VGA" << RESET << endl;
         frame.cloud_in = frame.cloud; // copy pointer
+        real_camera_parameters_ = camera_parameters_;
     }
 
     double start_time = pcl::getTime();
@@ -331,30 +345,23 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
     std::vector<PlaneType> landmarks;
     if( do_slam_ )
     {
-        if(!is_initialized)
+        if(!is_initialized && frame.segment_planes.size() >= 3)
         {
-//            gtsam::Pose3 init_pose;
-//            plane_slam_->tfToPose3( odom_pose, init_pose);
-//            if( plane_slam_->initialize( init_pose, frame ) )
-//            {
-//                is_initialized = true;
-//                estimated_pose = init_pose;
-//                last_frame = frame; // store frame
-//            }
-//            else
-//                return;
+            gtsam::Pose3 init_pose = gtsam::Pose3::identity();
+            if( plane_slam_->initialize( init_pose, frame ) )
+            {
+                is_initialized = true;
+                estimated_pose = init_pose;
+                good_frame_count ++;
 
-            gtsam::Pose3 init_pose;
-            plane_slam_->tfToPose3( odom_pose, init_pose );
-            estimated_pose = init_pose;
-            is_initialized = true;
-
+                // visualize landmark
+                landmarks = plane_slam_->getLandmarks();
+            }
+            else
+                return;
         }
         else
         {
-            gtsam::Pose3 o_pose;
-            plane_slam_->tfToPose3( odom_pose, o_pose );
-            gtsam::Pose3 r_pose = estimated_pose.inverse() * o_pose;
             RESULT_OF_PNP motion;
             bool res = solveRelativeTransformPlanes( frame, last_frame, motion );
             if( res )
@@ -367,38 +374,42 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
                      << ", " << motion.translation[1]
                      << ", " << motion.translation[2] << RESET << endl;
 
-                cout << CYAN << " true motion: " << endl;
-                cout << "  - R(rpy): " << r_pose.rotation().roll() << ", " << r_pose.rotation().pitch() << ", " << r_pose.rotation().yaw() << endl;
-                cout << "  - T:      " << r_pose.translation().x()
-                     << ", " << r_pose.translation().y()
-                     << ", " << r_pose.translation().z() << RESET << endl;
+                good_frame_count ++;
             }
             if( !res )
             {
                 cout << RED << " failed to estimate relative motion. " << RESET << endl;
             }
-            //
-////            RESULT_OF_PNP motion = estimateMotion( frame, last_frame, camera_parameters_ );
-//            gtsam::Pose3 rel( gtsam::Rot3(motion.rotation), gtsam::Point3(motion.translation) );
-//            gtsam::Pose3 pose3 = estimated_pose * rel;
-//            estimated_pose = plane_slam_->planeSlam( pose3, frame );
-//            publishPose( estimated_pose );
-//            if(display_path_)
-//                plane_slam_->publishEstimatedPath();
-//            if(display_odom_path_)
-//                plane_slam_->publishOdomPath();
 
-//            // visualize landmark
-//            landmarks = plane_slam_->getLandmarks();
-//            // project and recalculate contour
+            if( res )
+            {
+                gtsam::Pose3 rel( gtsam::Rot3(motion.rotation), gtsam::Point3(motion.translation) );
+                gtsam::Pose3 pose3 = estimated_pose * rel;
+                gtsam::Pose3 estimated_pose_old = estimated_pose;
+                estimated_pose = plane_slam_->planeSlam( pose3, frame );
+                publishPose( estimated_pose );
+                if(display_path_)
+                    plane_slam_->publishEstimatedPath();
+                if(display_odom_path_)
+                    plane_slam_->publishOdomPath();
 
-//            // store frame
-//            last_frame = frame;
+                // project and recalculate contour
 
-            // store frame
-            estimated_pose = o_pose;
-//            last_frame = frame;
+                //
+                gtsam::Pose3 gtsam_relpose = estimated_pose_old.inverse() * estimated_pose;
+                cout << WHITE << " gtsam relative motion :" << endl;
+                cout << "  - R(rpy): " << gtsam_relpose.rotation().roll()
+                     << ", " << gtsam_relpose.rotation().pitch()
+                     << ", " << gtsam_relpose.rotation().yaw() << endl;
+                cout << "  - T:      " << gtsam_relpose.translation().x()
+                     << ", " << gtsam_relpose.translation().y()
+                     << ", " << gtsam_relpose.translation().z() << RESET << endl;
+            }
+
+            // visualize landmark
+            landmarks = plane_slam_->getLandmarks();
         }
+
     }
 
     slam_dura = time.toc();
@@ -430,6 +441,7 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
 
     cout << GREEN << "Total time: " << total_dura << ", segment: " << segment_dura << ", keypoints: "
          << keypoint_dura << ", slam: "<< slam_dura << ", display: " << display_dura << RESET << endl;
+    cout << GREEN << "Frame count = " << frame_count << ", good frame count = " << good_frame_count << RESET << endl;
     cout << "----------------------------------- END -------------------------------------" << endl;
 
     // For next calculation
@@ -457,13 +469,13 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     if( cloud_size_type_ == QVGA)
     {
         cout << GREEN << "QVGA" << RESET << endl;
-        downsampleOrganizedCloud( frame.cloud, frame.cloud_in, camera_parameters_, (int)QVGA);
+        downsampleOrganizedCloud( frame.cloud, camera_parameters_, frame.cloud_in, real_camera_parameters_, (int)QVGA);
         downsampleImage( frame.visual_image, frame.visual, (int)QVGA );
     }
     else if( cloud_size_type_ == QQVGA)
     {
         cout << GREEN << "QQVGA" << RESET << endl;
-        downsampleOrganizedCloud( frame.cloud, frame.cloud_in, camera_parameters_, (int)QQVGA);
+        downsampleOrganizedCloud( frame.cloud, camera_parameters_, frame.cloud_in, real_camera_parameters_, (int)QQVGA);
         downsampleImage( frame.visual_image, frame.visual, (int)QQVGA );
     }
     else
@@ -471,6 +483,7 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
         cout << GREEN << "VGA" << RESET << endl;
         frame.cloud_in = frame.cloud; // copy pointer
         frame.visual = frame.visual_image;
+        real_camera_parameters_ = camera_parameters_;
     }
 
     double start_time = pcl::getTime();
@@ -1030,6 +1043,7 @@ void KinectListener::computeCorrespondenceInliersAndError( const std::vector<cv:
 bool KinectListener::solveRelativeTransformPointsRansac(KinectFrame& last_frame,
                                              KinectFrame& frame,
                                              RESULT_OF_PNP &result,
+                                             std::vector<cv::DMatch> &matches,
                                              const Eigen::Matrix4d &estimated_transform)
 {
     // match feature
@@ -1040,6 +1054,22 @@ bool KinectListener::solveRelativeTransformPointsRansac(KinectFrame& last_frame,
     std::sort(good_matches.begin(), good_matches.end()); //sort by distance, which is the nn_ratio
 
     //
+    matches.clear();
+    const unsigned int sample_size = 4;
+    unsigned int valid_iterations = 0;
+    const unsigned int max_iterations = 100;
+    int real_iterations = 0;
+    bool valid_tf;
+    for( int n = 0; n < max_iterations && good_matches.size() >= sample_size; n++)
+    {
+        double refined_error = 1e6;
+        std::vector<cv::DMatch> refined_matches;
+        std::vector<cv::DMatch> inlier = randomChooseMatchesPreferGood( sample_size, good_matches); //initialization with random samples
+        Eigen::Matrix4f refined_transformation = Eigen::Matrix4f::Identity();
+
+
+    }
+
 }
 
 bool KinectListener::estimateRelativeTransform( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result )
@@ -1293,7 +1323,7 @@ void KinectListener::matchImageFeatures( KinectFrame& last_frame,
 //    cout << "good matches: " << goodMatches.size() << endl;
 }
 
-std::vector<cv::DMatch> KinectListener::randomChooseMatchesPreferGood( unsigned int sample_size,
+std::vector<cv::DMatch> KinectListener::randomChooseMatchesPreferGood( const unsigned int sample_size,
                                          vector< cv::DMatch > &matches_with_depth )
 {
     std::set<std::vector<cv::DMatch>::size_type> sampled_ids;
@@ -1320,7 +1350,7 @@ std::vector<cv::DMatch> KinectListener::randomChooseMatchesPreferGood( unsigned 
     return sampled_matches;
 }
 
-std::vector<cv::DMatch> KinectListener::randomChooseMatches( unsigned int sample_size,
+std::vector<cv::DMatch> KinectListener::randomChooseMatches( const unsigned int sample_size,
                                          vector< cv::DMatch > &matches )
 {
     std::set<std::vector<cv::DMatch>::size_type> sampled_ids;
@@ -1402,7 +1432,7 @@ void KinectListener::lineBasedPlaneSegment(PointCloudTypePtr &input,
     if (!plane_from_line_segment_.isInitialized() || cloud_size_type_ != last_size_type)
     {
         last_size_type = cloud_size_type_;
-        plane_from_line_segment_.setCameraParameters( camera_parameters_ );
+        plane_from_line_segment_.setCameraParameters( real_camera_parameters_ );
         cout << "Initialize line base segment." << endl;
     }
 
@@ -1488,6 +1518,7 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     odom_frame_ = config.odom_frame;
     plane_slam_->setPlaneMatchThreshold( config.plane_match_direction_threshold * M_PI / 180.0, config.plane_match_distance_threshold);
     plane_slam_->setPlaneMatchCheckOverlap( config.plane_match_check_overlap );
+    plane_slam_->setPlaneMatchOverlapAlpha( config.plane_match_overlap_alpha );
     plane_slam_->setPlaneInlierLeafSize( config.plane_inlier_leaf_size );
     plane_slam_->setPlaneHullAlpha( config.plane_hull_alpha );
     plane_slam_->setRefinePlanarMap( config.refine_planar_map );
@@ -1497,6 +1528,7 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     display_landmarks_ = config.display_landmarks;
     display_landmark_inlier_ = config.display_landmark_inlier;
     display_landmark_arrow_ = config.display_landmark_arrow;
+    display_landmark_number_ = config.display_landmark_number;
     display_landmark_boundary_ = config.display_landmark_boundary;
     display_landmark_hull_ = config.display_landmark_hull;
 
@@ -1723,7 +1755,7 @@ void KinectListener::displayLandmarks( const std::vector<PlaneType> &landmarks, 
             stringstream ss;
             ss << prefix << "_" << i;
 //            map_viewer_->addPlane( coeff, 1.0, 1.0, 1.0, ss.str());
-            pclViewerLandmark( plane, ss.str() );
+            pclViewerLandmark( plane, ss.str(), i);
         }
 
         cout << GREEN << " Display landmarks: " << landmarks.size() << ", invalid = " << invalid_count << RESET << endl;
@@ -1776,7 +1808,7 @@ void KinectListener::displayLinesAndNormals( const PointCloudTypePtr &input,
     }
 }
 
-void KinectListener::pclViewerLandmark( const PlaneType &plane, const std::string &id )
+void KinectListener::pclViewerLandmark( const PlaneType &plane, const std::string &id, const int number )
 {
     // inlier
     if( display_landmark_inlier_ )
@@ -1806,6 +1838,21 @@ void KinectListener::pclViewerLandmark( const PlaneType &plane, const std::strin
             map_viewer_->addArrow(p2, p1, plane.color.Red/255.0, plane.color.Green/255.0, plane.color.Blue/255.0, false, id+"_arrow" );
             // add a sphere
         //    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point" );
+        }
+
+        if( display_landmark_number_ && number >= 0 )
+        {
+            // add a plane number
+            PointType p1, p2;
+            p1 = plane.centroid;
+            //
+            p2.x = p1.x + plane.coefficients[0]*0.43;
+            p2.y = p1.y + plane.coefficients[1]*0.43;
+            p2.z = p1.z + plane.coefficients[2]*0.43;
+            // add plane number
+            stringstream ss;
+            ss << number;
+            map_viewer_->addText3D( ss.str(), p2, 0.1, 1.0, 1.0, 1.0, id+"_number");
         }
     }
 
@@ -1950,7 +1997,7 @@ void KinectListener::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &
         //    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point", viewport);
         }
 
-        if(display_plane_number_)
+        if( display_plane_number_ && number >= 0 )
         {
             // add a plane number
             PointType p1, p2;
@@ -1997,7 +2044,7 @@ void KinectListener::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &
         //    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point", viewport);
         }
 
-        if(display_plane_number_)
+        if( display_plane_number_ && number >= 0 )
         {
             // add a plane number
             PointType p1, p2;
@@ -2157,6 +2204,33 @@ void KinectListener::downsampleOrganizedCloud(const PointCloudTypePtr &input, Po
     out_camera.scale = 1.0;
 }
 
+void KinectListener::downsampleOrganizedCloud(const PointCloudTypePtr &input, PlaneFromLineSegment::CAMERA_PARAMETERS &in_camera,
+                                              PointCloudTypePtr &output, PlaneFromLineSegment::CAMERA_PARAMETERS &out_camera, int size_type)
+{
+    int skip = pow(2, size_type);
+    int width = input->width / skip;
+    int height = input->height / skip;
+    output->width = width;
+    output->height = height;
+    output->is_dense = false;
+    output->points.resize( width * height);
+    for( size_t i = 0, y = 0; i < height; i++, y+=skip)
+    {
+        for( size_t j = 0, x = 0; j < width; j++, x+=skip)
+        {
+            output->points[i*width + j] = input->points[input->width*y + x];
+        }
+    }
+
+    out_camera.width = width;
+    out_camera.height = height;
+    out_camera.cx = in_camera.cx / skip;
+    out_camera.cy = in_camera.cy / skip;
+    out_camera.fx = in_camera.fx / skip;
+    out_camera.fy = in_camera.fy / skip;
+    out_camera.scale = 1.0;
+}
+
 void KinectListener::downsampleImage(const cv::Mat &input, cv::Mat &output, int size_type)
 {
     int skip = pow(2, size_type);
@@ -2251,19 +2325,11 @@ bool KinectListener::getOdomPose( tf::Transform &odom_pose, const std::string &c
         tf_listener_.lookupTransform(odom_frame_, camera_frame, time, trans);
     }catch (tf::TransformException &ex)
     {
-        ROS_ERROR("%s",ex.what());
+        ROS_WARN("%s",ex.what());
         return false;
     }
     odom_pose.setOrigin( trans.getOrigin() );
     odom_pose.setRotation( trans.getRotation() );
-
-//    Eigen::Matrix3d m33 = matrixTF2Eigen( trans.getBasis() );
-//    gtsam::Rot3 rot3(m33);
-//    gtsam::Point3 point3;
-//    point3[0] = trans.getOrigin()[0];
-//    point3[1] = trans.getOrigin()[1];
-//    point3[2] = trans.getOrigin()[2];
-//    odom_pose = gtsam::Pose3( rot3, gtsam::Point3(trans.getOrigin()) );
 
     return true;
 }
