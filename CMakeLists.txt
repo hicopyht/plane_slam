@@ -122,6 +122,7 @@ include_directories(
 add_library( ${PROJECT_NAME}
     src/kinect_listener.cpp
     src/organized_plane_segment.cpp
+    src/ORBextractor.cpp
     src/plane_slam.cpp
     src/utils.cpp
     src/itree.cpp

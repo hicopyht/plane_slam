@@ -33,6 +33,7 @@
 #include "utils.h"
 #include "itree.h"
 #include "plane_slam.h"
+#include "ORBextractor.h"
 
 using namespace std;
 
@@ -101,7 +102,7 @@ public:
     Eigen::Matrix4f getRelativeTransformPoints(const std_vector_of_eigen_vector4f &query_points,
                                        const std_vector_of_eigen_vector4f &train_points,
                                        const std::vector<cv::DMatch> &matches,
-                                       bool valid);
+                                       bool &valid);
 
     void computeCorrespondenceInliersAndError( const std::vector<cv::DMatch> & matches,
                                                const Eigen::Matrix4f& transform4f,
@@ -119,14 +120,22 @@ public:
                                              double &rmse,
                                              std::vector<cv::DMatch> &matches );
 
-    bool estimateRelativeTransform( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result);
-
     double computeEuclidianDistance( std::vector<PlaneType>& last_planes,
                                      std::vector<PlaneType>& planes,
                                      std::vector<PlanePair>& pairs,
                                      RESULT_OF_PNP &relative );
 
-    RESULT_OF_PNP estimateMotion( KinectFrame& current_frame, KinectFrame& last_frame, PlaneFromLineSegment::CAMERA_PARAMETERS& camera );
+    bool solveRelativeTransformPnP( KinectFrame& last_frame,
+                                    KinectFrame& current_frame,
+                                    std::vector<cv::DMatch> &good_matches,
+                                    PlaneFromLineSegment::CAMERA_PARAMETERS& camera,
+                                    RESULT_OF_PNP &result );
+
+    void computeORBKeypoint( const cv::Mat &visual,
+                             const PointCloudTypePtr &cloud_in,
+                             std::vector<cv::KeyPoint> &keypoints,
+                             std_vector_of_eigen_vector4f &locations_3d,
+                             cv::Mat &feature_descriptors );
 
     void computeKeypoint( const cv::Mat &visual,
                           const PointCloudTypePtr &cloud_in,
@@ -134,6 +143,11 @@ public:
                           std_vector_of_eigen_vector4f &locations_3d,
                           cv::Mat &feature_descriptors,
                           const cv::Mat& mask=cv::Mat());
+
+    void projectTo3D( const PointCloudTypePtr &cloud,
+                      std::vector<cv::KeyPoint> &locations_2d,
+                      cv::Mat &feature_descriptors,
+                      std_vector_of_eigen_vector4f &locations_3d );
 
     void projectTo3D(const PointCloudTypePtr &cloud,
                       std::vector<cv::KeyPoint> &locations_2d,
@@ -298,6 +312,8 @@ private:
     //Variables
     cv::Ptr<cv::FeatureDetector> detector_;
     cv::Ptr<cv::DescriptorExtractor> extractor_;
+    //
+    ORBextractor* orb_extractor_;
 
     // Plane slam
     bool do_slam_;
@@ -324,6 +340,7 @@ private:
     int ransac_sample_size_;
     int ransac_iterations_;
     int ransac_min_inlier_;
+    double ransac_inlier_max_mahal_distance_;
 
     bool display_input_cloud_;
     bool display_line_cloud_;

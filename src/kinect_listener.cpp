@@ -84,6 +84,14 @@ KinectListener::KinectListener() :
     cout << GREEN << "Create feature detector: " << feature_detector_type_
          << ", descriptor: " << feature_extractor_type_ << RESET << endl;
 
+    //
+    int nFeatures = 1000;
+    float fScaleFactor = 1.2;
+    int nLevels = 8;
+    int fIniThFAST = 20;
+    int fMinThFAST = 7;
+    orb_extractor_ = new ORBextractor(nFeatures, fScaleFactor, nLevels, fIniThFAST, fMinThFAST);
+
     true_path_publisher_ = nh_.advertise<nav_msgs::Path>("true_path", 10);
     pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("estimate_pose", 10);
     planar_map_publisher_ = nh_.advertise<sensor_msgs::PointCloud2>("planar_map", 10);
@@ -251,7 +259,7 @@ void KinectListener::trackDepthImage( const sensor_msgs::ImageConstPtr &depth_im
 
     printf("depth msg: %d\n", depth_img_msg->header.seq);
 
-    skip = (skip + 1) % 3;
+    skip = (skip + 1) % 6;
     if( skip )
         return;
 
@@ -528,8 +536,11 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     time.tic();
 
     // Compute Keypoints
+    cout << GREEN << feature_detector_type_ << "-" << feature_extractor_type_ << RESET << endl;
     computeKeypoint( frame.visual_image, frame.cloud, frame.feature_locations_2d,
-                     frame.feature_locations_3d, frame.feature_descriptors, frame.depth_mono );
+                     frame.feature_locations_3d, frame.feature_descriptors, cv::Mat());
+//    computeORBKeypoint( frame.visual_image, frame.cloud, frame.feature_locations_2d,
+//                     frame.feature_locations_3d, frame.feature_descriptors );
     displayKeypoint( frame.visual_image, frame.feature_locations_2d );
     keypoint_dura = time.toc();
     time.tic();
@@ -556,6 +567,21 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     match_dura = time.toc();
     time.tic();
 
+//    if( is_initialized && good_matches.size() > 40 )
+//    {
+//        std::vector<cv::DMatch> inlier;
+//        inlier.assign( good_matches.begin(), good_matches.begin() + 40);
+//        cout << BLUE << "Choose matches = " << inlier.size() << RESET << endl;
+//        bool valid_tf;
+//        Eigen::Matrix4f transform4f = getRelativeTransformPoints( last_frame.feature_locations_3d,
+//                                                                  frame.feature_locations_3d,
+//                                                                  inlier, valid_tf );
+//        if( valid_tf )
+//            printTransform( transform4f );
+//        else
+//            cout << RED << " Failed to solve transformation." << RESET << endl;
+//    }
+
     if( is_initialized )
     {
         RESULT_OF_PNP motion;
@@ -578,6 +604,26 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
             cout << RED << " failed to estimate relative motion using RANSAC. " << RESET << endl;
         }
     }
+
+//    if( is_initialized )
+//    {
+//        RESULT_OF_PNP motion;
+//        bool res = solveRelativeTransformPnP( last_frame, frame, good_matches, camera_parameters_, motion );
+////        if( res )
+//        {
+//            // print motion
+//            gtsam::Rot3 rot3( motion.rotation );
+//            cout << YELLOW << " estimated motion PnP, inlier = " << motion.inliers << endl;
+//            cout << "  - R(rpy): " << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
+//            cout << "  - T:      " << motion.translation[0]
+//                 << ", " << motion.translation[1]
+//                 << ", " << motion.translation[2] << RESET << endl;
+//        }
+////        if( !res )
+////        {
+////            cout << RED << " failed to estimate relative motion using RANSAC. " << RESET << endl;
+////        }
+//    }
 
     // display
     pcl_viewer_->removeAllPointClouds();
@@ -1017,7 +1063,7 @@ bool KinectListener::solveRelativeTransformPlanes( KinectFrame& current_frame,
 Eigen::Matrix4f KinectListener::getRelativeTransformPoints( const std_vector_of_eigen_vector4f &query_points,
                                                    const std_vector_of_eigen_vector4f &train_points,
                                                    const std::vector<cv::DMatch> &matches,
-                                                   bool valid)
+                                                   bool &valid)
 {
     pcl::TransformationFromCorrespondences tfc;
     valid = true;
@@ -1025,8 +1071,10 @@ Eigen::Matrix4f KinectListener::getRelativeTransformPoints( const std_vector_of_
 
     BOOST_FOREACH(const cv::DMatch& m, matches)
     {
-        Eigen::Vector3f from = query_points[m.queryIdx].head<3>();
-        Eigen::Vector3f to = train_points[m.trainIdx].head<3>();
+//        Eigen::Vector3f from = query_points[m.queryIdx].head<3>();
+//        Eigen::Vector3f to = train_points[m.trainIdx].head<3>();
+        Eigen::Vector3f to = query_points[m.queryIdx].head<3>();
+        Eigen::Vector3f from = train_points[m.trainIdx].head<3>();
         if(std::isnan(from(2)) || std::isnan(to(2)))
             continue;
         weight = 1.0/(from(2) * to(2));
@@ -1074,6 +1122,9 @@ void KinectListener::computeCorrespondenceInliersAndError( const std::vector<cv:
             continue;
         }
         double mahal_dist = errorFunction2(from, to, transform4d);
+//        double mahal_dist = errorFunction2(to, from, transform4d);
+//        cout << " (" << from[0] << "," << from[1] << "," << from[2]
+//             << ")->(" << to[0] << "," << to[1] << "," << to[2] << ") = "<< mahal_dist;
         if(mahal_dist > squared_max_distance)
         {
             continue; //ignore outliers
@@ -1118,8 +1169,8 @@ bool KinectListener::solveRelativeTransformPointsRansac(KinectFrame &last_frame,
 //    std::sort(good_matches.begin(), good_matches.end()); //sort by distance, which is the nn_ratio
 
     int min_inlier_threshold = ransac_min_inlier_;
-    if( min_inlier_threshold > 0.75*good_matches.size() )
-        min_inlier_threshold = 0.75*good_matches.size();
+    if( min_inlier_threshold > 0.6*good_matches.size() )
+        min_inlier_threshold = 0.6*good_matches.size();
 
     //
     Eigen::Matrix4f resulting_transformation;
@@ -1130,36 +1181,40 @@ bool KinectListener::solveRelativeTransformPointsRansac(KinectFrame &last_frame,
     unsigned int valid_iterations = 0;
     const unsigned int max_iterations = ransac_iterations_;
     int real_iterations = 0;
-    double max_dist_m = 3.0;
-    bool valid_tf;
     double inlier_error;
+    double max_dist_m = ransac_inlier_max_mahal_distance_;
+    bool valid_tf;
     for( int n = 0; n < max_iterations && good_matches.size() >= sample_size; n++)
     {
         double refined_error = 1e6;
         std::vector<cv::DMatch> refined_matches;
-        std::vector<cv::DMatch> inlier = randomChooseMatchesPreferGood( sample_size, good_matches); //initialization with random samples
+//        std::vector<cv::DMatch> inlier = randomChooseMatchesPreferGood( sample_size, good_matches); //initialization with random samples
+        std::vector<cv::DMatch> inlier = randomChooseMatches( sample_size, good_matches); //initialization with random samples
         Eigen::Matrix4f refined_transformation = Eigen::Matrix4f::Identity();
 
         real_iterations++;
-        cout << "Iteration = " << real_iterations << endl;
+//        cout << "Iteration = " << real_iterations << endl;
         for( int refine = 0; refine < 20; refine ++)
         {
             Eigen::Matrix4f transformation = getRelativeTransformPoints( last_frame.feature_locations_3d,
                                                                          frame.feature_locations_3d,
                                                                          inlier, valid_tf );
-            cout << BLUE << " - refine = " << refine << ", relative transform: " << endl;
-            printTransform( transformation );
-
             if( !valid_tf || transformation != transformation )
+            {
+//                cout << BLUE << "- valid = " << (valid_tf?"true":"false") << ", equal = " << (transformation == transformation) << RESET << endl;
                 break;
+            }
 
             computeCorrespondenceInliersAndError( good_matches, transformation, last_frame.feature_locations_3d, frame.feature_locations_3d,
                                                   min_inlier_threshold, inlier, inlier_error, max_dist_m );
 
-            cout << BLUE << " - inlier = " << inlier.size() << ", error = " << inlier_error << RESET << endl;
-
             if( inlier.size() < min_inlier_threshold || inlier_error > max_dist_m)
                 break;
+
+//            cout << BOLDBLUE << " - refine = " << refine << ", relative transform: " << RESET << endl;
+//            printTransform( transformation );
+//            cout << BLUE << " - inlier = " << inlier.size() << ", error = " << inlier_error << RESET << endl;
+//            cout << endl;
 
             if( inlier.size() > refined_matches.size() && inlier_error < refined_error )
             {
@@ -1197,72 +1252,82 @@ bool KinectListener::solveRelativeTransformPointsRansac(KinectFrame &last_frame,
 
     if( valid_iterations == 0 ) // maybe no depth. Try identity?
     {
+        cout << BOLDRED << "No valid iteration, try identity." << RESET << endl;
         //ransac iteration with identity
-        Eigen::Matrix4f transformation = Eigen::Matrix4f::Identity();//hypothesis
+        Eigen::Matrix4f trans = Eigen::Matrix4f::Identity();//hypothesis
         std::vector<cv::DMatch> inlier; //result
+        double refined_error = 1e6;
+        std::vector<cv::DMatch> refined_matches;
+        Eigen::Matrix4f refined_transformation = Eigen::Matrix4f::Identity();
+
         //test which samples are inliers
-        computeCorrespondenceInliersAndError( good_matches, transformation, last_frame.feature_locations_3d, frame.feature_locations_3d,
+        computeCorrespondenceInliersAndError( good_matches, Eigen::Matrix4f::Identity(), last_frame.feature_locations_3d, frame.feature_locations_3d,
                                             min_inlier_threshold, inlier, inlier_error, max_dist_m );
 
-        // valid
-        if (inlier.size() >= min_inlier_threshold && inlier_error < max_dist_m)
+        cout << BOLDRED << "inlier = " << inlier.size() << ", error = " << inlier_error << RESET << endl;
+        if( inlier.size() > sample_size && inlier_error < refined_error )
         {
-            assert(inlier_error>=0);
-            resulting_transformation = transformation;
-            matches.assign(inlier.begin(), inlier.end());
-            rmse = inlier_error;
-            valid_iterations++;
+            refined_matches = inlier;
+            refined_error = inlier_error;
+        }
+
+        // refine
+        for( int refine = 0; refine < 20; refine ++)
+        {
+            if( inlier.size() < sample_size )
+                break;
+
+            Eigen::Matrix4f transformation = getRelativeTransformPoints( last_frame.feature_locations_3d,
+                                                                         frame.feature_locations_3d,
+                                                                         inlier, valid_tf );
+            if( !valid_tf || transformation != transformation )
+            {
+//                cout << BLUE << "- valid = " << (valid_tf?"true":"false") << ", equal = " << (transformation == transformation) << RESET << endl;
+                break;
+            }
+
+            computeCorrespondenceInliersAndError( good_matches, transformation, last_frame.feature_locations_3d, frame.feature_locations_3d,
+                                                  min_inlier_threshold, inlier, inlier_error, max_dist_m );
+
+            if( inlier.size() < min_inlier_threshold || inlier_error > max_dist_m)
+                break;
+
+            cout << BOLDBLUE << " - refine = " << refine << ", relative transform: " << RESET << endl;
+            printTransform( transformation );
+            cout << BLUE << " - inlier = " << inlier.size() << ", error = " << inlier_error << RESET << endl;
+            cout << endl;
+
+            if( inlier.size() > refined_matches.size() && inlier_error < refined_error )
+            {
+                unsigned int prev_num_inliers = refined_matches.size();
+                assert( inlier_error>=0 );
+                refined_transformation = transformation;
+                refined_matches = inlier;
+                refined_error = inlier_error;
+                if( inlier.size() == prev_num_inliers )
+                    break; //only error improved -> no change would happen next iteration
+            }
+            else
+                break;
+        }
+
+        // Success
+        if( refined_matches.size() > 0 )
+        {
+            if (refined_error <= rmse &&
+                refined_matches.size() >= matches.size() &&
+                refined_matches.size() >= min_inlier_threshold)
+            {
+                rmse = refined_error;
+                resulting_transformation = refined_transformation;
+                matches.assign(refined_matches.begin(), refined_matches.end());
+            }
         }
     }
 
     result.setTransform( resulting_transformation );    // save result
     result.deviation = rmse;
     return ( matches.size() > min_inlier_threshold );
-}
-
-bool KinectListener::estimateRelativeTransform( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result )
-{
-    /// 1: Find matches
-    vector< cv::DMatch > matches;
-    cv::FlannBasedMatcher matcher;
-    matcher.match( last_frame.feature_descriptors, current_frame.feature_descriptors, matches );
-
-    cout << "find total " << matches.size() << " matches." <<endl;
-
-    /// 2: Find good matches, sort
-    vector< cv::DMatch > goodMatches;
-    double minDis = 9999;
-    double good_match_threshold = 4.0;
-    for ( size_t i=0; i<matches.size(); i++ )
-    {
-        if ( matches[i].distance < minDis )
-            minDis = matches[i].distance;
-    }
-    for ( size_t i=0; i<matches.size(); i++ )
-    {
-        cv::DMatch &m = matches[i];
-        if ( m.distance < good_match_threshold*minDis )
-        {
-            if(!isnan(last_frame.feature_locations_3d[m.queryIdx](2))
-               && !isnan(current_frame.feature_locations_3d[m.trainIdx](2)))
-                goodMatches.push_back( m );
-        }
-    }
-
-    std::sort(goodMatches.begin(), goodMatches.end()); //sort by distance, which is the nn_ratio
-    cout << "good matches: " << goodMatches.size() << endl;
-
-    /// 3: RANSAC
-    // initialize result values of all iterations
-    matches.clear();
-    Eigen::Matrix4f resulting_transformation = Eigen::Matrix4f::Identity();
-    float rmse = 1e6;
-    unsigned int valid_iterations = 0;//, best_inlier_cnt = 0;
-    const unsigned int sample_size = 3;// chose this many randomly from the correspondences:
-    bool valid_tf = false; // valid is false iff the sampled points clearly aren't inliers themself
-
-    /// 4: Registeration using points & planes
-
 }
 
 double KinectListener::computeEuclidianDistance( std::vector<PlaneType>& last_planes,
@@ -1295,29 +1360,15 @@ double KinectListener::computeEuclidianDistance( std::vector<PlaneType>& last_pl
 // estimateMotion 计算两个帧之间的运动
 // 输入：帧1和帧2
 // 输出：rvec 和 tvec
-RESULT_OF_PNP KinectListener::estimateMotion( KinectFrame& current_frame, KinectFrame& last_frame, PlaneFromLineSegment::CAMERA_PARAMETERS& camera )
+bool KinectListener::solveRelativeTransformPnP( KinectFrame& last_frame,
+                                                KinectFrame& current_frame,
+                                                std::vector<cv::DMatch> &good_matches,
+                                                PlaneFromLineSegment::CAMERA_PARAMETERS& camera,
+                                                RESULT_OF_PNP &result)
 {
-    vector< cv::DMatch > matches;
-    cv::FlannBasedMatcher matcher;
-    matcher.match( last_frame.feature_descriptors, current_frame.feature_descriptors, matches );
-
-    cout << "find total " << matches.size() << " matches." <<endl;
-    vector< cv::DMatch > goodMatches;
-    double minDis = 9999;
-    double good_match_threshold = 4.0;
-    for ( size_t i=0; i<matches.size(); i++ )
-    {
-        if ( matches[i].distance < minDis )
-            minDis = matches[i].distance;
-    }
-
-    for ( size_t i=0; i<matches.size(); i++ )
-    {
-        if (matches[i].distance < good_match_threshold*minDis)
-            goodMatches.push_back( matches[i] );
-    }
-
-    cout << "good matches: " << goodMatches.size() << endl;
+    int min_inlier_threshold = ransac_min_inlier_;
+    if( min_inlier_threshold > 0.75*good_matches.size() )
+        min_inlier_threshold = 0.75*good_matches.size();
 
     // 3d points
     vector<cv::Point3f> pts_obj;
@@ -1325,23 +1376,20 @@ RESULT_OF_PNP KinectListener::estimateMotion( KinectFrame& current_frame, Kinect
     vector< cv::Point2f > pts_img;
 
     //
-    for (size_t i=0; i<goodMatches.size(); i++)
+    for (size_t i=0; i<good_matches.size(); i++)
     {
-        int query_index = goodMatches[i].queryIdx;
-        int train_index = goodMatches[i].trainIdx;
+        int query_index = good_matches[i].queryIdx;
+        int train_index = good_matches[i].trainIdx;
 
-        // query
-        cv::Point2f p = last_frame.feature_locations_2d[query_index].pt;
-        PointType pc = last_frame.cloud->at((int) p.x,(int) p.y);
-        if( !isValidPoint(pc) )
-            continue;
-
+        // train
         // 3d point
-        cv::Point3f pd( pc.x, pc.y, pc.z );
+        Eigen::Vector4f pc = current_frame.feature_locations_3d[train_index];
+        cv::Point3f pd( pc[0], pc[1], pc[2] );
         pts_obj.push_back( pd );
 
+        // query
         // 2d point
-        pts_img.push_back( cv::Point2f( current_frame.feature_locations_2d[train_index].pt ) );
+        pts_img.push_back( cv::Point2f( last_frame.feature_locations_2d[query_index].pt ) );
     }
 
     // Construct camera intrinsic matrix
@@ -1353,22 +1401,41 @@ RESULT_OF_PNP KinectListener::estimateMotion( KinectFrame& current_frame, Kinect
     cv::Mat cameraMatrix( 3, 3, CV_64F, camera_matrix_data );
     cv::Mat rvec, tvec, inliers;
     // Solve pnp
-    cout << "solving pnp" << endl;
-    cv::solvePnPRansac( pts_obj, pts_img, cameraMatrix, cv::Mat(), rvec, tvec, false, 50, 1.0, 50, inliers );
+//    cout << "solving pnp" << endl;
+    cv::solvePnPRansac( pts_obj, pts_img, cameraMatrix, cv::Mat(), rvec, tvec, false, ransac_iterations_, 2.0, ransac_min_inlier_, inliers );
 
-    RESULT_OF_PNP result;
     //
     result.inliers = inliers.rows;
     result.translation = Eigen::Vector3d( tvec.at<double>(0,0), tvec.at<double>(0,1), tvec.at<double>(0,2) );
     cv::Mat R;
     cv::Rodrigues( rvec, R );
-//    cv::cv2eigen( R, result.rotation );
     cvToEigen( R, result.rotation );
 
-    cout << " Trans: " << endl << result.translation << endl;
-    cout << " Rot: " << endl << result.rotation << endl;
+//    cout << " Trans: " << endl << result.translation << endl;
+//    cout << " Rot: " << endl << result.rotation << endl;
 
-    return result;
+    return (result.inliers >= min_inlier_threshold);
+}
+
+void KinectListener::computeORBKeypoint( const cv::Mat &visual,
+                                      const PointCloudTypePtr &cloud_in,
+                                      std::vector<cv::KeyPoint> &keypoints,
+                                      std_vector_of_eigen_vector4f &locations_3d,
+                                      cv::Mat &feature_descriptors )
+{
+    // Get gray image
+    cv::Mat gray_img;
+    if(visual.type() == CV_8UC3)
+        cv::cvtColor( visual, gray_img, CV_RGB2GRAY );
+    else
+        gray_img = visual;
+
+    //
+    (*orb_extractor_)( gray_img, cv::Mat(), keypoints, feature_descriptors);
+
+    // Project to 3D
+    projectTo3D( cloud_in, keypoints, locations_3d);
+
 }
 
 void KinectListener::computeKeypoint( const cv::Mat &visual,
@@ -1405,6 +1472,34 @@ void KinectListener::computeKeypoint( const cv::Mat &visual,
 //        projectTo3D( cloud, plane.feature_locations_2d, plane.feature_locations_3d ); // project to 3d
 //    }
 
+}
+
+void KinectListener::projectTo3D( const PointCloudTypePtr &cloud,
+                                  std::vector<cv::KeyPoint> &locations_2d,
+                                  cv::Mat &feature_descriptors,
+                                  std_vector_of_eigen_vector4f &locations_3d )
+{
+    // Clear
+    if(locations_3d.size())
+        locations_3d.clear();
+
+    for(int i = 0; i < locations_2d.size(); i++)
+    {
+        cv::Point2f p2d = locations_2d[i].pt;
+
+        PointType p3d = cloud->at((int) p2d.x,(int) p2d.y);
+
+        // Check for invalid measurements
+        if ( isnan(p3d.x) || isnan(p3d.y) || isnan(p3d.z) || p3d.z == 0)
+        {
+//            locations_2d.erase( locations_2d.begin()+i );
+//            // how to remove selected row in Mat, like erase( feature_descriptors.row(i) )
+//            continue;
+            p3d.z = 0;
+        }
+
+        locations_3d.push_back(Eigen::Vector4f(p3d.x, p3d.y, p3d.z, 1.0));
+    }
 }
 
 void KinectListener::projectTo3D( const PointCloudTypePtr &cloud,
@@ -1467,27 +1562,25 @@ void KinectListener::matchImageFeatures( KinectFrame& last_frame,
         matcher.match( last_frame.feature_descriptors, current_frame.feature_descriptors, matches );
     }
 
+    // Sort
+    std::sort( matches.begin(), matches.end() );
+
+    // Get good matches, fixed size
     if( min_match_size != 0)
     {
-        std::sort( matches.begin(), matches.end() );
-        if( matches.size() < min_match_size )
-            goodMatches = matches;
-        else
+        int add = 0;
+        for( int i = 0; i < matches.size() && add < min_match_size; i++)
         {
-            for( int i = 0; i < min_match_size; i++)
+            if( last_frame.feature_locations_3d[matches[i].queryIdx](2) != 0
+                    && current_frame.feature_locations_3d[matches[i].trainIdx](2) != 0)
             {
                 goodMatches.push_back( matches[i] );
+                add ++;
             }
         }
     }
     else
     {
-        // Get good matches
-        const int query_num = last_frame.feature_locations_2d.size();
-        const int train_num = current_frame.feature_locations_2d.size();
-
-    //    cout << "find total " << matches.size() << " matches." <<endl;
-
         double minDis = 9999;
         for ( size_t i=0; i<matches.size(); i++ )
         {
@@ -1497,11 +1590,16 @@ void KinectListener::matchImageFeatures( KinectFrame& last_frame,
 
         for ( size_t i=0; i<matches.size(); i++ )
         {
-            if (matches[i].distance < good_match_threshold*minDis
-    //                    && matches[i].queryIdx < query_num
-    //                    && matches[i].trainIdx < train_num
-                    )
-                goodMatches.push_back( matches[i] );
+            if (matches[i].distance < good_match_threshold*minDis)
+            {
+                if( last_frame.feature_locations_3d[matches[i].queryIdx](2) != 0
+                        && current_frame.feature_locations_3d[matches[i].trainIdx](2) != 0)
+                    goodMatches.push_back( matches[i] );
+            }
+            else
+            {
+                break;
+            }
         }
     }
 
@@ -1519,7 +1617,7 @@ std::vector<cv::DMatch> KinectListener::randomChooseMatchesPreferGood( const uns
         int id2 = rand() % matches_with_depth.size();
         if(id1 > id2) id1 = id2; //use smaller one => increases chance for lower id
             sampled_ids.insert(id1);
-        if(++safety_net > 10000)
+        if(++safety_net > 2000)
         {
             ROS_ERROR("Infinite Sampling");
             break;
@@ -1542,11 +1640,9 @@ std::vector<cv::DMatch> KinectListener::randomChooseMatches( const unsigned int 
     int safety_net = 0;
     while(sampled_ids.size() < sample_size && matches.size() >= sample_size)
     {
-        int id1 = rand() % matches.size();
-        int id2 = rand() % matches.size();
-        if(id1 > id2) id1 = id2; //use smaller one => increases chance for lower id
-            sampled_ids.insert(id1);
-        if(++safety_net > 10000)
+        int id = rand() % matches.size();
+        sampled_ids.insert(id);
+        if(++safety_net > 2000)
         {
             ROS_ERROR("Infinite Sampling");
             break;
@@ -1731,6 +1827,7 @@ void KinectListener::planeSegmentReconfigCallback(plane_slam::PlaneSegmentConfig
     ransac_sample_size_ = config.ransac_sample_size;
     ransac_iterations_ = config.ransac_iterations;
     ransac_min_inlier_ = config.ransac_min_inlier;
+    ransac_inlier_max_mahal_distance_ = config.ransac_inlier_max_mahal_distance;
     display_input_cloud_ = config.display_input_cloud;
     display_line_cloud_ = config.display_line_cloud;
     display_normal_ = config.display_normal;
@@ -2438,14 +2535,27 @@ void KinectListener::getCameraParameter(const sensor_msgs::CameraInfoConstPtr &c
          [fx  0 cx]
      K = [ 0 fy cy]
          [ 0  0  1] */
-    camera.cx = cam_info_msg->K[2];
-    camera.cy = cam_info_msg->K[5];
-    camera.fx = cam_info_msg->K[0];
-    camera.fy = cam_info_msg->K[4];
+//    camera.cx = cam_info_msg->K[2];
+//    camera.cy = cam_info_msg->K[5];
+//    camera.fx = cam_info_msg->K[0];
+//    camera.fy = cam_info_msg->K[4];
+//
+//    //
+//    camera.scale = 1.0;
+//    // Additionally, organized cloud width and height.
+//    camera.width = cam_info_msg->width;
+//    camera.height = cam_info_msg->height;
+
+
+    // TUM3
+    camera.cx = 320.1;
+    camera.cy = 247.6;
+    camera.fx = 535.4;
+    camera.fy = 539.2;
+    //
     camera.scale = 1.0;
-    // Additionally, organized cloud width and height.
-    camera.width = cam_info_msg->width;
-    camera.height = cam_info_msg->height;
+    camera.width = 640;
+    camera.height = 480;
 }
 
 pcl::PointCloud<pcl::PointXYZRGBA>::Ptr KinectListener::image2PointCloud( const cv::Mat &rgb_img, const cv::Mat &depth_img,
@@ -2574,7 +2684,7 @@ cv::FeatureDetector* KinectListener::createDetector( const std::string& detector
     else if( !detectorType.compare( "ORB" ) )
     {
 //        detAdj = new DetectorAdjuster("AORB", 20);
-        fd = new cv::OrbFeatureDetector( 10000, 1.2, 8, 15, 0, 2, cv::ORB::HARRIS_SCORE, 31 );
+        fd = new cv::OrbFeatureDetector( 10000, 1.2, 8, 31, 0, 2, cv::ORB::HARRIS_SCORE, 31 );
 //        fd = new cv::OrbFeatureDetector();
     }
     else if( !detectorType.compare( "SIFT" ) )
@@ -2599,7 +2709,7 @@ cv::DescriptorExtractor* KinectListener::createDescriptorExtractor( const string
     }
     else if( !descriptorType.compare( "ORB" ) )
     {
-        extractor = new cv::OrbDescriptorExtractor( 1000, 1.2, 8, 31, 0, 2, cv::ORB::HARRIS_SCORE, 31 );
+        extractor = new cv::OrbDescriptorExtractor( 10000, 1.2, 8, 31, 0, 2, cv::ORB::HARRIS_SCORE, 31 );
 //        extractor = new cv::OrbDescriptorExtractor();
     }
     else if( !descriptorType.compare( "SIFT" ) )

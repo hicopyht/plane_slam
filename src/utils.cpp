@@ -405,9 +405,24 @@ double errorFunction2(const Eigen::Vector4f& x1,
 
 void cvToEigen(const cv::Mat& src, Eigen::Matrix3d& dst )
 {
-    cv::Mat _dst( src.rows, src.cols, cv::DataType<double>::type,
-                  dst.data(), (size_t)(dst.stride()*sizeof(double)));
-    src.convertTo( _dst, _dst.type() );
+//    cout << RED << " cv to eigen: " << endl;
+//    cout << src << RESET << endl;
+
+    dst(0,0) = src.at<double>(0, 0);
+    dst(0,1) = src.at<double>(0, 1);
+    dst(0,2) = src.at<double>(0, 2);
+    dst(1,0) = src.at<double>(1, 0);
+    dst(1,1) = src.at<double>(1, 1);
+    dst(1,2) = src.at<double>(1, 2);
+    dst(2,0) = src.at<double>(2, 0);
+    dst(2,1) = src.at<double>(2, 1);
+    dst(2,2) = src.at<double>(2, 2);
+
+// not correct
+//    cv::Mat _dst( src.rows, src.cols, cv::DataType<double>::type,
+//                  dst.data(), (size_t)(dst.stride()*sizeof(double)));
+//    src.convertTo( _dst, _dst.type() );
+//    cout<< BLUE << dst << RESET << endl;
 }
 
 static inline int hamming_distance_orb32x8_popcountll(const uint64_t* v1, const uint64_t* v2) {
@@ -504,6 +519,79 @@ int bruteForceSearchORB(const uint64_t* v, const uint64_t* search_array, const u
 //    cout << CYAN << " true motion: " << endl;
 //    cout << "  - R(rpy): " << 0.1 << ", " << 0.2 << ", " << 0.3 << endl;
 //    cout << "  - T:      " << "0.05, 0.06, 0.08" << RESET << endl;
+//}
+
+// test errorFunction2
+//void testErrorFunction2()
+//{
+//    Eigen::Vector4f v1( 0.215883, 0.394139, 1.108, 1.0);
+//    Eigen::Vector4f v2( 0.315883, 0.694139, 0.8, 1.0);
+//    Eigen::Vector4f v3( -0.215883, 0.394139, 1.5, 1.0);
+//    Eigen::Vector4f v4( 0.115883, -0.394139, 1.2, 1.0);
+//    Eigen::Vector4f tv1, tv2, tv3, tv4;
+//    tv1 += Eigen::Vector4f( 0.01, 0.01, 0.01, 0);
+//    tv2 += Eigen::Vector4f( -0.01, 0.01, 0.004, 0);
+//    tv3 += Eigen::Vector4f( 0.005, -0.005, 0.002, 0);
+//    tv4 += Eigen::Vector4f( 0.0001, -0.0001, 0.001, 0);
+
+//    /// 1: Define transform
+//    Eigen::Affine3d tr = Eigen::Translation3d(0.05, 0.06, 0.08)
+//            * Eigen::AngleAxisd( 0.3, Eigen::Vector3d::UnitZ())
+//            * Eigen::AngleAxisd( 0.2, Eigen::Vector3d::UnitY())
+//            * Eigen::AngleAxisd( 0.1, Eigen::Vector3d::UnitX());
+//    Eigen::Matrix4f trf = tr.matrix().cast<float>();
+//    tv1 = trf*v1;
+//    tv2 = trf*v2;
+//    tv3 = trf*v3;
+//    tv4 = trf*v4;
+//    double error = errorFunction2( v1, tv1, tr.matrix() );
+//    cout << BLUE << "Test error = " << error << RESET << endl;
+//    error = errorFunction2( v2, tv2, tr.matrix() );
+//    cout << BLUE << "Test error = " << error << RESET << endl;
+//    error = errorFunction2( v3, tv3, tr.matrix() );
+//    cout << BLUE << "Test error = " << error << RESET << endl;
+//    error = errorFunction2( v4, tv4, tr.matrix() );
+//    cout << BLUE << "Test error = " << error << RESET << endl;
+
+//    // get transform
+//    pcl::TransformationFromCorrespondences tfc;
+//    float weight = 1.0;
+//    weight = 1.0/(v1(2) * tv1(2));
+//    tfc.add( v1.head<3>(), tv1.head<3>(), weight );
+//    weight = 1.0/(v2(2) * tv2(2));
+//    tfc.add( v2.head<3>(), tv2.head<3>(), weight );
+//    weight = 1.0/(v3(2) * tv3(2));
+//    tfc.add( v3.head<3>(), tv3.head<3>(), weight );
+//    weight = 1.0/(v4(2) * tv4(2));
+//    tfc.add( v4.head<3>(), tv4.head<3>(), weight );
+
+//    Eigen::Matrix4f motion = tfc.getTransformation().matrix();
+//    printTransform( motion );
+
+//}
+
+
+//void testPnP()
+//{
+//if( is_initialized )
+//{
+//    RESULT_OF_PNP motion;
+//    bool res = solveRelativeTransformPnP( last_frame, frame, good_matches, camera_parameters_, motion );
+////        if( res )
+//    {
+//        // print motion
+//        gtsam::Rot3 rot3( motion.rotation );
+//        cout << YELLOW << " estimated motion PnP, inlier = " << motion.inliers << endl;
+//        cout << "  - R(rpy): " << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
+//        cout << "  - T:      " << motion.translation[0]
+//             << ", " << motion.translation[1]
+//             << ", " << motion.translation[2] << RESET << endl;
+//    }
+////        if( !res )
+////        {
+////            cout << RED << " failed to estimate relative motion using RANSAC. " << RESET << endl;
+////        }
+//}
 //}
 
 
