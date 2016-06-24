@@ -98,20 +98,26 @@ public:
                                        RESULT_OF_PNP &result,
                                        const Eigen::Matrix4d &estimated_transform = Eigen::MatrixXd::Identity(4,4));
 
+    Eigen::Matrix4f getRelativeTransformPoints(const std_vector_of_eigen_vector4f &query_points,
+                                       const std_vector_of_eigen_vector4f &train_points,
+                                       const std::vector<cv::DMatch> &matches,
+                                       bool valid);
+
     void computeCorrespondenceInliersAndError( const std::vector<cv::DMatch> & matches,
-                                               const Eigen::Matrix4d& transform4d,
+                                               const Eigen::Matrix4f& transform4f,
                                                const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& froms,
                                                const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& tos,
-                                               size_t min_inliers,
-                                               std::vector<cv::DMatch>& inliers, //pure output var
+                                               unsigned int min_inliers,
+                                               std::vector<cv::DMatch>& inlier, //pure output var
                                                double& return_mean_error,//pure output var: rms-mahalanobis-distance
                                                double squared_max_distance) const;
 
-    bool solveRelativeTransformPointsRansac( KinectFrame& last_frame,
-                                             KinectFrame& frame,
+    bool solveRelativeTransformPointsRansac( KinectFrame &last_frame,
+                                             KinectFrame &frame,
+                                             std::vector<cv::DMatch> &good_matches,
                                              RESULT_OF_PNP &result,
-                                             std::vector<cv::DMatch> &matches,
-                                             const Eigen::Matrix4d &estimated_transform = Eigen::MatrixXd::Identity(4,4));
+                                             double &rmse,
+                                             std::vector<cv::DMatch> &matches );
 
     bool estimateRelativeTransform( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result);
 
@@ -315,6 +321,9 @@ private:
     std::string feature_extractor_type_;
     double feature_good_match_threshold_;
     int feature_min_good_match_size_;
+    int ransac_sample_size_;
+    int ransac_iterations_;
+    int ransac_min_inlier_;
 
     bool display_input_cloud_;
     bool display_line_cloud_;

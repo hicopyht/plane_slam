@@ -169,6 +169,18 @@ struct RESULT_OF_PNP
         tr.col(3).head<3>() = translation;
         return tr;
     }
+
+    void setTransform( Eigen::Matrix4d &tr )
+    {
+        rotation = tr.topLeftCorner(3,3);
+        translation = tr.col(3).head<3>();
+    }
+
+    void setTransform( Eigen::Matrix4f &tr )
+    {
+        rotation = tr.topLeftCorner(3,3).cast<double>();
+        translation = tr.col(3).head<3>().cast<double>();
+    }
 };
 
 void matrixTF2Eigen(const tf::Matrix3x3 &t, Eigen::Matrix3d &e);
@@ -230,9 +242,14 @@ inline double depth_covariance(double depth)
   return cov;
 }
 
+
+void printTransform( const Eigen::Matrix4d &transform);
+void printTransform( const Eigen::Matrix4f &transform);
+
+
 double errorFunction2(const Eigen::Vector4f& x1,
                       const Eigen::Vector4f& x2,
-                      const Eigen::Matrix4d& tf_1_to_2);
+                      const Matrix4d &tf_1_to_2);
 
 void cvToEigen(const cv::Mat& src, Eigen::Matrix3d& dst );
 

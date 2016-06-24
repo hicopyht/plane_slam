@@ -305,6 +305,24 @@ void depthToCV8UC1(cv::Mat& depth_img, cv::Mat& mono8_img)
     }
 }
 
+void printTransform( const Eigen::Matrix4d &transform)
+{
+    gtsam::Pose3 pose3( transform );
+    cout << CYAN;
+    cout << "  - R(rpy): " << pose3.rotation().roll()
+         << ", " << pose3.rotation().pitch()
+         << ", " << pose3.rotation().yaw() << endl;
+    cout << "  - T:      " << pose3.translation().x()
+         << ", " << pose3.translation().y()
+         << ", " << pose3.translation().z() << RESET << endl;
+}
+
+void printTransform( const Eigen::Matrix4f &transform)
+{
+    Eigen::Matrix4d tr = transform.cast<double>();
+    printTransform(tr);
+}
+
 // https://github.com/felixendres/rgbdslam_v2
 double errorFunction2(const Eigen::Vector4f& x1,
                       const Eigen::Vector4f& x2,

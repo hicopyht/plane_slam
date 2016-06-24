@@ -556,6 +556,29 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     match_dura = time.toc();
     time.tic();
 
+    if( is_initialized )
+    {
+        RESULT_OF_PNP motion;
+        double rmse;
+        std::vector<cv::DMatch> inlier;
+        bool res = solveRelativeTransformPointsRansac( last_frame, frame, good_matches, motion, rmse, inlier);
+        if( res )
+        {
+            // print motion
+            gtsam::Rot3 rot3( motion.rotation );
+            cout << YELLOW << " estimated motion RANSAC, inlier = " << inlier.size()
+                 << ", rmse = " << rmse << endl;
+            cout << "  - R(rpy): " << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
+            cout << "  - T:      " << motion.translation[0]
+                 << ", " << motion.translation[1]
+                 << ", " << motion.translation[2] << RESET << endl;
+        }
+        if( !res )
+        {
+            cout << RED << " failed to estimate relative motion using RANSAC. " << RESET << endl;
+        }
+    }
+
     // display
     pcl_viewer_->removeAllPointClouds();
     pcl_viewer_->removeAllShapes();
@@ -991,22 +1014,52 @@ bool KinectListener::solveRelativeTransformPlanes( KinectFrame& current_frame,
     return true;
 }
 
+Eigen::Matrix4f KinectListener::getRelativeTransformPoints( const std_vector_of_eigen_vector4f &query_points,
+                                                   const std_vector_of_eigen_vector4f &train_points,
+                                                   const std::vector<cv::DMatch> &matches,
+                                                   bool valid)
+{
+    pcl::TransformationFromCorrespondences tfc;
+    valid = true;
+    float weight = 1.0;
+
+    BOOST_FOREACH(const cv::DMatch& m, matches)
+    {
+        Eigen::Vector3f from = query_points[m.queryIdx].head<3>();
+        Eigen::Vector3f to = train_points[m.trainIdx].head<3>();
+        if(std::isnan(from(2)) || std::isnan(to(2)))
+            continue;
+        weight = 1.0/(from(2) * to(2));
+        tfc.add(from, to, weight);// 1.0/(to(2)*to(2)));//the further, the less weight b/c of quadratic accuracy decay
+    }
+
+    // get relative movement from samples
+    if( tfc.getNoOfSamples() < 3)
+    {
+        valid = false;
+        return Eigen::Matrix4f();
+    }
+    else
+        return tfc.getTransformation().matrix();
+}
+
 // from: https://github.com/felixendres/rgbdslam_v2/src/node.cpp
 void KinectListener::computeCorrespondenceInliersAndError( const std::vector<cv::DMatch> & matches,
-                                  const Eigen::Matrix4d& transform4d,
+                                  const Eigen::Matrix4f& transform4f,
                                   const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& froms,
                                   const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& tos,
-                                  size_t min_inliers,
-                                  std::vector<cv::DMatch>& inliers, //pure output var
+                                  unsigned int min_inlier,
+                                  std::vector<cv::DMatch>& inlier, //pure output var
                                   double& return_mean_error,//pure output var: rms-mahalanobis-distance
                                   double squared_max_distance) const
 {
-    inliers.clear();
+    inlier.clear();
     assert(matches.size() > 0);
-    inliers.reserve(matches.size());
+    inlier.reserve(matches.size());
     //errors.clear();
     const size_t all_matches_size = matches.size();
     double mean_error = 0.0;
+    Eigen::Matrix4d transform4d = transform4f.cast<double>();
 
     //parallelization is detrimental here
     //#pragma omp parallel for reduction (+: mean_error)
@@ -1033,11 +1086,11 @@ void KinectListener::computeCorrespondenceInliersAndError( const std::vector<cv:
         }
         mean_error += mahal_dist;
         //#pragma omp critical
-        inliers.push_back(m); //include inlier
+        inlier.push_back(m); //include inlier
     }
 
 
-    if ( inliers.size()<3 )
+    if ( inlier.size()<3 )
     {
         //at least the samples should be inliers
         ROS_DEBUG("No inliers at all in %d matches!", (int)all_matches_size); // only warn if this checks for all initial matches
@@ -1045,31 +1098,41 @@ void KinectListener::computeCorrespondenceInliersAndError( const std::vector<cv:
     }
     else
     {
-        mean_error /= inliers.size();
+        mean_error /= inlier.size();
         return_mean_error = sqrt(mean_error);
     }
 }
 
-bool KinectListener::solveRelativeTransformPointsRansac(KinectFrame& last_frame,
-                                             KinectFrame& frame,
+bool KinectListener::solveRelativeTransformPointsRansac(KinectFrame &last_frame,
+                                             KinectFrame &frame,
+                                             std::vector<cv::DMatch> &good_matches,
                                              RESULT_OF_PNP &result,
-                                             std::vector<cv::DMatch> &matches,
-                                             const Eigen::Matrix4d &estimated_transform)
+                                             double &rmse,
+                                             std::vector<cv::DMatch> &matches)
 {
-    // match feature
-    std::vector<cv::DMatch> good_matches;
-    matchImageFeatures( last_frame, frame, good_matches, feature_good_match_threshold_);
+//    // match feature
+//    std::vector<cv::DMatch> good_matches;
+//    matchImageFeatures( last_frame, frame, good_matches, feature_good_match_threshold_, feature_min_good_match_size_);
+//
+//    // sort
+//    std::sort(good_matches.begin(), good_matches.end()); //sort by distance, which is the nn_ratio
 
-    // sort
-    std::sort(good_matches.begin(), good_matches.end()); //sort by distance, which is the nn_ratio
+    int min_inlier_threshold = ransac_min_inlier_;
+    if( min_inlier_threshold > 0.75*good_matches.size() )
+        min_inlier_threshold = 0.75*good_matches.size();
 
     //
+    Eigen::Matrix4f resulting_transformation;
+    rmse = 1e6;
+    //
     matches.clear();
-    const unsigned int sample_size = 4;
+    const unsigned int sample_size = ransac_sample_size_;
     unsigned int valid_iterations = 0;
-    const unsigned int max_iterations = 100;
+    const unsigned int max_iterations = ransac_iterations_;
     int real_iterations = 0;
+    double max_dist_m = 3.0;
     bool valid_tf;
+    double inlier_error;
     for( int n = 0; n < max_iterations && good_matches.size() >= sample_size; n++)
     {
         double refined_error = 1e6;
@@ -1077,9 +1140,84 @@ bool KinectListener::solveRelativeTransformPointsRansac(KinectFrame& last_frame,
         std::vector<cv::DMatch> inlier = randomChooseMatchesPreferGood( sample_size, good_matches); //initialization with random samples
         Eigen::Matrix4f refined_transformation = Eigen::Matrix4f::Identity();
 
+        real_iterations++;
+        cout << "Iteration = " << real_iterations << endl;
+        for( int refine = 0; refine < 20; refine ++)
+        {
+            Eigen::Matrix4f transformation = getRelativeTransformPoints( last_frame.feature_locations_3d,
+                                                                         frame.feature_locations_3d,
+                                                                         inlier, valid_tf );
+            cout << BLUE << " - refine = " << refine << ", relative transform: " << endl;
+            printTransform( transformation );
 
+            if( !valid_tf || transformation != transformation )
+                break;
+
+            computeCorrespondenceInliersAndError( good_matches, transformation, last_frame.feature_locations_3d, frame.feature_locations_3d,
+                                                  min_inlier_threshold, inlier, inlier_error, max_dist_m );
+
+            cout << BLUE << " - inlier = " << inlier.size() << ", error = " << inlier_error << RESET << endl;
+
+            if( inlier.size() < min_inlier_threshold || inlier_error > max_dist_m)
+                break;
+
+            if( inlier.size() > refined_matches.size() && inlier_error < refined_error )
+            {
+                unsigned int prev_num_inliers = refined_matches.size();
+                assert( inlier_error>=0 );
+                refined_transformation = transformation;
+                refined_matches = inlier;
+                refined_error = inlier_error;
+                if( inlier.size() == prev_num_inliers )
+                    break; //only error improved -> no change would happen next iteration
+            }
+            else
+                break;
+        }
+        // Success
+        if( refined_matches.size() > 0 )
+        {
+            valid_iterations++;
+
+            //Acceptable && superior to previous iterations?
+            if (refined_error <= rmse &&
+                refined_matches.size() >= matches.size() &&
+                refined_matches.size() >= min_inlier_threshold)
+            {
+                rmse = refined_error;
+                resulting_transformation = refined_transformation;
+                matches.assign(refined_matches.begin(), refined_matches.end());
+                //Performance hacks:
+                if ( refined_matches.size() > good_matches.size()*0.5 ) n+=10;///Iterations with more than half of the initial_matches inlying, count tenfold
+                if ( refined_matches.size() > good_matches.size()*0.75 ) n+=10;///Iterations with more than 3/4 of the initial_matches inlying, count twentyfold
+                if ( refined_matches.size() > good_matches.size()*0.8 ) break; ///Can this get better anyhow?
+            }
+        }
     }
 
+    if( valid_iterations == 0 ) // maybe no depth. Try identity?
+    {
+        //ransac iteration with identity
+        Eigen::Matrix4f transformation = Eigen::Matrix4f::Identity();//hypothesis
+        std::vector<cv::DMatch> inlier; //result
+        //test which samples are inliers
+        computeCorrespondenceInliersAndError( good_matches, transformation, last_frame.feature_locations_3d, frame.feature_locations_3d,
+                                            min_inlier_threshold, inlier, inlier_error, max_dist_m );
+
+        // valid
+        if (inlier.size() >= min_inlier_threshold && inlier_error < max_dist_m)
+        {
+            assert(inlier_error>=0);
+            resulting_transformation = transformation;
+            matches.assign(inlier.begin(), inlier.end());
+            rmse = inlier_error;
+            valid_iterations++;
+        }
+    }
+
+    result.setTransform( resulting_transformation );    // save result
+    result.deviation = rmse;
+    return ( matches.size() > min_inlier_threshold );
 }
 
 bool KinectListener::estimateRelativeTransform( KinectFrame& current_frame, KinectFrame& last_frame, RESULT_OF_PNP &result )
@@ -1590,6 +1728,9 @@ void KinectListener::planeSegmentReconfigCallback(plane_slam::PlaneSegmentConfig
     feature_extractor_type_ = config.feature_extractor_type;
     feature_good_match_threshold_ = config.feature_good_match_threshold;
     feature_min_good_match_size_ = config.feature_min_good_match_size;
+    ransac_sample_size_ = config.ransac_sample_size;
+    ransac_iterations_ = config.ransac_iterations;
+    ransac_min_inlier_ = config.ransac_min_inlier;
     display_input_cloud_ = config.display_input_cloud;
     display_line_cloud_ = config.display_line_cloud;
     display_normal_ = config.display_normal;
