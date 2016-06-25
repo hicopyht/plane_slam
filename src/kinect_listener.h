@@ -76,6 +76,11 @@ public:
 
     void organizedPlaneSegment(PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
+    bool solveICP( const PointCloudXYZPtr &source,
+                   const PointCloudXYZPtr &target,
+                   PointCloudXYZPtr &cloud_icp,
+                   RESULT_OF_PNP &result );
+
     void solveRT( const std::vector<PlaneCoefficients> &last_planes,
                   const std::vector<PlaneCoefficients> &planes,
                   const std::vector<Eigen::Vector3d>& from_points,
@@ -117,8 +122,8 @@ public:
                                              KinectFrame &frame,
                                              std::vector<cv::DMatch> &good_matches,
                                              RESULT_OF_PNP &result,
-                                             double &rmse,
                                              std::vector<cv::DMatch> &matches );
+
 
     double computeEuclidianDistance( std::vector<PlaneType>& last_planes,
                                      std::vector<PlaneType>& planes,
@@ -137,6 +142,13 @@ public:
                              std_vector_of_eigen_vector4f &locations_3d,
                              cv::Mat &feature_descriptors );
 
+    void computeORBKeypoint( const cv::Mat &visual,
+                             const PointCloudTypePtr &cloud_in,
+                             std::vector<cv::KeyPoint> &keypoints,
+                             std_vector_of_eigen_vector4f &locations_3d,
+                             PointCloudXYZPtr &feature_cloud,
+                             cv::Mat &feature_descriptors );
+
     void computeKeypoint( const cv::Mat &visual,
                           const PointCloudTypePtr &cloud_in,
                           std::vector<cv::KeyPoint> &keypoints,
@@ -144,14 +156,33 @@ public:
                           cv::Mat &feature_descriptors,
                           const cv::Mat& mask=cv::Mat());
 
+    void computeKeypoint( const cv::Mat &visual,
+                          const PointCloudTypePtr &cloud_in,
+                          std::vector<cv::KeyPoint> &keypoints,
+                          std_vector_of_eigen_vector4f &locations_3d,
+                          PointCloudXYZPtr &feature_cloud,
+                          cv::Mat &feature_descriptors,
+                          const cv::Mat& mask );
+
     void projectTo3D( const PointCloudTypePtr &cloud,
                       std::vector<cv::KeyPoint> &locations_2d,
                       cv::Mat &feature_descriptors,
                       std_vector_of_eigen_vector4f &locations_3d );
 
+    void projectTo3D( const PointCloudTypePtr &cloud,
+                      std::vector<cv::KeyPoint> &locations_2d,
+                      cv::Mat &feature_descriptors,
+                      std_vector_of_eigen_vector4f &locations_3d,
+                      PointCloudXYZPtr &feature_cloud );
+
     void projectTo3D(const PointCloudTypePtr &cloud,
                       std::vector<cv::KeyPoint> &locations_2d,
                       std_vector_of_eigen_vector4f &locations_3d);
+
+    void projectTo3D(const PointCloudTypePtr &cloud,
+                      std::vector<cv::KeyPoint> &locations_2d,
+                      std_vector_of_eigen_vector4f &locations_3d,
+                     PointCloudXYZPtr &feature_cloud);
 
     void matchImageFeatures( KinectFrame& last_frame,
                              KinectFrame& current_frame,
@@ -354,6 +385,13 @@ private:
     bool display_plane_boundary_;
     bool display_plane_hull_;
     bool loop_one_message_;
+
+    // ICP parameters
+    double icp_max_distance_;
+    int icp_iterations_;
+    double icp_tf_epsilon_;
+    int icp_min_indices_;
+    double icp_score_threshold_;
 
     // Organized Muit Plane segment parameters
     OrganizedPlaneSegment organized_plane_segment_;

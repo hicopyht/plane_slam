@@ -141,11 +141,12 @@ struct KinectFrame
     std::vector<cv::KeyPoint> feature_locations_2d;
     std_vector_of_eigen_vector4f feature_locations_3d;
     cv::Mat feature_descriptors;
-
+    PointCloudXYZPtr feature_cloud;
     //
     std::vector<PlaneType> segment_planes;
 
-    KinectFrame() : cloud( new PointCloudType ), cloud_in( new PointCloudType ) {}
+    KinectFrame() : cloud( new PointCloudType ), cloud_in( new PointCloudType )
+    , feature_cloud( new PointCloudXYZ ){}
 };
 
 // PnP Result
@@ -153,10 +154,12 @@ struct RESULT_OF_PNP
 {
     Eigen::Matrix3d rotation;
     Eigen::Vector3d translation;
-    int inliers;
-    double  deviation;
+    bool valid;
+    int inlier;
+    double score;
+    double rmse;
 
-    RESULT_OF_PNP() : inliers(0), deviation(1e6)
+    RESULT_OF_PNP() : valid(true),inlier(0), score(0), rmse(1e9)
     {
         rotation = Eigen::Matrix3d::Identity();
         translation = Eigen::Vector3d::Zero();
