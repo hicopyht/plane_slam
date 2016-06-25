@@ -134,6 +134,10 @@ KinectListener::KinectListener() :
         exit(1);
     }
 
+    float nan1 = std::numeric_limits<float>::quiet_NaN();
+    cout << "Nan1 = " << nan1 << ", isnan = " << (std::isnan(nan1)?"true":"false") << endl;
+
+
     async_spinner_ =  new ros::AsyncSpinner(4, &my_callback_queue_);
     async_spinner_->start();
 
@@ -1135,7 +1139,7 @@ Eigen::Matrix4f KinectListener::getRelativeTransformPoints( const std_vector_of_
 //        Eigen::Vector3f to = train_points[m.trainIdx].head<3>();
         Eigen::Vector3f to = query_points[m.queryIdx].head<3>();
         Eigen::Vector3f from = train_points[m.trainIdx].head<3>();
-        if(std::isnan(from(2)) || std::isnan(to(2)))
+        if( std::isnan(from(2)) || std::isnan(to(2)) )
             continue;
         weight = 1.0/(from(2) * to(2));
         tfc.add(from, to, weight);// 1.0/(to(2)*to(2)));//the further, the less weight b/c of quadratic accuracy decay
@@ -1154,8 +1158,8 @@ Eigen::Matrix4f KinectListener::getRelativeTransformPoints( const std_vector_of_
 // from: https://github.com/felixendres/rgbdslam_v2/src/node.cpp
 void KinectListener::computeCorrespondenceInliersAndError( const std::vector<cv::DMatch> & matches,
                                   const Eigen::Matrix4f& transform4f,
-                                  const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& froms,
-                                  const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& tos,
+                                  const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& query_points,
+                                  const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& train_points,
                                   unsigned int min_inlier,
                                   std::vector<cv::DMatch>& inlier, //pure output var
                                   double& return_mean_error,//pure output var: rms-mahalanobis-distance
@@ -1175,9 +1179,12 @@ void KinectListener::computeCorrespondenceInliersAndError( const std::vector<cv:
     //BOOST_FOREACH(const cv::DMatch& m, all_matches)
     {
         const cv::DMatch& m = matches[i];
-        const Eigen::Vector4f& from = froms[m.queryIdx];
-        const Eigen::Vector4f& to = tos[m.trainIdx];
-        if(from(2) == 0.0 || to(2) == 0.0)
+//        const Eigen::Vector4f& from = froms[m.queryIdx];
+//        const Eigen::Vector4f& to = tos[m.trainIdx];
+        const Eigen::Vector4f& to = query_points[m.queryIdx];
+        const Eigen::Vector4f& from = train_points[m.trainIdx];
+
+        if( std::isnan(from(2)) || std::isnan(to(2)) )
         { //does NOT trigger on NaN
             continue;
         }
@@ -1615,14 +1622,14 @@ void KinectListener::projectTo3D( const PointCloudTypePtr &cloud,
 
         PointType p3d = cloud->at((int) p2d.x,(int) p2d.y);
 
-        // Check for invalid measurements
-        if ( isnan(p3d.x) || isnan(p3d.y) || isnan(p3d.z) || p3d.z == 0)
-        {
+//        // Check for invalid measurements
+//        if ( isnan(p3d.x) || isnan(p3d.y) || isnan(p3d.z) )
+//        {
 //            locations_2d.erase( locations_2d.begin()+i );
 //            // how to remove selected row in Mat, like erase( feature_descriptors.row(i) )
 //            continue;
-            p3d.x = 0; p3d.y = 0; p3d.z = 0;
-        }
+//            p3d.x = 0; p3d.y = 0; p3d.z = 0;
+//        }
 
         locations_3d.push_back(Eigen::Vector4f(p3d.x, p3d.y, p3d.z, 1.0));
     }
@@ -1646,14 +1653,13 @@ void KinectListener::projectTo3D( const PointCloudTypePtr &cloud,
 
         PointType p3d = cloud->at((int) p2d.x,(int) p2d.y);
 
-        // Check for invalid measurements
-        if ( isnan(p3d.x) || isnan(p3d.y) || isnan(p3d.z) || p3d.z == 0)
-        {
+//        // Check for invalid measurements
+//        if ( isnan(p3d.x) || isnan(p3d.y) || isnan(p3d.z) )
+//        {
 //            locations_2d.erase( locations_2d.begin()+i );
 //            // how to remove selected row in Mat, like erase( feature_descriptors.row(i) )
 //            continue;
-            p3d.x = 0; p3d.y = 0; p3d.z = 0;
-        }
+//        }
 
         locations_3d.push_back(Eigen::Vector4f(p3d.x, p3d.y, p3d.z, 1.0));
         feature_cloud->push_back( pcl::PointXYZ(p3d.x, p3d.y, p3d.z) );
@@ -1680,7 +1686,7 @@ void KinectListener::projectTo3D( const PointCloudTypePtr &cloud,
         PointType p3d = cloud->at((int) p2d.x,(int) p2d.y);
 
         // Check for invalid measurements
-        if ( isnan(p3d.x) || isnan(p3d.y) || isnan(p3d.z) || p3d.z == 0)
+        if ( isnan(p3d.x) || isnan(p3d.y) || isnan(p3d.z) )
         {
             locations_2d.erase( locations_2d.begin()+i );
             continue;
@@ -1711,7 +1717,7 @@ void KinectListener::projectTo3D( const PointCloudTypePtr &cloud,
         PointType p3d = cloud->at((int) p2d.x,(int) p2d.y);
 
         // Check for invalid measurements
-        if ( isnan(p3d.x) || isnan(p3d.y) || isnan(p3d.z) || p3d.z == 0)
+        if ( isnan(p3d.x) || isnan(p3d.y) || isnan(p3d.z) )
         {
             locations_2d.erase( locations_2d.begin()+i );
             continue;

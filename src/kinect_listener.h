@@ -111,8 +111,8 @@ public:
 
     void computeCorrespondenceInliersAndError( const std::vector<cv::DMatch> & matches,
                                                const Eigen::Matrix4f& transform4f,
-                                               const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& froms,
-                                               const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& tos,
+                                               const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& query_points,
+                                               const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& train_points,
                                                unsigned int min_inliers,
                                                std::vector<cv::DMatch>& inlier, //pure output var
                                                double& return_mean_error,//pure output var: rms-mahalanobis-distance
