@@ -14,7 +14,7 @@ bool ITree::euclidianPlaneCorrespondences( const vector<PlaneType> &planes,
 {
     /// 1: Transform
     vector<PlaneType> predict_planes;
-    const Eigen::Matrix4d transform = estimated_transform.inverse();
+    const Eigen::Matrix4d transform = estimated_transform;
     for(int i = 0; i < last_planes.size(); i++)
     {
         const PlaneType &plane = last_planes[i];

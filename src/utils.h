@@ -150,7 +150,7 @@ struct KinectFrame
 };
 
 // PnP Result
-struct RESULT_OF_PNP
+struct RESULT_OF_MOTION
 {
     Eigen::Matrix3d rotation;
     Eigen::Vector3d translation;
@@ -159,17 +159,25 @@ struct RESULT_OF_PNP
     double score;
     double rmse;
 
-    RESULT_OF_PNP() : valid(true),inlier(0), score(0), rmse(1e9)
+    RESULT_OF_MOTION() : valid(true),inlier(0), score(0), rmse(1e9)
     {
         rotation = Eigen::Matrix3d::Identity();
         translation = Eigen::Vector3d::Zero();
     }
 
-    Eigen::Matrix4d transform()
+    Eigen::Matrix4d transform4d()
     {
         Eigen::Matrix4d tr;
         tr.topLeftCorner(3,3) = rotation;
         tr.col(3).head<3>() = translation;
+        return tr;
+    }
+
+    Eigen::Matrix4f transform4f()
+    {
+        Eigen::Matrix4f tr;
+        tr.topLeftCorner(3,3) = rotation.cast<float>();
+        tr.col(3).head<3>() = translation.cast<float>();
         return tr;
     }
 

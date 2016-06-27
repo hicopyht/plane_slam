@@ -71,43 +71,60 @@ public:
 
     void processFrame( KinectFrame &frame, const tf::Transform &odom_pose = tf::Transform::getIdentity() );
 
-    void lineBasedPlaneSegment(PointCloudTypePtr &input,
-                               std::vector<PlaneType> &planes);
+    void lineBasedPlaneSegment( PointCloudTypePtr &input,
+                                std::vector<PlaneType> &planes);
 
-    void organizedPlaneSegment(PointCloudTypePtr &input, std::vector<PlaneType> &planes);
+    void organizedPlaneSegment( PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
-    bool solveICP( const PointCloudXYZPtr &source,
-                   const PointCloudXYZPtr &target,
-                   PointCloudXYZPtr &cloud_icp,
-                   RESULT_OF_PNP &result );
+    bool solveRelativeTransform( KinectFrame &last_frame,
+                                 KinectFrame &current_frame,
+                                 RESULT_OF_MOTION &result,
+                                 Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4) );
 
-    void solveRT( const std::vector<PlaneCoefficients> &last_planes,
+    bool solveRtIcp( const PointCloudXYZPtr &source,
+                     const PointCloudXYZPtr &target,
+                     PointCloudXYZPtr &cloud_icp,
+                     RESULT_OF_MOTION &result );
+
+    Eigen::Matrix4f solveRtPcl( const std_vector_of_eigen_vector4f &query_points,
+                                const std_vector_of_eigen_vector4f &train_points,
+                                const std::vector<cv::DMatch> &matches,
+                                bool &valid);
+
+    void solveRt( const std::vector<PlaneCoefficients> &last_planes,
                   const std::vector<PlaneCoefficients> &planes,
                   const std::vector<Eigen::Vector3d>& from_points,
                   const std::vector<Eigen::Vector3d>& to_points,
-                  RESULT_OF_PNP &result);
+                  RESULT_OF_MOTION &result);
 
-    void solveRT( const std::vector<Eigen::Vector3d>& from_points,
+    void solveRt( const std::vector<Eigen::Vector3d>& from_points,
                   const std::vector<Eigen::Vector3d>& to_points,
-                  RESULT_OF_PNP &result);
+                  RESULT_OF_MOTION &result);
 
-    void solveRT( const std::vector<PlaneCoefficients> &last_planes,
+    void solveRt( const std::vector<PlaneCoefficients> &last_planes,
                   const std::vector<PlaneCoefficients> &planes,
-                  RESULT_OF_PNP &result);
+                  RESULT_OF_MOTION &result);
 
-    bool solveMotionPlanes( const std::vector<PlaneCoefficients> &before,
+    bool solveRtPlanes( const std::vector<PlaneCoefficients> &before,
                             const std::vector<PlaneCoefficients> &after,
-                            RESULT_OF_PNP &result);
+                            RESULT_OF_MOTION &result);
 
-    bool solveRelativeTransformPlanes( KinectFrame& current_frame,
-                                       KinectFrame& last_frame,
-                                       RESULT_OF_PNP &result,
+    bool solveRelativeTransformPlanes( KinectFrame &last_frame,
+                                       KinectFrame &current_frame,
+                                       RESULT_OF_MOTION &result,
                                        const Eigen::Matrix4d &estimated_transform = Eigen::MatrixXd::Identity(4,4));
 
-    Eigen::Matrix4f getRelativeTransformPoints(const std_vector_of_eigen_vector4f &query_points,
-                                       const std_vector_of_eigen_vector4f &train_points,
-                                       const std::vector<cv::DMatch> &matches,
-                                       bool &valid);
+    bool solveRelativeTransformPointsRansac( KinectFrame &last_frame,
+                                             KinectFrame &frame,
+                                             std::vector<cv::DMatch> &good_matches,
+                                             RESULT_OF_MOTION &result,
+                                             std::vector<cv::DMatch> &matches );
+
+    bool solveRelativeTransformPnP( KinectFrame& last_frame,
+                                    KinectFrame& current_frame,
+                                    std::vector<cv::DMatch> &good_matches,
+                                    PlaneFromLineSegment::CAMERA_PARAMETERS& camera,
+                                    RESULT_OF_MOTION &result );
 
     void computeCorrespondenceInliersAndError( const std::vector<cv::DMatch> & matches,
                                                const Eigen::Matrix4f& transform4f,
@@ -118,23 +135,10 @@ public:
                                                double& return_mean_error,//pure output var: rms-mahalanobis-distance
                                                double squared_max_distance) const;
 
-    bool solveRelativeTransformPointsRansac( KinectFrame &last_frame,
-                                             KinectFrame &frame,
-                                             std::vector<cv::DMatch> &good_matches,
-                                             RESULT_OF_PNP &result,
-                                             std::vector<cv::DMatch> &matches );
-
-
     double computeEuclidianDistance( std::vector<PlaneType>& last_planes,
                                      std::vector<PlaneType>& planes,
                                      std::vector<PlanePair>& pairs,
-                                     RESULT_OF_PNP &relative );
-
-    bool solveRelativeTransformPnP( KinectFrame& last_frame,
-                                    KinectFrame& current_frame,
-                                    std::vector<cv::DMatch> &good_matches,
-                                    PlaneFromLineSegment::CAMERA_PARAMETERS& camera,
-                                    RESULT_OF_PNP &result );
+                                     RESULT_OF_MOTION &relative );
 
     void computeORBKeypoint( const cv::Mat &visual,
                              const PointCloudTypePtr &cloud_in,
@@ -372,6 +376,10 @@ private:
     int ransac_iterations_;
     int ransac_min_inlier_;
     double ransac_inlier_max_mahal_distance_;
+    //
+    int pnp_iterations_;
+    int pnp_min_inlier_;
+    double pnp_repreject_error_;
 
     bool display_input_cloud_;
     bool display_line_cloud_;
