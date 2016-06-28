@@ -120,11 +120,20 @@ struct PlaneType
 
 struct PlanePair
 {
-    int iobs;
-    int ilm;
+    unsigned int iobs;
+    unsigned int ilm;
 
-    PlanePair() : iobs(-1), ilm(-1) {}
-    PlanePair(int _iobs, int _ilm) : iobs(_iobs), ilm(_ilm) {}
+    double distance;
+
+    PlanePair() : iobs(-1), ilm(-1), distance(1e6) {}
+    PlanePair(unsigned int _iobs, unsigned int _ilm) : iobs(_iobs), ilm(_ilm), distance(1e6) {}
+    PlanePair(unsigned int _iobs, unsigned int _ilm, double _dis) : iobs(_iobs), ilm(_ilm), distance(_dis) {}
+
+    // less is better
+    bool operator<( const PlanePair &m ) const
+    {
+        return distance < m.distance;
+    }
 };
 
 
@@ -181,13 +190,13 @@ struct RESULT_OF_MOTION
         return tr;
     }
 
-    void setTransform( Eigen::Matrix4d &tr )
+    void setTransform4d( Eigen::Matrix4d &tr )
     {
         rotation = tr.topLeftCorner(3,3);
         translation = tr.col(3).head<3>();
     }
 
-    void setTransform( Eigen::Matrix4f &tr )
+    void setTransform4f( Eigen::Matrix4f &tr )
     {
         rotation = tr.topLeftCorner(3,3).cast<double>();
         translation = tr.col(3).head<3>().cast<double>();

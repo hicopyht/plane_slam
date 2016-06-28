@@ -12,7 +12,7 @@ public:
                                            const vector<PlaneType> &last_planes,
                                            vector<PlanePair> &pairs,
                                            const Eigen::Matrix4d &estimated_transform = Eigen::MatrixXd::Identity(4,4),
-                                           const double direction_threshold = 10.0,
+                                           const double direction_threshold = 8.0,
                                            const double distance_threshold = 0.1);
 
     bool iTreeAssociate(const vector<PlaneType> &measurements, const vector<PlaneType> &landmarks, vector<PlanePair> &pairs);

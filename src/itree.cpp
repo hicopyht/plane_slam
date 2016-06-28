@@ -47,18 +47,28 @@ bool ITree::euclidianPlaneCorrespondences( const vector<PlaneType> &planes,
                 // check overlap
                 bool overlap;
                 if( plane.cloud->size() < predicted.cloud->size() )
-                    overlap = checkPlanesOverlap( predicted, plane, 0.67 );
+                    overlap = checkPlanesOverlap( predicted, plane, 0.5 );
                 else
-                    overlap = checkPlanesOverlap( plane, predicted, 0.67 );
+                    overlap = checkPlanesOverlap( plane, predicted, 0.5 );
                 if(overlap)
                 {
                     paired[j] = 1;
-                    pairs.push_back( PlanePair(i, j));
+                    pairs.push_back( PlanePair((unsigned int)i, (unsigned int)j, (dir_error+d_error) ));
                 }
             }
         }
     }
 
+    cout << MAGENTA << " plane pairs = " << pairs.size() << " (iobs, ilm, distance): " << endl;
+    for( int i = 0; i < pairs.size(); i++)
+    {
+        cout << " - " << i << ": (" << pairs[i].iobs << ", " << pairs[i].ilm
+             << ", " << pairs[i].distance << ")" << endl;
+    }
+    cout << RESET << endl;
+
+//    std::sort( pairs.begin(), pairs.end() );
+    return true;
 }
 
 void ITree::euclidianDistance(const PlaneType &p1, const PlaneType &p2, double &direction, double &distance)

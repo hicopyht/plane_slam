@@ -76,10 +76,10 @@ public:
 
     void organizedPlaneSegment( PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
-    bool solveRelativeTransform( KinectFrame &last_frame,
-                                 KinectFrame &current_frame,
-                                 RESULT_OF_MOTION &result,
-                                 Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4) );
+//    bool solveRelativeTransform( KinectFrame &last_frame,
+//                                 KinectFrame &current_frame,
+//                                 RESULT_OF_MOTION &result,
+//                                 Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4) );
 
     bool solveRtIcp( const PointCloudXYZPtr &source,
                      const PointCloudXYZPtr &target,
@@ -109,10 +109,25 @@ public:
                             const std::vector<PlaneCoefficients> &after,
                             RESULT_OF_MOTION &result);
 
+    Eigen::Matrix4f solveRtPlanesPoints( std::vector<PlaneType> &last_planes,
+                                         std::vector<PlaneType> &planes,
+                                         std::vector<PlanePair> &pairs,
+                                         std_vector_of_eigen_vector4f &last_feature_3d,
+                                         std_vector_of_eigen_vector4f &feature_3d,
+                                         std::vector<cv::DMatch> &matches,
+                                         bool valid );
+
     bool solveRelativeTransformPlanes( KinectFrame &last_frame,
                                        KinectFrame &current_frame,
-                                       RESULT_OF_MOTION &result,
-                                       const Eigen::Matrix4d &estimated_transform = Eigen::MatrixXd::Identity(4,4));
+                                       const std::vector<PlanePair> &pairs,
+                                       RESULT_OF_MOTION &result);
+
+    bool solveRelativeTransformPlanesPointsRansac( KinectFrame &last_frame,
+                                                   KinectFrame &current_frame,
+                                                   std::vector<PlanePair> &pairs,
+                                                   std::vector<cv::DMatch> &good_matches,
+                                                   RESULT_OF_MOTION &result,
+                                                   std::vector<cv::DMatch> &matches );
 
     bool solveRelativeTransformPointsRansac( KinectFrame &last_frame,
                                              KinectFrame &frame,
@@ -120,11 +135,23 @@ public:
                                              RESULT_OF_MOTION &result,
                                              std::vector<cv::DMatch> &matches );
 
+    bool solveRelativeTransformIcp( KinectFrame &last_frame,
+                                    KinectFrame &current_frame,
+                                    RESULT_OF_MOTION &result);
+
     bool solveRelativeTransformPnP( KinectFrame& last_frame,
                                     KinectFrame& current_frame,
                                     std::vector<cv::DMatch> &good_matches,
                                     PlaneFromLineSegment::CAMERA_PARAMETERS& camera,
                                     RESULT_OF_MOTION &result );
+
+    bool solveRelativeTransform( KinectFrame &last_frame,
+                                 KinectFrame &current_frame,
+                                 RESULT_OF_MOTION &result,
+                                 std::vector<cv::DMatch> &matches,
+                                 Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4));
+
+
 
     void computeCorrespondenceInliersAndError( const std::vector<cv::DMatch> & matches,
                                                const Eigen::Matrix4f& transform4f,
@@ -135,9 +162,9 @@ public:
                                                double& return_mean_error,//pure output var: rms-mahalanobis-distance
                                                double squared_max_distance) const;
 
-    double computeEuclidianDistance( std::vector<PlaneType>& last_planes,
-                                     std::vector<PlaneType>& planes,
-                                     std::vector<PlanePair>& pairs,
+    double computeEuclidianDistance( const std::vector<PlaneType>& last_planes,
+                                     const std::vector<PlaneType>& planes,
+                                     const std::vector<PlanePair>& pairs,
                                      RESULT_OF_MOTION &relative );
 
     void computeORBKeypoint( const cv::Mat &visual,
@@ -194,11 +221,17 @@ public:
                              double good_match_threshold = 4.0,
                              int min_match_size = 0);
 
-    std::vector<cv::DMatch> randomChooseMatches( const unsigned int sample_size,
-                                             vector< cv::DMatch > &matches );
+    std::vector<PlanePair> randomChoosePlanePairsPreferGood( const unsigned int sample_size,
+                                             std::vector<PlanePair> &pairs );
+
+    std::vector<PlanePair> randomChoosePlanePairs( const unsigned int sample_size,
+                                             std::vector<PlanePair> &pairs );
 
     std::vector<cv::DMatch> randomChooseMatchesPreferGood( const unsigned int sample_size,
                                              vector< cv::DMatch > &matches_with_depth );
+
+    std::vector<cv::DMatch> randomChooseMatches( const unsigned int sample_size,
+                                             vector< cv::DMatch > &matches );
 
 protected:
     void noCloudCallback (const sensor_msgs::ImageConstPtr& visual_img_msg,

@@ -377,8 +377,10 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
         else
         {
             RESULT_OF_MOTION motion;
-            bool res = solveRelativeTransformPlanes( last_frame, frame, motion );
-            if( res )
+            std::vector<PlanePair> pairs;
+            ITree::euclidianPlaneCorrespondences( frame.segment_planes, last_frame.segment_planes, pairs );
+            motion.valid = solveRelativeTransformPlanes( last_frame, frame, pairs, motion );
+            if( motion.valid )
             {
                 // print motion
                 gtsam::Rot3 rot3( motion.rotation );
@@ -390,12 +392,12 @@ void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom
 
                 good_frame_count ++;
             }
-            if( !res )
+            if( !motion.valid )
             {
                 cout << RED << " failed to estimate relative motion. " << RESET << endl;
             }
 
-            if( res )
+            if( motion.valid )
             {
                 gtsam::Pose3 rel( gtsam::Rot3(motion.rotation), gtsam::Point3(motion.translation) );
                 gtsam::Pose3 pose3 = estimated_pose * rel;
@@ -576,7 +578,8 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     {
         RESULT_OF_MOTION motion;
         cout << YELLOW << "******************* Test estimate transformation *******************" << RESET << endl;
-        solveRelativeTransform( last_frame, frame, motion );
+        std::vector<cv::DMatch> inlier;
+        solveRelativeTransform( last_frame, frame, motion, inlier );
         cout << YELLOW << "********************************************************************" << RESET << endl;
     }
 
@@ -634,20 +637,20 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
 //             << ", " << motion.translation[2] << RESET << endl;
 //    }
 
-    if( is_initialized )
-    {
-        RESULT_OF_MOTION motion;
-        motion.valid = solveRelativeTransformPnP( last_frame, frame, good_matches, camera_parameters_, motion );
+//    if( is_initialized )
+//    {
+//        RESULT_OF_MOTION motion;
+//        motion.valid = solveRelativeTransformPnP( last_frame, frame, good_matches, camera_parameters_, motion );
 
-        // print motion
-        gtsam::Rot3 rot3( motion.rotation );
-        cout << YELLOW << " estimated motion PnP, inlier = " << motion.inlier
-             << ", valid = " << (motion.valid?"true":"false") << endl;
-        cout << "  - R(rpy): " << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
-        cout << "  - T:      " << motion.translation[0]
-             << ", " << motion.translation[1]
-             << ", " << motion.translation[2] << RESET << endl;
-    }
+//        // print motion
+//        gtsam::Rot3 rot3( motion.rotation );
+//        cout << YELLOW << " estimated motion PnP, inlier = " << motion.inlier
+//             << ", valid = " << (motion.valid?"true":"false") << endl;
+//        cout << "  - R(rpy): " << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
+//        cout << "  - T:      " << motion.translation[0]
+//             << ", " << motion.translation[1]
+//             << ", " << motion.translation[2] << RESET << endl;
+//    }
 
     solveRT_dura = time.toc();
     time.tic();
@@ -688,8 +691,11 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
             plane_slam_->tfToPose3( odom_pose, o_pose );
             gtsam::Pose3 r_pose = estimated_pose.inverse() * o_pose;
             RESULT_OF_MOTION motion;
-            bool res = solveRelativeTransformPlanes( last_frame, frame, motion );
-            if( res )
+            std::vector<PlanePair> pairs;
+            ITree::euclidianPlaneCorrespondences( frame.segment_planes, last_frame.segment_planes, pairs );
+            cout << GREEN << " plane pairs = " << pairs.size() << RESET << endl;
+            motion.valid = solveRelativeTransformPlanes( last_frame, frame, pairs, motion );
+            if( motion.valid )
             {
                 // print motion
                 gtsam::Rot3 rot3( motion.rotation );
@@ -705,7 +711,7 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
                      << ", " << r_pose.translation().y()
                      << ", " << r_pose.translation().z() << RESET << endl;
             }
-            if( !res )
+            if( !motion.valid )
             {
                 cout << RED << " failed to estimate relative motion using planes. " << RESET << endl;
             }
@@ -776,87 +782,91 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
 }
 
 
-bool KinectListener::solveRelativeTransform( KinectFrame &last_frame,
-                                             KinectFrame &current_frame,
-                                             RESULT_OF_MOTION &result,
-                                             Eigen::Matrix4d estimated_transform )
-{
-    ros::Time start_time = ros::Time::now();
-    double icp_dura, planes_dura, match_f_dura, points_dura, pnp_dura;
+//bool KinectListener::solveRelativeTransform( KinectFrame &last_frame,
+//                                             KinectFrame &current_frame,
+//                                             RESULT_OF_MOTION &result,
+//                                             Eigen::Matrix4d estimated_transform )
+//{
+//    ros::Time start_time = ros::Time::now();
+//    double icp_dura, planes_dura, match_f_dura, points_dura, pnp_dura;
 
-    /// Use icp result as initial estimation
-    RESULT_OF_MOTION icp_result;
-    PointCloudXYZPtr cloud_icp( new PointCloudXYZ );
-    icp_result.valid = solveRtIcp( current_frame.feature_cloud, last_frame.feature_cloud, cloud_icp, icp_result );
-    if( icp_result.valid )
-    {
-        estimated_transform = icp_result.transform4d();
-    }
-    cout << GREEN << "ICP result as estimated transformation: valid = " << (icp_result.valid?"true":"false") << RESET << endl;
-    cout << GREEN << "  - score: " << icp_result.score << RESET << endl;
-    printTransform( estimated_transform );
-    //
-    icp_dura = (ros::Time::now() - start_time).toSec() * 1000;
-    start_time = ros::Time::now();
-
-    /// case 1: using planes for motion estimation
-    RESULT_OF_MOTION planes_result;
-    planes_result.valid = solveRelativeTransformPlanes( last_frame, current_frame, planes_result, estimated_transform );
-    //
-    cout << GREEN << "Transformation from plane correspondences: valid = " << (planes_result.valid?"true":"false") << RESET << endl;
-    cout << GREEN << "  - rmse: " << planes_result.rmse << RESET << endl;
-    printTransform( planes_result.transform4d() );
-    //
-    planes_dura = (ros::Time::now() - start_time).toSec() * 1000;
-    start_time = ros::Time::now();
-
-    /// matches keypoint features
-    std::vector<cv::DMatch> good_matches;
-    matchImageFeatures( last_frame, current_frame, good_matches,
-                        feature_good_match_threshold_, feature_min_good_match_size_ );
-    //
-
-    //
-    match_f_dura = (ros::Time::now() - start_time).toSec() * 1000;
-    start_time = ros::Time::now();
-
-    /// case 2: using planes & points
+//    /// Use icp result as initial estimation
+//    RESULT_OF_MOTION icp_result;
+//    PointCloudXYZPtr cloud_icp( new PointCloudXYZ );
+//    icp_result.valid = solveRtIcp( current_frame.feature_cloud, last_frame.feature_cloud, cloud_icp, icp_result );
+//    if( icp_result.valid )
+//    {
+//        estimated_transform = icp_result.transform4d();
+//    }
+//    cout << GREEN << "ICP result as estimated transformation: valid = " << (icp_result.valid?"true":"false") << RESET << endl;
+//    cout << GREEN << "  - score: " << icp_result.score << RESET << endl;
+//    printTransform( estimated_transform );
+//    //
+//    icp_dura = (ros::Time::now() - start_time).toSec() * 1000;
+//    start_time = ros::Time::now();
 
 
+//    /// case 1: using planes for motion estimation
+//    RESULT_OF_MOTION planes_result;
+//    std::vector<PlanePair> pairs;
+//    ITree::euclidianPlaneCorrespondences( current_frame.segment_planes, last_frame.segment_planes, pairs, estimated_transform);
+//    planes_result.valid = solveRelativeTransformPlanes( last_frame, current_frame, pairs, planes_result );
+//    //
+//    cout << GREEN << "Transformation from plane correspondences: valid = " << (planes_result.valid?"true":"false") << RESET << endl;
+//    cout << GREEN << "  - rmse: " << planes_result.rmse << RESET << endl;
+//    printTransform( planes_result.transform4d() );
+//    //
+//    planes_dura = (ros::Time::now() - start_time).toSec() * 1000;
+//    start_time = ros::Time::now();
 
-    /// case 3: using points ransac
-    RESULT_OF_MOTION points_result;
-    std::vector<cv::DMatch> inlier;
-    points_result.valid = solveRelativeTransformPointsRansac( last_frame, current_frame, good_matches, points_result, inlier );
-    //
-    cout << GREEN << "Transformation from points correspondences by RANSAC: valid = " << (points_result.valid?"true":"false") << RESET << endl;
-    cout << GREEN << "  - inlier: " << points_result.inlier << ", rmse: " << points_result.rmse << RESET << endl;
-    printTransform( points_result.transform4d() );
-    //
-    points_dura = (ros::Time::now() - start_time).toSec() * 1000;
-    start_time = ros::Time::now();
+//    /// matches keypoint features
+//    std::vector<cv::DMatch> good_matches;
+//    matchImageFeatures( last_frame, current_frame, good_matches,
+//                        feature_good_match_threshold_, feature_min_good_match_size_ );
+//    //
 
-    /// case 4: using PnP
-    RESULT_OF_MOTION pnp_result;
-    pnp_result.valid = solveRelativeTransformPnP( last_frame, current_frame, good_matches, camera_parameters_, pnp_result );
-    //
-    cout << GREEN << "Transformation from PnP: valid = " << (pnp_result.valid?"true":"false") << RESET << endl;
-    cout << GREEN << "  - inlier: " << pnp_result.inlier << RESET << endl;
-    printTransform( pnp_result.transform4d() );
-    //
-    pnp_dura = (ros::Time::now() - start_time).toSec() * 1000;
-    start_time = ros::Time::now();
+//    //
+//    match_f_dura = (ros::Time::now() - start_time).toSec() * 1000;
+//    start_time = ros::Time::now();
 
-    /// Print info
-    cout << GREEN << "Transformation total time: " << (icp_dura + planes_dura + match_f_dura + points_dura + pnp_dura)
-         << ", icp: " << icp_dura
-         << ", planes: " << planes_dura
-         << ", match_f: "<< match_f_dura
-         << ", points: " << points_dura
-         << ", pnp: " << pnp_dura << RESET << endl;
+//    /// case 2: using planes & points
 
-    return result.valid;
-}
+
+
+//    /// case 3: using points ransac
+//    RESULT_OF_MOTION points_result;
+//    std::vector<cv::DMatch> inlier;
+//    points_result.valid = solveRelativeTransformPointsRansac( last_frame, current_frame, good_matches, points_result, inlier );
+//    //
+//    cout << GREEN << "Transformation from points correspondences by RANSAC: valid = " << (points_result.valid?"true":"false") << RESET << endl;
+//    cout << GREEN << "  - inlier: " << points_result.inlier << ", rmse: " << points_result.rmse << RESET << endl;
+//    printTransform( points_result.transform4d() );
+//    //
+//    points_dura = (ros::Time::now() - start_time).toSec() * 1000;
+//    start_time = ros::Time::now();
+
+//    /// case 4: using PnP
+//    RESULT_OF_MOTION pnp_result;
+//    pnp_result.valid = solveRelativeTransformPnP( last_frame, current_frame, good_matches, camera_parameters_, pnp_result );
+//    //
+//    cout << GREEN << "Transformation from PnP: valid = " << (pnp_result.valid?"true":"false") << RESET << endl;
+//    cout << GREEN << "  - inlier: " << pnp_result.inlier << RESET << endl;
+//    printTransform( pnp_result.transform4d() );
+//    //
+//    pnp_dura = (ros::Time::now() - start_time).toSec() * 1000;
+//    start_time = ros::Time::now();
+
+//    /// Print info
+//    cout << GREEN << "Transformation total time: " << (icp_dura + planes_dura + match_f_dura + points_dura + pnp_dura)
+//         << ", icp: " << icp_dura
+//         << ", planes: " << planes_dura
+//         << ", match_f: "<< match_f_dura
+//         << ", points: " << points_dura
+//         << ", pnp: " << pnp_dura << RESET << endl;
+
+//    return result.valid;
+//}
+
 
 
 bool KinectListener::solveRtIcp( const PointCloudXYZPtr &source,
@@ -882,7 +892,7 @@ bool KinectListener::solveRtIcp( const PointCloudXYZPtr &source,
 
     // save result
     Tm = icp->getFinalTransformation().cast<double>();
-    result.setTransform( Tm );
+    result.setTransform4d( Tm );
     result.inlier = cloud_icp->size();
     result.score = score;
 
@@ -978,7 +988,7 @@ void KinectListener::solveRt( const std::vector<PlaneCoefficients> &before,
     Eigen::JacobiSVD<Eigen::MatrixXd> svd(sigma, ComputeFullU | ComputeFullV);
     // Eq. (39)
     Eigen::VectorXd S = Eigen::VectorXd::Ones( 3 );
-    cout << "   det(sigma) = " << sigma.determinant() << endl;
+//    cout << "   det(sigma) = " << sigma.determinant() << endl;
     if( sigma.determinant() < 0 )
         S( 2 ) = -1;
     // Eq. (40) and (43)
@@ -989,10 +999,10 @@ void KinectListener::solveRt( const std::vector<PlaneCoefficients> &before,
             ++rank;
 //    cout << "   D: " << endl;
 //    cout << vs << endl;
-    cout << "   rank(sigma) = " << rank << endl;
+//    cout << "   rank(sigma) = " << rank << endl;
     if ( rank == 2 )
     {
-        cout << "   det(U)*det(V) = " << svd.matrixU().determinant() * svd.matrixV().determinant() << endl;
+//        cout << "   det(U)*det(V) = " << svd.matrixU().determinant() * svd.matrixV().determinant() << endl;
         if ( svd.matrixU().determinant() * svd.matrixV().determinant() > 0 )
         {
             R = svd.matrixU()*svd.matrixV().transpose();
@@ -1172,37 +1182,75 @@ bool KinectListener::solveRtPlanes( const std::vector<PlaneCoefficients> &last_p
     return true;
 }
 
-bool KinectListener::solveRelativeTransformPlanes( KinectFrame& last_frame,
-                                                   KinectFrame& current_frame,
-                                                   RESULT_OF_MOTION &result,
-                                                   const Eigen::Matrix4d &estimated_transform)
+
+Eigen::Matrix4f KinectListener::solveRtPlanesPoints( std::vector<PlaneType> &last_planes,
+                                                     std::vector<PlaneType> &planes,
+                                                     std::vector<PlanePair> &pairs,
+                                                     std_vector_of_eigen_vector4f &last_feature_3d,
+                                                     std_vector_of_eigen_vector4f &feature_3d,
+                                                     std::vector<cv::DMatch> &matches,
+                                                     bool valid )
+{
+    if( !pairs.size() || ! matches.size() || (pairs.size() + matches.size()) != 3)
+    {
+        valid = false;
+        ROS_ERROR("Invalid number of pairs and matches to solve RT, pairs = %d, matches = %d ",
+                  pairs.size(), matches.size() );
+        return Eigen::Matrix4f::Identity();
+    }
+
+    std::vector<PlaneCoefficients> before;
+    std::vector<PlaneCoefficients> after;
+    std::vector<Eigen::Vector3d> from_points;
+    std::vector<Eigen::Vector3d> to_points;
+
+    // solve RT
+    for( int i = 0; i < pairs.size(); i++)
+    {
+        before.push_back( last_planes[pairs[i].ilm].coefficients );
+        after.push_back( planes[pairs[i].iobs].coefficients );
+    }
+    for( int i = 0; i < matches.size(); i++)
+    {
+        from_points.push_back( last_feature_3d[matches[i].queryIdx].head<3>().cast<double>() );
+        to_points.push_back( feature_3d[matches[i].trainIdx].head<3>().cast<double>() );
+    }
+
+    // check geometric constrains
+    // 2 planes and 1 point
+    // 1 plane and 2 points
+
+    RESULT_OF_MOTION motion;
+    solveRt( before, after, from_points, to_points, motion );
+
+    return motion.transform4f();
+}
+
+bool KinectListener::solveRelativeTransformPlanes( KinectFrame &last_frame,
+                                                   KinectFrame &current_frame,
+                                                   const std::vector<PlanePair> &pairs,
+                                                   RESULT_OF_MOTION &result)
 {
     std::vector<PlaneType> &planes = current_frame.segment_planes;
     std::vector<PlaneType> &last_planes = last_frame.segment_planes;
 
-    if( planes.size() < 3 || last_planes.size() < 3)
+    if( planes.size() < 3 || last_planes.size() < 3 || pairs.size() < 3)
         return false;
 
-    /// 1: Find correspondences
-    std::vector<PlanePair> pairs;
-    ITree::euclidianPlaneCorrespondences( planes, last_planes, pairs, estimated_transform );
-    int pairs_num = pairs.size();
-    if( pairs_num < 3 )
-        return false;
-    cout << GREEN << " pairs size: " << pairs_num << RESET << endl;
+    const unsigned int pairs_num = pairs.size();
 
-    /// 2: Estimate motion
+    // Estimate transformation using all the plane correspondences
     RESULT_OF_MOTION best_transform;
-    best_transform.rmse = 1e6; // no inlier
+    best_transform.rmse = 1e9; // no inlier
     for( int x1 = 0; x1 < pairs_num-2; x1++)
     {
-        PlanePair &p1 = pairs[x1];
+        const PlanePair &p1 = pairs[x1];
         for( int x2 = x1+1; x2 < pairs_num-1; x2++ )
         {
-            PlanePair &p2 = pairs[x2];
+            const PlanePair &p2 = pairs[x2];
             for( int x3 = x2+1; x3 < pairs_num; x3++)
             {
-                PlanePair &p3 = pairs[x3];
+                const PlanePair &p3 = pairs[x3];
                 std::vector<PlaneCoefficients> currents;
                 std::vector<PlaneCoefficients> lasts;
                 currents.push_back( planes[p1.iobs].coefficients );
@@ -1214,12 +1262,16 @@ bool KinectListener::solveRelativeTransformPlanes( KinectFrame& last_frame,
                 //
 //                cout << YELLOW << " solve motion: (" << x1 << "/" << x2 << "/" << x3 << ")" << RESET << endl;
                 RESULT_OF_MOTION motion;
-                bool res = solveRtPlanes( currents, lasts, motion);
+                motion.valid = solveRtPlanes( currents, lasts, motion);
 
-                if( res )
+                if( motion.valid )
                 {
                     // check if better
-                    motion.rmse = computeEuclidianDistance( last_planes, planes, pairs, motion );
+                    std::vector<PlanePair> pairs3;
+                    pairs3.push_back( p1 );
+                    pairs3.push_back( p2 );
+                    pairs3.push_back( p3 );
+                    motion.rmse = computeEuclidianDistance( last_planes, planes, pairs3, motion );
                     if( motion.rmse < best_transform.rmse )
                         best_transform = motion;
 
@@ -1278,8 +1330,8 @@ bool KinectListener::solveRelativeTransformPointsRansac(KinectFrame &last_frame,
     {
         double refined_error = 1e6;
         std::vector<cv::DMatch> refined_matches;
-//        std::vector<cv::DMatch> inlier = randomChooseMatchesPreferGood( sample_size, good_matches); //initialization with random samples
-        std::vector<cv::DMatch> inlier = randomChooseMatches( sample_size, good_matches); //initialization with random samples
+        std::vector<cv::DMatch> inlier = randomChooseMatchesPreferGood( sample_size, good_matches); //initialization with random samples
+//        std::vector<cv::DMatch> inlier = randomChooseMatches( sample_size, good_matches); //initialization with random samples
         Eigen::Matrix4f refined_transformation = Eigen::Matrix4f::Identity();
 
         real_iterations++;
@@ -1415,11 +1467,122 @@ bool KinectListener::solveRelativeTransformPointsRansac(KinectFrame &last_frame,
         }
     }
 
-    result.setTransform( resulting_transformation );    // save result
+    result.setTransform4f( resulting_transformation );    // save result
     result.rmse = rmse;
     result.inlier = matches.size();
     result.valid = matches.size() >= min_inlier_threshold;
     return ( matches.size() >= min_inlier_threshold );
+}
+
+
+bool KinectListener::solveRelativeTransformPlanesPointsRansac( KinectFrame &last_frame,
+                                                               KinectFrame &current_frame,
+                                                               std::vector<PlanePair> &pairs,
+                                                               std::vector<cv::DMatch> &good_matches,
+                                                               RESULT_OF_MOTION &result,
+                                                               std::vector<cv::DMatch> &matches )
+{
+    if( !pairs.size() )
+        return false;
+
+    const int pairs_num = pairs.size();
+    std::vector<PlaneType> &planes = current_frame.segment_planes;
+    std::vector<PlaneType> &last_planes = last_frame.segment_planes;
+
+    // using all plane correspondences
+    std::vector< std::vector<PlanePair> > sample_plane_pairs;
+    for( int i = 0; i < pairs_num-1; i++)
+    {
+        for( int j = i+1; j < pairs_num; j++)
+        {
+            std::vector<PlanePair> ps;
+            ps.push_back( pairs[i] );
+            ps.push_back( pairs[j] );
+            sample_plane_pairs.push_back( ps ); // 2 planes
+        }
+    }
+    for( int i = 0; i < pairs_num; i++)
+    {
+        std::vector<PlanePair> ps;
+        ps.push_back( pairs[i] );
+        sample_plane_pairs.push_back( ps ); // 1 planes
+    }
+//    // print sample pairs
+//    for( int i = 0; i < sample_plane_pairs.size(); i++)
+//    {
+//        std::vector<PlanePair> &ps = sample_plane_pairs[i];
+//        cout << " - " << i << ":";
+//        for( int j = 0; j < ps.size(); j++)
+//        {
+//            cout << " (" << ps[j].iobs << "," << ps[j].ilm << ")";
+//        }
+//        cout << endl;
+//    }
+
+    // Will be the final result
+    matches.clear();
+    double resulting_error = 1e9;
+    Eigen::Matrix4f resulting_transformation = Eigen::Matrix4f::Identity();
+    //
+    const unsigned int sample_size = 3;
+    unsigned int valid_iterations = 0;
+    int real_iterations = 0;
+    double inlier_error;
+    unsigned int min_inlier_threshold = good_matches.size() * 0.6;  // minimum point inlier
+    double max_dist_m = ransac_inlier_max_mahal_distance_;
+    bool valid_tf;
+    for( int i = 0; i < sample_plane_pairs.size(); i++)
+    {
+        //
+        std::vector<PlanePair> &ps = sample_plane_pairs[i];
+        const unsigned int sample_points_size = sample_size - ps.size(); // number of sample points
+        unsigned int max_iterations = ransac_iterations_/sample_plane_pairs.size(); // Size of sample plane/point size dependent or not?
+        for( int n = 0; n < max_iterations; n++)
+        {
+            real_iterations ++;
+            // Compute transformation
+            std::vector<cv::DMatch> inlier = randomChooseMatchesPreferGood( sample_points_size, good_matches ); //initialization with random samples
+            Eigen::Matrix4f transformation = solveRtPlanesPoints( last_planes, planes, ps, last_frame.feature_locations_3d,
+                                                                  current_frame.feature_locations_3d, inlier, valid_tf );
+            if( !valid_tf || transformation != transformation )
+                continue;
+            if( valid_tf )  // valid transformation
+            {
+                computeCorrespondenceInliersAndError( good_matches, transformation, last_frame.feature_locations_3d, current_frame.feature_locations_3d,
+                                                      min_inlier_threshold, inlier, inlier_error, max_dist_m );
+                if( inlier.size() > min_inlier_threshold && inlier_error < resulting_error )
+                {
+                    valid_iterations ++;
+                    //
+                    matches = inlier;
+                    resulting_error = inlier_error;
+                    resulting_transformation = transformation;
+                }
+            }
+        }
+    }
+
+    // check if success
+    if( matches.size() > min_inlier_threshold && resulting_error < max_dist_m)
+    {
+        result.setTransform4f( resulting_transformation );
+        result.inlier = matches.size();
+        result.rmse = resulting_error;
+        result.valid = true;
+        return true;
+    }
+    else
+        return false;
+}
+
+
+bool KinectListener::solveRelativeTransformIcp( KinectFrame &last_frame,
+                                                KinectFrame &current_frame,
+                                                RESULT_OF_MOTION &result)
+{
+    PointCloudXYZPtr cloud_icp( new PointCloudXYZ );
+    result.valid = solveRtIcp( current_frame.feature_cloud, last_frame.feature_cloud, cloud_icp, result );
+    return result.valid;
 }
 
 // estimateMotion 计算两个帧之间的运动
@@ -1483,6 +1646,138 @@ bool KinectListener::solveRelativeTransformPnP( KinectFrame& last_frame,
     return ( result.inlier >= min_inlier_threshold );
 }
 
+
+bool KinectListener::solveRelativeTransform( KinectFrame &last_frame,
+                                             KinectFrame &current_frame,
+                                             RESULT_OF_MOTION &result,
+                                             std::vector<cv::DMatch> &matches,
+                                             Eigen::Matrix4d estimated_transform)
+{
+    result.valid = false;
+    result.rmse = 1e9;
+    result.inlier = 0;
+
+    std::vector<PlaneType> &planes = current_frame.segment_planes;
+    std::vector<PlaneType> &last_planes = last_frame.segment_planes;
+
+
+    // Find plane correspondences
+    std::vector<PlanePair> pairs;
+    if( planes.size() > 0 && last_planes.size() > 0 )
+    {
+        ITree::euclidianPlaneCorrespondences( planes, last_planes, pairs, estimated_transform );
+        std::sort( pairs.begin(), pairs.end() );
+    }
+    const int pairs_num = pairs.size();
+    // print plane pairs info
+    cout << GREEN << " pairs size: " << pairs_num << RESET << endl;
+    cout << MAGENTA << " plane pairs = " << pairs.size() << " (iobs, ilm, distance): " << endl;
+    for( int i = 0; i < pairs.size(); i++)
+    {
+        cout << " - " << i << ": (" << pairs[i].iobs << ", " << pairs[i].ilm
+             << ", " << pairs[i].distance << ")" << endl;
+    }
+    cout << RESET << endl;
+
+
+    /// case 1: Estimate motion using plane correspondences
+    RESULT_OF_MOTION best_transform;
+    best_transform.rmse = 1e6; // no inlier
+    best_transform.valid = false;   // no result
+    if( pairs_num >= 3 )
+    {
+        best_transform.valid = solveRelativeTransformPlanes( last_frame, current_frame, pairs, best_transform );
+        if( best_transform.valid )
+        {
+            result = best_transform;
+//            return true;
+        }
+    }
+
+    // print info
+    cout << GREEN << "Transformation from plane correspondences: valid = " << (best_transform.valid?"true":"false") << RESET << endl;
+    cout << GREEN << "  - rmse: " << best_transform.rmse << RESET << endl;
+    printTransform( best_transform.transform4d() );
+
+    best_transform.valid = false;   // for test
+    // matches keypoint features
+    std::vector<cv::DMatch> good_matches;
+    matchImageFeatures( last_frame, current_frame, good_matches,
+                        feature_good_match_threshold_, feature_min_good_match_size_ );
+
+    cout << GREEN << "Matches features, good_matches = " << good_matches.size() << RESET << endl;
+
+    /// case 2: Estimate motion using plane and point correspondences
+    if( !best_transform.valid && pairs_num > 0 && good_matches.size() >= 3)
+    {
+        best_transform.valid = solveRelativeTransformPlanesPointsRansac( last_frame, current_frame, pairs, good_matches, best_transform, matches );
+    }
+    if( best_transform.valid )
+    {
+        result = best_transform;
+//        return true;
+    }
+
+    // print info
+    cout << GREEN << "Transformation from plane/point correspondences: valid = " << (best_transform.valid?"true":"false") << RESET << endl;
+    cout << GREEN << "  - rmse: " << best_transform.rmse << RESET << endl;
+    printTransform( best_transform.transform4d() );
+
+    best_transform.valid = false; // for test
+    /// case 3: Estimate motion using point correspondences
+    if( !best_transform.valid && good_matches.size() >= 3 )
+    {
+        matches.clear();
+        best_transform.valid = solveRelativeTransformPointsRansac( last_frame, current_frame, good_matches, best_transform, matches );
+    }
+
+    if( best_transform.valid )
+    {
+        result = best_transform;
+//        return true;
+    }
+
+    // print info
+    cout << GREEN << "Transformation from point correspondences: valid = " << (best_transform.valid?"true":"false") << RESET << endl;
+    cout << GREEN << "  - rmse: " << best_transform.rmse << RESET << endl;
+    printTransform( best_transform.transform4d() );
+
+    /// case 4: Using ICP
+    if( !best_transform.valid && good_matches.size() >= 20 )
+    {
+        best_transform.valid = solveRelativeTransformIcp( last_frame, current_frame, best_transform );
+    }
+
+    if( best_transform.valid )
+    {
+        result = best_transform;
+//        return true;
+    }
+
+    // print info
+    cout << GREEN << "Transformation from ICP: valid = " << (best_transform.valid?"true":"false") << RESET << endl;
+    cout << GREEN << "  - rmse: " << best_transform.rmse << RESET << endl;
+    printTransform( best_transform.transform4d() );
+
+    /// case 5: using PnP
+    if( !best_transform.valid && good_matches.size() >= 20 )
+    {
+        best_transform.valid = solveRelativeTransformPnP( last_frame, current_frame, good_matches, camera_parameters_, best_transform );
+    }
+
+    if( best_transform.valid )
+    {
+        result = best_transform;
+//        return true;
+    }
+
+    // print info
+    cout << GREEN << "Transformation from PnP: valid = " << (best_transform.valid?"true":"false") << RESET << endl;
+    cout << GREEN << "  - rmse: " << best_transform.rmse << RESET << endl;
+    printTransform( best_transform.transform4d() );
+
+    return result.valid;
+}
 
 // from: https://github.com/felixendres/rgbdslam_v2/src/node.cpp
 void KinectListener::computeCorrespondenceInliersAndError( const std::vector<cv::DMatch> & matches,
@@ -1550,9 +1845,9 @@ void KinectListener::computeCorrespondenceInliersAndError( const std::vector<cv:
     }
 }
 
-double KinectListener::computeEuclidianDistance( std::vector<PlaneType>& last_planes,
-                                                 std::vector<PlaneType>& planes,
-                                                 std::vector<PlanePair>& pairs,
+double KinectListener::computeEuclidianDistance( const std::vector<PlaneType>& last_planes,
+                                                 const std::vector<PlaneType>& planes,
+                                                 const std::vector<PlanePair>& pairs,
                                                  RESULT_OF_MOTION &relative )
 {
     double rmse = 0;
@@ -1561,8 +1856,8 @@ double KinectListener::computeEuclidianDistance( std::vector<PlaneType>& last_pl
     double distance_squared = 0;
     for( int i = 0; i < pairs.size(); i++)
     {
-        PlaneType &plane = planes[ pairs[i].iobs ];
-        PlaneType &last_plane = last_planes[ pairs[i].ilm ];
+        const PlaneType &plane = planes[ pairs[i].iobs ];
+        const PlaneType &last_plane = last_planes[ pairs[i].ilm ];
         PlaneType transformed_plane;
         transformPlane( last_plane.coefficients, transform, transformed_plane.coefficients );
 //        cout << GREEN << " - tr p: " << pairs[i].iobs << "/" << pairs[i].ilm << ": " << endl;
@@ -1905,6 +2200,58 @@ void KinectListener::matchImageFeatures( KinectFrame& last_frame,
     }
 
 //    cout << "good matches: " << goodMatches.size() << endl;
+}
+
+std::vector<PlanePair> KinectListener::randomChoosePlanePairsPreferGood( const unsigned int sample_size,
+                                         std::vector<PlanePair> &pairs )
+{
+    std::set<int> sampled_ids;
+    int safety_net = 0;
+    while( sampled_ids.size() < sample_size && pairs.size() >= sample_size )
+    {
+        int id1 = rand() % pairs.size();
+        int id2 = rand() % pairs.size();
+        if(id1 > id2) id1 = id2; //use smaller one => increases chance for lower id
+            sampled_ids.insert(id1);
+        if(++safety_net > 100)
+        {
+            ROS_ERROR("Infinite Plane Sampling");
+            break;
+        }
+    }
+
+    std::vector<PlanePair> sampled_pairs;
+    sampled_pairs.reserve( sampled_ids.size() );
+    BOOST_FOREACH(int id, sampled_ids)
+    {
+        sampled_pairs.push_back(pairs[id]);
+    }
+    return sampled_pairs;
+}
+
+std::vector<PlanePair> KinectListener::randomChoosePlanePairs( const unsigned int sample_size,
+                                         std::vector<PlanePair> &pairs )
+{
+    std::set<int> sampled_ids;
+    int safety_net = 0;
+    while( sampled_ids.size() < sample_size && pairs.size() >= sample_size )
+    {
+        int id = rand() % pairs.size();
+        sampled_ids.insert(id);
+        if(++safety_net > 100)
+        {
+            ROS_ERROR("Infinite Plane Sampling");
+            break;
+        }
+    }
+
+    std::vector<PlanePair> sampled_pairs;
+    sampled_pairs.reserve( sampled_ids.size() );
+    BOOST_FOREACH(int id, sampled_ids)
+    {
+        sampled_pairs.push_back(pairs[id]);
+    }
+    return sampled_pairs;
 }
 
 std::vector<cv::DMatch> KinectListener::randomChooseMatchesPreferGood( const unsigned int sample_size,
