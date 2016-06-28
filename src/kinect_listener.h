@@ -115,7 +115,7 @@ public:
                                          std_vector_of_eigen_vector4f &last_feature_3d,
                                          std_vector_of_eigen_vector4f &feature_3d,
                                          std::vector<cv::DMatch> &matches,
-                                         bool valid );
+                                         bool &valid );
 
     bool solveRelativeTransformPlanes( KinectFrame &last_frame,
                                        KinectFrame &current_frame,

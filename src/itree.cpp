@@ -59,13 +59,13 @@ bool ITree::euclidianPlaneCorrespondences( const vector<PlaneType> &planes,
         }
     }
 
-    cout << MAGENTA << " plane pairs = " << pairs.size() << " (iobs, ilm, distance): " << endl;
-    for( int i = 0; i < pairs.size(); i++)
-    {
-        cout << " - " << i << ": (" << pairs[i].iobs << ", " << pairs[i].ilm
-             << ", " << pairs[i].distance << ")" << endl;
-    }
-    cout << RESET << endl;
+//    cout << MAGENTA << " plane pairs = " << pairs.size() << " (iobs, ilm, distance): " << endl;
+//    for( int i = 0; i < pairs.size(); i++)
+//    {
+//        cout << " - " << i << ": (" << pairs[i].iobs << ", " << pairs[i].ilm
+//             << ", " << pairs[i].distance << ")" << endl;
+//    }
+//    cout << RESET << endl;
 
 //    std::sort( pairs.begin(), pairs.end() );
     return true;

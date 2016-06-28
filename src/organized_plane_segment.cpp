@@ -17,16 +17,17 @@ OrganizedPlaneSegment::OrganizedPlaneSegment():
 
 void OrganizedPlaneSegment::updateParameters()
 {
-    cout << "/******** Organized Multi Plane extractor ********/" << endl;
-    cout << " ne method: " << ne_method_ << endl;
-    cout << " ne_max_depth_change_factor: " << ne_max_depth_change_factor_ << endl;
-    cout << " ne_normal_smoothing_size: " << ne_normal_smoothing_size_ << endl;
-    cout << " -------------------------------------------------" << endl;
-    cout << " min_inliers: " << min_inliers_ << endl;
-    cout << " angular_threshold: " << angular_threshold_ << endl;
-    cout << " distance_threshold: " << distance_threshold_ << endl;
-    cout << " project_bounding_points: " << project_bounding_points_ << endl;
-    cout << "/*************************************************/" << endl;
+
+//    cout << "/******** Organized Multi Plane extractor ********/" << endl;
+//    cout << " ne method: " << ne_method_ << endl;
+//    cout << " ne_max_depth_change_factor: " << ne_max_depth_change_factor_ << endl;
+//    cout << " ne_normal_smoothing_size: " << ne_normal_smoothing_size_ << endl;
+//    cout << " -------------------------------------------------" << endl;
+//    cout << " min_inliers: " << min_inliers_ << endl;
+//    cout << " angular_threshold: " << angular_threshold_ << endl;
+//    cout << " distance_threshold: " << distance_threshold_ << endl;
+//    cout << " project_bounding_points: " << project_bounding_points_ << endl;
+//    cout << "/*************************************************/" << endl;
 
     switch(ne_method_)
     {
