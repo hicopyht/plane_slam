@@ -76,11 +76,6 @@ public:
 
     void organizedPlaneSegment( PointCloudTypePtr &input, std::vector<PlaneType> &planes);
 
-//    bool solveRelativeTransform( KinectFrame &last_frame,
-//                                 KinectFrame &current_frame,
-//                                 RESULT_OF_MOTION &result,
-//                                 Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4) );
-
     bool solveRtIcp( const PointCloudXYZPtr &source,
                      const PointCloudXYZPtr &target,
                      PointCloudXYZPtr &cloud_icp,

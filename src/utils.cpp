@@ -448,6 +448,40 @@ int bruteForceSearchORB(const uint64_t* v, const uint64_t* search_array, const u
     return min_distance;
 }
 
+//// Test solveRelativeTransform()
+//    // Match features
+//    vector<cv::DMatch> good_matches;
+//    if( is_initialized )
+//    {
+//        cout << GREEN << "Last features = " << last_frame.feature_locations_3d.size()
+//             << ", current features = " << frame.feature_locations_3d.size() << RESET << endl;
+//        matchImageFeatures( last_frame, frame, good_matches,
+//                            feature_good_match_threshold_, feature_min_good_match_size_ );
+//        cout << GREEN << "Match features th = " << feature_good_match_threshold_
+//             << ", good matches = " << good_matches.size() << RESET << endl;
+//        cv::Mat image_matches;
+//        cv::drawMatches( last_frame.visual_image, last_frame.feature_locations_2d,
+//                         frame.visual_image, frame.feature_locations_2d,
+//                         good_matches, image_matches, cv::Scalar::all(-1), cv::Scalar::all(-1),
+//                         vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
+//        cv::imshow( MatchesWindow, image_matches );
+////        cv::waitKey( 1 );
+//    }
+//    cv::waitKey( 1 );
+//    match_dura = time.toc();
+//    time.tic();
+
+//    if( is_initialized )
+//    {
+//        RESULT_OF_MOTION motion;
+//        cout << YELLOW << "******************* Test estimate transformation *******************" << RESET << endl;
+//        std::vector<cv::DMatch> inlier;
+//        solveRelativeTransform( last_frame, frame, motion, inlier );
+//        cout << MAGENTA << "relative transformation: " << RESET << endl;
+//        printTransform( motion.transform4d() );
+//        cout << YELLOW << "********************************************************************" << RESET << endl;
+//    }
+
 
 //// test point RT
 //// test solveRT points&planes
