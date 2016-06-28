@@ -109,6 +109,14 @@ void ITree::euclidianDistance(const PlaneCoefficients &p1, const PlaneCoefficien
 //    cout << CYAN << " n2: " << n2(0) << ", " << n2(1) << ", " << n2(2) << RESET << endl;
 }
 
+bool ITree::checkCoPlanar( const PlaneType &lm1, const PlaneType &lm2, const double angular_threshold )
+{
+    double dis, dir;
+    double threshold = angular_threshold * DEG_TO_RAD;
+    euclidianDistance( lm1, lm2, dir, dis );
+    return (dir < threshold);
+}
+
 // indices of lm1 must bigger than that of lm2
 bool ITree::checkPlanesOverlap( const PlaneType &lm1, const PlaneType &lm2, const double &overlap)
 {

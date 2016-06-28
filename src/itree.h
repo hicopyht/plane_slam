@@ -23,11 +23,20 @@ public:
 
     bool binaryMatch( const PlaneType &obs1, const PlaneType &obs2, const PlaneType &lm1, const PlaneType &lm2);
 
+    static bool checkCoPlanar( const PlaneType &lm1, const PlaneType &lm2, const double angular_threshold = 15.0);
+
     static bool checkPlanesOverlap( const PlaneType &lm1, const PlaneType &lm2, const double &overlap = 0.5);
 
     static void euclidianDistance(const PlaneType &p1, const PlaneType &p2, double &direction, double &distance);
 
     static void euclidianDistance(const PlaneCoefficients &p1, const PlaneCoefficients &p2, double &direction, double &distance);
+
+    static float distancePointToPlane( Eigen::Vector4f point, Eigen::Vector4d model_coefficients)
+    {
+        float distance = fabs ( model_coefficients[0] * point[0] + model_coefficients[1] * point[1]
+                + model_coefficients[2] * point[2] + model_coefficients[3]);
+        return distance;
+    }
 
     /////////////////////////////////////////////////////////
 

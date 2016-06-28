@@ -221,11 +221,9 @@ public:
                              double good_match_threshold = 4.0,
                              int min_match_size = 0);
 
-    std::vector<PlanePair> randomChoosePlanePairsPreferGood( const unsigned int sample_size,
-                                             std::vector<PlanePair> &pairs );
+    std::vector<PlanePair> randomChoosePlanePairsPreferGood( std::vector< std::vector<PlanePair> > &sample_pairs );
 
-    std::vector<PlanePair> randomChoosePlanePairs( const unsigned int sample_size,
-                                             std::vector<PlanePair> &pairs );
+    std::vector<PlanePair> randomChoosePlanePairs( std::vector< std::vector<PlanePair> > &sample_pairs );
 
     std::vector<cv::DMatch> randomChooseMatchesPreferGood( const unsigned int sample_size,
                                              vector< cv::DMatch > &matches_with_depth );

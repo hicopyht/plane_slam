@@ -959,13 +959,13 @@ void KinectListener::solveRt( const std::vector<PlaneCoefficients> &before,
     Eigen::MatrixXd src(3, num_planes), dst(3, num_planes);
     for( int i = 0; i < num_points; i++)
     {
-        froms.col(i) = from_points[i];
-        tos.col(i) = to_points[i];
+        tos.col(i) = from_points[i];
+        froms.col(i) = to_points[i];
     }
     for( int i = 0; i < num_planes; i++)
     {
-        src.col(i) = before[i].head<3>();
-        dst.col(i) = after[i].head<3>();
+        src.col(i) = after[i].head<3>();
+        dst.col(i) = before[i].head<3>();
     }
     const double wi = 1.0;// / num_planes;
     const double one_over_n = num_points > 0 ? 1.0 / num_points : 0;
@@ -1032,8 +1032,8 @@ void KinectListener::solveRt( const std::vector<PlaneCoefficients> &before,
     Eigen::VectorXd b2( num_planes );
     for( int i = 0; i < num_planes; i++)
     {
-        A2.row(i) = wi * after[i].head<3>().transpose();
-        b2(i) = before[i](3) - after[i](3);
+        A2.row(i) = wi * before[i].head<3>().transpose();
+        b2(i) = after[i](3) - before[i](3);
     }
     /// 3:  ( A1 A2 )^T * t = ( b1 b2)^T
     Eigen::MatrixXd AA;( 3 + num_planes, 3 );
@@ -1063,9 +1063,9 @@ void KinectListener::solveRt( const std::vector<PlaneCoefficients> &before,
     result.valid = true;
 }
 
-void KinectListener::solveRt(const std::vector<Eigen::Vector3d>& from_points,
-                             const std::vector<Eigen::Vector3d>& to_points,
-                             RESULT_OF_MOTION &result)
+void KinectListener::solveRt( const std::vector<Eigen::Vector3d>& from_points,
+                              const std::vector<Eigen::Vector3d>& to_points,
+                              RESULT_OF_MOTION &result)
 {
     ROS_ASSERT( from_points.size() >= 3 && to_points.size() >=3 );
 
@@ -1080,9 +1080,9 @@ void KinectListener::solveRt(const std::vector<Eigen::Vector3d>& from_points,
     result.translation = transform.col(3).head<3>();
 }
 
-void KinectListener::solveRt(const std::vector<PlaneCoefficients> &before,
-                             const std::vector<PlaneCoefficients> &after,
-                             RESULT_OF_MOTION &result)
+void KinectListener::solveRt( const std::vector<PlaneCoefficients> &before,
+                              const std::vector<PlaneCoefficients> &after,
+                              RESULT_OF_MOTION &result)
 {
     ROS_ASSERT( after.size() >= 3 && before.size() >=3 );
 
@@ -1093,10 +1093,10 @@ void KinectListener::solveRt(const std::vector<PlaneCoefficients> &before,
     Eigen::VectorXd distance( 3 );
     for(int i = 0; i < 3; i++ )
     {
-        const Eigen::Vector3d from = before[i].head<3>();
-        const Eigen::Vector3d to = after[i].head<3>();
-        const double d1 = before[i](3);
-        const double d2 = after[i](3);
+        const Eigen::Vector3d to = before[i].head<3>();
+        const Eigen::Vector3d from = after[i].head<3>();
+        const double d2 = before[i](3);
+        const double d1 = after[i](3);
         B.col(i) = from;
         A.col(i) = to;
         distance(i) = d1 - d2;   // d_src - d_dst
@@ -1108,7 +1108,7 @@ void KinectListener::solveRt(const std::vector<PlaneCoefficients> &before,
 
     // Eq. (39)
     Eigen::VectorXd S = Eigen::VectorXd::Ones( 3 );
-    cout << "   det(sigma) = " << sigma.determinant() << endl;
+//    cout << "   det(sigma) = " << sigma.determinant() << endl;
     if( sigma.determinant() < 0 )
         S( 2 ) = -1;
 
@@ -1120,10 +1120,10 @@ void KinectListener::solveRt(const std::vector<PlaneCoefficients> &before,
             ++rank;
 //    cout << "   D: " << endl;
 //    cout << vs << endl;
-    cout << "   rank(sigma) = " << rank << endl;
+//    cout << "   rank(sigma) = " << rank << endl;
     if ( rank == 2 )
     {
-        cout << "   det(U)*det(V) = " << svd.matrixU().determinant() * svd.matrixV().determinant() << endl;
+//        cout << "   det(U)*det(V) = " << svd.matrixU().determinant() * svd.matrixV().determinant() << endl;
         if ( svd.matrixU().determinant() * svd.matrixV().determinant() > 0 )
         {
             R = svd.matrixU()*svd.matrixV().transpose();
@@ -1221,10 +1221,62 @@ Eigen::Matrix4f KinectListener::solveRtPlanesPoints( std::vector<PlaneType> &las
 
     // check geometric constrains
     // 2 planes and 1 point
+    valid = false;
+    const double dir_threshold = 8.0 * DEG_TO_RAD;
+    const double dis_threshold = 0.1;
+    if( pairs.size() == 2)
+    {
+        double dis1, dis2;
+        double dir1, dir2;
+        // angle of 2 planes
+        ITree::euclidianDistance( last_planes[pairs[0].ilm], last_planes[pairs[1].ilm], dir1, dis1 );
+        ITree::euclidianDistance( planes[pairs[0].iobs], planes[pairs[1].iobs], dir2, dis2 );
+        if( fabs( dir1 - dir2 ) > dir_threshold )
+            return Eigen::Matrix4f::Identity();
+
+        // distance of point to plane1
+        dis1 = ITree::distancePointToPlane( last_feature_3d[matches[0].queryIdx], last_planes[pairs[0].ilm].coefficients );
+        dis2 = ITree::distancePointToPlane( feature_3d[matches[0].trainIdx], planes[pairs[0].iobs].coefficients );
+        if( fabs(dis1 - dis2) > dis_threshold )
+            return Eigen::Matrix4f::Identity();
+
+        // distance of point to plane2
+        dis1 = ITree::distancePointToPlane( last_feature_3d[matches[0].queryIdx], last_planes[pairs[1].ilm].coefficients );
+        dis2 = ITree::distancePointToPlane( feature_3d[matches[0].trainIdx], planes[pairs[1].iobs].coefficients );
+        if( fabs(dis1 - dis2) > dis_threshold )
+            return Eigen::Matrix4f::Identity();
+    }
     // 1 plane and 2 points
+    else if( pairs.size() == 1)
+    {
+        double dis1, dis2;
+        // distance of 2 points
+        dis1 = (before[0] - before[1]).norm();
+        dis2 = (after[0] - after[1]).norm();
+        if(  dis1 < 0.2 || dis2 < 0.2
+                || fabs(dis1 - dis2) > dis_threshold )
+            return Eigen::Matrix4f::Identity();
+
+        // distance of point1 to plane
+        dis1 = ITree::distancePointToPlane( last_feature_3d[matches[0].queryIdx], last_planes[pairs[0].ilm].coefficients );
+        dis2 = ITree::distancePointToPlane( feature_3d[matches[0].trainIdx], planes[pairs[0].iobs].coefficients );
+        if( fabs(dis1 - dis2) > dis_threshold )
+            return Eigen::Matrix4f::Identity();
+
+        // distance of point2 to plane
+        dis1 = ITree::distancePointToPlane( last_feature_3d[matches[1].queryIdx], last_planes[pairs[0].ilm].coefficients );
+        dis2 = ITree::distancePointToPlane( feature_3d[matches[1].trainIdx], planes[pairs[0].iobs].coefficients );
+        if( fabs(dis1 - dis2) > dis_threshold )
+            return Eigen::Matrix4f::Identity();
+    }
+    else
+    {
+        return Eigen::Matrix4f::Identity();
+    }
+
 
     RESULT_OF_MOTION motion;
-    solveRt( after, before, to_points, from_points, motion );
+    solveRt( before, after, from_points, to_points, motion );
     valid = true;
 
     return motion.transform4f();
@@ -1266,7 +1318,7 @@ bool KinectListener::solveRelativeTransformPlanes( KinectFrame &last_frame,
                 //
 //                cout << YELLOW << " solve motion: (" << x1 << "/" << x2 << "/" << x3 << ")" << RESET << endl;
                 RESULT_OF_MOTION motion;
-                motion.valid = solveRtPlanes( currents, lasts, motion);
+                motion.valid = solveRtPlanes( lasts, currents, motion);
 
                 if( motion.valid )
                 {
@@ -1499,6 +1551,12 @@ bool KinectListener::solveRelativeTransformPlanesPointsRansac( KinectFrame &last
     {
         for( int j = i+1; j < pairs_num; j++)
         {
+            // check co-planar for planes
+            if( ITree::checkCoPlanar(pairs[i].iobs, pairs[j].iobs, 15.0) )
+                continue;
+            if( ITree::checkCoPlanar(pairs[i].ilm, pairs[j].ilm, 15.0) )
+                continue;
+
             std::vector<PlanePair> ps;
             ps.push_back( pairs[i] );
             ps.push_back( pairs[j] );
@@ -1525,42 +1583,57 @@ bool KinectListener::solveRelativeTransformPlanesPointsRansac( KinectFrame &last
     double max_dist_m = ransac_inlier_max_mahal_distance_;
     bool valid_tf;
 //    cout << BLUE << " min_inlier = " << min_inlier_threshold << ", iterations = " << ransac_iterations_ << RESET << endl;
-    for( int i = 0; i < sample_plane_pairs.size(); i++)
+    //
+    unsigned int max_iterations = ransac_iterations_; // Size of sample plane/point size dependent or not?
+    for( int n = 0; n < max_iterations; n++)
     {
-        //
-        std::vector<PlanePair> &ps = sample_plane_pairs[i];
+        real_iterations ++;
+        // Compute transformation
+        std::vector<PlanePair> ps = randomChoosePlanePairsPreferGood( sample_plane_pairs );
         const unsigned int sample_points_size = sample_size - ps.size(); // number of sample points
-        unsigned int max_iterations = ransac_iterations_; // Size of sample plane/point size dependent or not?
-        for( int n = 0; n < max_iterations; n++)
-        {
-            real_iterations ++;
-            // Compute transformation
-            std::vector<cv::DMatch> inlier = randomChooseMatchesPreferGood( sample_points_size, good_matches ); //initialization with random samples
-            Eigen::Matrix4f transformation = solveRtPlanesPoints( last_planes, planes, ps, last_frame.feature_locations_3d,
-                                                                  current_frame.feature_locations_3d, inlier, valid_tf );
+        std::vector<cv::DMatch> inlier = randomChooseMatchesPreferGood( sample_points_size, good_matches ); //initialization with random samples
+        Eigen::Matrix4f transformation = solveRtPlanesPoints( last_planes, planes, ps, last_frame.feature_locations_3d,
+                                                              current_frame.feature_locations_3d, inlier, valid_tf );
 //            cout << " - valid_tf = " << (valid_tf?"true":"false") << endl;
-            if( !valid_tf || transformation != transformation )
-                continue;
-            if( valid_tf )  // valid transformation
-            {
-                computeCorrespondenceInliersAndError( good_matches, transformation, last_frame.feature_locations_3d, current_frame.feature_locations_3d,
-                                                      min_inlier_threshold, inlier, inlier_error, max_dist_m );
+        if( !valid_tf || transformation != transformation )
+            continue;
+        if( valid_tf )  // valid transformation
+        {
+            computeCorrespondenceInliersAndError( good_matches, transformation, last_frame.feature_locations_3d, current_frame.feature_locations_3d,
+                                                  min_inlier_threshold, inlier, inlier_error, max_dist_m );
 
-//                cout << BOLDBLUE << " - refine = " << n << ", relative transform: " << RESET << endl;
-//                printTransform( transformation );
-//                cout << BLUE << " - inlier = " << inlier.size() << ", error = " << inlier_error << RESET << endl;
+            //
+            if( inlier.size() > min_inlier_threshold && inlier_error < max_dist_m )
+            {
+                valid_iterations ++;
 
                 //
-                if( inlier.size() > min_inlier_threshold && inlier_error < resulting_error )
+                if( inlier.size() > matches.size() && inlier_error < resulting_error )
                 {
-                    valid_iterations ++;
-                    //
                     matches = inlier;
                     resulting_error = inlier_error;
                     resulting_transformation = transformation;
+                    //
+                    cout << BOLDBLUE << " - refine = " << n << ", relative transform: " << RESET << endl;
+                    printTransform( transformation );
+                    cout << BLUE << " - inlier = " << inlier.size() << ", error = " << inlier_error << RESET << endl;
+
+                    //
+                    //Performance hacks:
+                    if ( inlier.size() > good_matches.size()*0.5 )
+                        n += max_iterations*0.1;
+                    if ( inlier.size() > good_matches.size()*0.7 )
+                        n += max_iterations*0.1;
+                    if ( inlier.size() > good_matches.size()*0.8 )
+                        n += max_iterations*0.1;
+                    if ( inlier.size() > good_matches.size()*0.9 )
+                        n += max_iterations*0.2;
+                    if ( inlier.size() > good_matches.size()*0.95 )
+                        n += max_iterations*0.3;
                 }
             }
         }
+
     }
 
     //
@@ -1757,6 +1830,7 @@ bool KinectListener::solveRelativeTransform( KinectFrame &last_frame,
     cout << GREEN << "  - rmse: " << best_transform.rmse << ", inlier = " << best_transform.inlier << RESET << endl;
     printTransform( best_transform.transform4d() );
 
+    best_transform.valid = false; // for test
     /// case 4: Using ICP
     if( !best_transform.valid && good_matches.size() >= 20 )
     {
@@ -1777,6 +1851,7 @@ bool KinectListener::solveRelativeTransform( KinectFrame &last_frame,
     cout << GREEN << "  - rmse: " << best_transform.rmse << RESET << endl;
     printTransform( best_transform.transform4d() );
 
+    best_transform.valid = false; // for test
     /// case 5: using PnP
     if( !best_transform.valid && good_matches.size() >= 20 )
     {
@@ -2237,56 +2312,29 @@ void KinectListener::matchImageFeatures( KinectFrame& last_frame,
 //    cout << "good matches: " << goodMatches.size() << endl;
 }
 
-std::vector<PlanePair> KinectListener::randomChoosePlanePairsPreferGood( const unsigned int sample_size,
-                                         std::vector<PlanePair> &pairs )
+std::vector<PlanePair> KinectListener::randomChoosePlanePairsPreferGood( std::vector< std::vector<PlanePair> > &sample_pairs )
 {
-    std::set<int> sampled_ids;
-    int safety_net = 0;
-    while( sampled_ids.size() < sample_size && pairs.size() >= sample_size )
+    if( sample_pairs.size() > 0 )
     {
-        int id1 = rand() % pairs.size();
-        int id2 = rand() % pairs.size();
-        if(id1 > id2) id1 = id2; //use smaller one => increases chance for lower id
-            sampled_ids.insert(id1);
-        if(++safety_net > 100)
-        {
-            ROS_ERROR("Infinite Plane Sampling");
-            break;
-        }
+        int id1 = rand() % sample_pairs.size();
+        int id2 = rand() % sample_pairs.size();
+        if(id1 > id2)
+            id1 = id2; //use smaller one => increases chance for lower id
+        return sample_pairs[id1];
     }
-
-    std::vector<PlanePair> sampled_pairs;
-    sampled_pairs.reserve( sampled_ids.size() );
-    BOOST_FOREACH(int id, sampled_ids)
-    {
-        sampled_pairs.push_back(pairs[id]);
-    }
-    return sampled_pairs;
+    else
+        return std::vector<PlanePair>();
 }
 
-std::vector<PlanePair> KinectListener::randomChoosePlanePairs( const unsigned int sample_size,
-                                         std::vector<PlanePair> &pairs )
+std::vector<PlanePair> KinectListener::randomChoosePlanePairs( std::vector< std::vector<PlanePair> > &sample_pairs )
 {
-    std::set<int> sampled_ids;
-    int safety_net = 0;
-    while( sampled_ids.size() < sample_size && pairs.size() >= sample_size )
+    if( sample_pairs.size() > 0 )
     {
-        int id = rand() % pairs.size();
-        sampled_ids.insert(id);
-        if(++safety_net > 100)
-        {
-            ROS_ERROR("Infinite Plane Sampling");
-            break;
-        }
+        int id = rand() % sample_pairs.size();
+        return sample_pairs[id];
     }
-
-    std::vector<PlanePair> sampled_pairs;
-    sampled_pairs.reserve( sampled_ids.size() );
-    BOOST_FOREACH(int id, sampled_ids)
-    {
-        sampled_pairs.push_back(pairs[id]);
-    }
-    return sampled_pairs;
+    else
+        return std::vector<PlanePair>();
 }
 
 std::vector<cv::DMatch> KinectListener::randomChooseMatchesPreferGood( const unsigned int sample_size,
