@@ -1,0 +1,4 @@
+<launch>
+  <node pkg="rviz" type="rviz" name="$(anon rviz)" args="-d $(find plane_slam)/rviz/rviz.rviz">
+  </node>
+</launch>

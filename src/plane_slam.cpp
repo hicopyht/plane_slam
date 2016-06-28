@@ -29,7 +29,7 @@ PlaneSlam::PlaneSlam() :
     isam2_ = new ISAM2( isam2_parameters_ );
 
     //
-    path_publisher_ = nh_.advertise<nav_msgs::Path>("camera_path", 10);
+    path_publisher_ = nh_.advertise<nav_msgs::Path>("estimated_path", 10);
     odom_path_publisher_ = nh_.advertise<nav_msgs::Path>("odom_path", 10);
     marker_publisher_ = nh_.advertise<visualization_msgs::Marker>("visualization_marker", 10);
 }
@@ -166,9 +166,9 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, KinectFrame &frame)
     std::vector<PlanePair> pairs;
     matchPlanes( predicted_observations, landmarks_, observations, planes, odom_pose, pairs);
 
-    // check pairs
-    if( pairs.size() < 3 )
-        return new_pose;
+//    // check pairs
+//    if( pairs.size() < 3 )
+//        return new_pose;
 
 
     // Add odometry factors

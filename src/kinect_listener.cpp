@@ -464,9 +464,12 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
 {
     static gtsam::Pose3 estimated_pose;
     static KinectFrame last_frame;
+    static gtsam::Pose3 last_odom_pose;
 //    bool use_odom = true;
 //    if( odom_pose == tf::Transform::getIdentity() )
 //        use_odom = false;
+
+    gtsam::Pose3 odom_pose3 = plane_slam_->tfToPose3( odom_pose );
 
     geometry_msgs::PoseStamped pstamped;
     pstamped.pose.position.x = odom_pose.getOrigin().x();
@@ -536,103 +539,118 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     time.tic();
 
 
-    // Clear Display
-    pcl_viewer_->removeAllPointClouds();
-    pcl_viewer_->removeAllShapes();
-    map_viewer_->removeAllPointClouds();
-    map_viewer_->removeAllShapes();
-
-
     // Do slam
     std::vector<PlaneType> landmarks;
     if( do_slam_ )
     {
-        if(!is_initialized)
+        if(!is_initialized) // First frame, initialize slam system
         {
-//            gtsam::Pose3 init_pose;
-//            plane_slam_->tfToPose3( odom_pose, init_pose);
-//            if( plane_slam_->initialize( init_pose, frame ) )
-//            {
-//                is_initialized = true;
-//                estimated_pose = init_pose;
-//                last_frame = frame; // store frame
-//            }
-//            else
-//                return;
-
-            gtsam::Pose3 init_pose;
-            plane_slam_->tfToPose3( odom_pose, init_pose );
-            estimated_pose = init_pose;
-            is_initialized = true;
+            if( plane_slam_->initialize( odom_pose3, frame ) )
+            {
+                is_initialized = true;
+                estimated_pose = odom_pose3; // store pose as initial pose
+                last_odom_pose = odom_pose3; // store odom pose
+                last_frame = frame; // store current frame
+                cout << GREEN << "Initialized Planar SLAM." << RESET << endl;
+            }
+            else
+                return;
 
         }
         else
         {
-            gtsam::Pose3 o_pose;
-            plane_slam_->tfToPose3( odom_pose, o_pose );
-            gtsam::Pose3 r_pose = estimated_pose.inverse() * o_pose;
+            // Estimate motion
             RESULT_OF_MOTION motion;
             std::vector<cv::DMatch> inlier;
             time.tic();
             motion.valid = solveRelativeTransform( last_frame, frame, motion, inlier );
             solveRT_dura = time.toc();
             time.tic();
+
+            // Print motion info
             if( motion.valid )
             {
                 // print motion
                 gtsam::Rot3 rot3( motion.rotation );
                 cout << MAGENTA << " estimated motion, rmse = " << motion.rmse << endl;
-                cout << "  - R(rpy): " << rot3.roll() << ", " << rot3.pitch() << ", " << rot3.yaw() << endl;
+                cout << "  - R(rpy): " << rot3.roll()
+                     << ", " << rot3.pitch()
+                     << ", " << rot3.yaw() << endl;
                 cout << "  - T:      " << motion.translation[0]
                      << ", " << motion.translation[1]
                      << ", " << motion.translation[2] << RESET << endl;
 
+                gtsam::Pose3 real_r_pose = last_odom_pose.inverse() * odom_pose3;
                 cout << CYAN << " true motion: " << endl;
-                cout << "  - R(rpy): " << r_pose.rotation().roll() << ", " << r_pose.rotation().pitch() << ", " << r_pose.rotation().yaw() << endl;
-                cout << "  - T:      " << r_pose.translation().x()
-                     << ", " << r_pose.translation().y()
-                     << ", " << r_pose.translation().z() << RESET << endl;
+                cout << "  - R(rpy): " << real_r_pose.rotation().roll()
+                     << ", " << real_r_pose.rotation().pitch()
+                     << ", " << real_r_pose.rotation().yaw() << endl;
+                cout << "  - T:      " << real_r_pose.translation().x()
+                     << ", " << real_r_pose.translation().y()
+                     << ", " << real_r_pose.translation().z() << RESET << endl;
             }
-            if( !motion.valid )
+            else
             {
-                cout << RED << " failed to estimate relative motion using planes. " << RESET << endl;
+                cout << RED << "Failed to estimate relative motion using planes. " << RESET << endl;
+                cout << RED << "Use Identity as transformation." << RESET << endl;
+                motion.setTransform4d( Eigen::Matrix4d::Identity() );
             }
+
+            // Slam iteration
+            gtsam::Pose3 rel( gtsam::Rot3(motion.rotation), gtsam::Point3(motion.translation) );
+            gtsam::Pose3 pose3 = estimated_pose * rel;
+            if( motion.valid && frame.segment_planes.size() > 0)    // do slam
+            {
+                estimated_pose = plane_slam_->planeSlam( pose3, frame );
+                // visualize landmark
+                landmarks = plane_slam_->getLandmarks();
+            }
+            else if( motion.valid && frame.segment_planes.size() == 0) // accumulate estimated pose
+            {
+                estimated_pose = pose3;
+            }
+            else
+            {
+                cout << RED << "[Error]: " << "Motion estimation failed, stop processing current frame." << RESET << endl;
+                return;
+            }
+
+            // Publish pose and trajectory
+            publishPose( estimated_pose );
+            publishTruePath();
             //
-////            RESULT_OF_MOTION motion = estimateMotion( frame, last_frame, camera_parameters_ );
-//            gtsam::Pose3 rel( gtsam::Rot3(motion.rotation), gtsam::Point3(motion.translation) );
-//            gtsam::Pose3 pose3 = estimated_pose * rel;
-//            estimated_pose = plane_slam_->planeSlam( pose3, frame );
-//            publishPose( estimated_pose );
-//            if(display_path_)
-//                plane_slam_->publishEstimatedPath();
-//            if(display_odom_path_)
-//                plane_slam_->publishOdomPath();
+            if( display_path_ )
+                plane_slam_->publishEstimatedPath();
+            if( display_odom_path_ )
+                plane_slam_->publishOdomPath();
 
-//            // visualize landmark
-//            landmarks = plane_slam_->getLandmarks();
-//            // project and recalculate contour
 
-//            // store frame
-//            last_frame = frame;
+            // project and recalculate contour
 
-            // store frame
-            estimated_pose = o_pose;
-//            last_frame = frame;
         }
     }
 
     slam_dura = time.toc();
     time.tic();
 
-    // display landmarks
+
+    // Display map
     if(display_landmarks_ && landmarks.size() > 0)
     {
+        // Clear map display
+        map_viewer_->removeAllPointClouds();
+        map_viewer_->removeAllShapes();
         displayLandmarks( landmarks, "landmark");
         publishPlanarMap( landmarks );
+        map_viewer_->spinOnce(1);
     }
 
+    // Clear Display
+    pcl_viewer_->removeAllPointClouds();
+    pcl_viewer_->removeAllShapes();
+
     // display
-    if(display_input_cloud_)
+    if( display_input_cloud_ )
     {
 //        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> rgba_color(frame_current.point_cloud, 255, 255, 255);
         pcl_viewer_->addPointCloud( frame.cloud_in, "rgba_cloud", viewer_v1_ );
@@ -649,7 +667,7 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     pcl_viewer_->addText( "Last 3D Features", 200, 20, "viewer_v1_name", viewer_v1_);
     pcl_viewer_->addText( "Current 3D Features", 200, 20, "viewer_v3_name", viewer_v3_);
     pcl_viewer_->spinOnce(1);
-    map_viewer_->spinOnce(1);
+
 
     display_dura = time.toc();
     total_dura = (pcl::getTime() - start_time) * 1000;
@@ -660,6 +678,7 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     cout << "----------------------------------- END -------------------------------------" << endl;
 
     last_frame = frame; // store frame
+    last_odom_pose = odom_pose3; // store odom pose
 }
 
 

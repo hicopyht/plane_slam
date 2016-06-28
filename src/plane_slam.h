@@ -117,6 +117,13 @@ public:
 
     void tfToPose3( const tf::Transform &trans, gtsam::Pose3 &pose );
 
+    gtsam::Pose3 tfToPose3( const tf::Transform &trans)
+    {
+        gtsam::Pose3 pose3;
+        tfToPose3( trans, pose3 );
+        return pose3;
+    }
+
     void pose3ToTF( const gtsam::Pose3 &pose, tf::Transform &trans );
 
     inline void setPlaneMatchThreshold( double direction_thresh, double distance_thresh) {

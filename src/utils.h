@@ -190,13 +190,13 @@ struct RESULT_OF_MOTION
         return tr;
     }
 
-    void setTransform4d( Eigen::Matrix4d &tr )
+    void setTransform4d( const Eigen::Matrix4d &tr )
     {
         rotation = tr.topLeftCorner(3,3);
         translation = tr.col(3).head<3>();
     }
 
-    void setTransform4f( Eigen::Matrix4f &tr )
+    void setTransform4f( const Eigen::Matrix4f &tr )
     {
         rotation = tr.topLeftCorner(3,3).cast<double>();
         translation = tr.col(3).head<3>().cast<double>();
