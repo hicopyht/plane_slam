@@ -381,6 +381,10 @@ private:
     string map_frame_;
     string base_frame_;
     string odom_frame_;
+    int skip_message_;
+    bool use_keyframe_;
+    double keyframe_linear_threshold_;
+    double keyframe_angular_threshold_;
     bool display_path_;
     bool display_odom_path_;
     bool display_landmarks_;

@@ -67,14 +67,18 @@ int main(int argc, char** argv)
 {
     ros::init(argc, argv, "plane_slam_node_depth");
 
-    if( argc != 4)
+    if( argc < 4)
     {
         cerr << endl << "Usage: ./plane_slam_node_depth camera_parameter_file bagfile topicname" << endl;
         return 1;
     }
 
-    const double skip_time = 8.0;
-    const double duration = 10.0;
+    double skip_time = 1.0;
+    double duration = 300;
+    if( argc >= 5 )
+        skip_time = atof(argv[4]);
+    if( argc >= 6 )
+        duration = atof(argv[5]);
 
     // Check parameter file
     std::string camera_parameter_file(argv[1]);

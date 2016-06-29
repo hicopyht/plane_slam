@@ -190,7 +190,7 @@ Visualization Manager:
       Queue Size: 10
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.02
+      Size (m): 0.01
       Style: Flat Squares
       Topic: /planar_map
       Unreliable: false
@@ -221,22 +221,22 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/XYOrbit
-      Distance: 4.4725
+      Distance: 3.35537
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.06
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.923588
-        Y: 0.464957
+        X: -1.08229
+        Y: 0.454895
         Z: 1.43051e-06
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.720398
+      Pitch: 1.0254
       Target Frame: <Fixed Frame>
       Value: XYOrbit (rviz)
-      Yaw: 5.6436
+      Yaw: 6.2586
     Saved: ~
 Window Geometry:
   Displays:

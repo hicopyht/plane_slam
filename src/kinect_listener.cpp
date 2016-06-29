@@ -154,14 +154,17 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
 
     printf("no cloud msg: %d\n", depth_img_msg->header.seq);
 
-    skip = (skip + 1) % 5;
+    skip = (skip + 1) % skip_message_;
     if( skip )
         return;
 
     // Get odom pose
     tf::Transform odom_pose;
     if( !getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
-        return;
+    {
+        odom_pose.setIdentity();
+//        return;
+    }
 
     // Get camera parameter
     getCameraParameter( cam_info_msg, camera_parameters_);
@@ -223,7 +226,7 @@ void KinectListener::depthCallback ( const sensor_msgs::ImageConstPtr& depth_img
 
     printf("depth msg: %d\n", depth_img_msg->header.seq);
 
-    skip = (skip + 1) % 5;
+    skip = (skip + 1) % skip_message_;
     if( skip )
         return;
 
@@ -259,7 +262,7 @@ void KinectListener::trackDepthImage( const sensor_msgs::ImageConstPtr &depth_im
 
     printf("depth msg: %d\n", depth_img_msg->header.seq);
 
-    skip = (skip + 1) % 5;
+    skip = (skip + 1) % skip_message_;
     if( skip )
         return;
 
@@ -599,22 +602,38 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
             // Slam iteration
             gtsam::Pose3 rel( gtsam::Rot3(motion.rotation), gtsam::Point3(motion.translation) );
             gtsam::Pose3 pose3 = estimated_pose * rel;
-            if( motion.valid && frame.segment_planes.size() > 0)    // do slam
+            if( use_keyframe_ )
             {
-                estimated_pose = plane_slam_->planeSlam( pose3, frame );
-                // visualize landmark
-                landmarks = plane_slam_->getLandmarks();
-            }
-            else if( motion.valid && frame.segment_planes.size() == 0) // accumulate estimated pose
-            {
-                estimated_pose = pose3;
+                if( rel.translation().norm() >= keyframe_linear_threshold_
+                        || acos( cos(rel.rotation().yaw()) * cos(rel.rotation().pitch()) * cos(rel.rotation().roll()) ) > keyframe_angular_threshold_ )
+                {
+                    estimated_pose = plane_slam_->planeSlam( pose3, frame );
+                    // visualize landmark
+                    landmarks = plane_slam_->getLandmarks();
+                }
+                else
+                {
+                    return;
+                }
             }
             else
             {
-                cout << RED << "[Error]: " << "Motion estimation failed, stop processing current frame." << RESET << endl;
-                return;
+                if( motion.valid && frame.segment_planes.size() > 0)    // do slam
+                {
+                    estimated_pose = plane_slam_->planeSlam( pose3, frame );
+                    // visualize landmark
+                    landmarks = plane_slam_->getLandmarks();
+                }
+                else if( motion.valid && frame.segment_planes.size() == 0) // accumulate estimated pose
+                {
+                    estimated_pose = pose3;
+                }
+                else
+                {
+                    cout << RED << "[Error]: " << "Motion estimation failed, stop processing current frame." << RESET << endl;
+                    return;
+                }
             }
-
             // Publish pose and trajectory
             publishPose( estimated_pose );
             publishTruePath();
@@ -2354,6 +2373,10 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     map_frame_ = config.map_frame;
     base_frame_ = config.base_frame;
     odom_frame_ = config.odom_frame;
+    skip_message_ = config.skip_message;
+    use_keyframe_ = config.use_keyframe;
+    keyframe_linear_threshold_ = config.keyframe_linear_threshold;
+    keyframe_angular_threshold_ = config.keyframe_angular_threshold * DEG_TO_RAD;
     plane_slam_->setPlaneMatchThreshold( config.plane_match_direction_threshold * M_PI / 180.0, config.plane_match_distance_threshold);
     plane_slam_->setPlaneMatchCheckOverlap( config.plane_match_check_overlap );
     plane_slam_->setPlaneMatchOverlapAlpha( config.plane_match_overlap_alpha );
