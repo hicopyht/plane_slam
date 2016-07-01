@@ -67,18 +67,18 @@ int main(int argc, char** argv)
 {
     ros::init(argc, argv, "plane_slam_node_depth");
 
-    if( argc < 4)
+    if( argc < 3)
     {
-        cerr << endl << "Usage: ./plane_slam_node_depth camera_parameter_file bagfile topicname" << endl;
+        cerr << endl << "Usage: ./plane_slam_node_depth camera_parameter_file bagfile <skip> <duration>" << endl;
         return 1;
     }
 
     double skip_time = 1.0;
     double duration = 300;
+    if( argc >= 4 )
+        skip_time = atof(argv[3]);
     if( argc >= 5 )
-        skip_time = atof(argv[4]);
-    if( argc >= 6 )
-        duration = atof(argv[5]);
+        duration = atof(argv[4]);
 
     // Check parameter file
     std::string camera_parameter_file(argv[1]);
@@ -118,10 +118,13 @@ int main(int argc, char** argv)
     cout << GREEN << " Open bag file: " << filename << RESET << endl;
 
     // depth image topic to load
-    std::string topic_name = argv[3];
+    std::string depth_topic = "/camera/depth_registered/image";
+    std::string rgb_topic = "/camera/rgb/image_color";
     std::vector<std::string> topics;
-    topics.push_back(topic_name);
-    cout << GREEN << " Depth image topic name: " << topic_name << RESET << endl;
+    topics.push_back( depth_topic );
+    topics.push_back( rgb_topic );
+    cout << GREEN << " Depth image topic: " << depth_topic << RESET << endl;
+    cout << GREEN << " Rgb image topic: " << rgb_topic << RESET << endl;
 
     rosbag::View full_view;
     full_view.addQuery( bag );
@@ -133,6 +136,7 @@ int main(int argc, char** argv)
     view.addQuery( bag, rosbag::TopicQuery( topics ), start_time, finish_time );
 
     KinectListener kl;
+    kl.setCameraParameters( camera );   // set camera parameter
 
     cout << GREEN << "##############################################################" << RESET << endl;
     cout << GREEN << " Skip = " << skip_time << " seconds, play duration = " << duration << RESET << endl;
@@ -146,33 +150,82 @@ int main(int argc, char** argv)
     ros::Rate loop_rate(20);
     bool paused = true;
 
+    //
+    bool valid_depth = false;
+    bool valid_rgb = false;
+    sensor_msgs::Image::ConstPtr depth_img_msg;
+    sensor_msgs::Image::ConstPtr rgb_img_msg;
+
     BOOST_FOREACH(rosbag::MessageInstance const m, view)
     {   
-        if (m.getTopic() == topic_name || ("/" + m.getTopic() == topic_name))
+        // exit
+        if(!ros::ok())
+            break;
+
+        // depth topic
+        if (m.getTopic() == depth_topic || ("/" + m.getTopic() == depth_topic))
         {
-            // pause
-            while(paused && ros::ok())
+            depth_img_msg = m.instantiate<sensor_msgs::Image>();
+            valid_depth = true;
+
+            // check if synchronous
+            if( valid_depth && valid_rgb
+                    && fabs( (depth_img_msg->header.stamp - rgb_img_msg->header.stamp).toSec() ) < 0.015 )
             {
-                char cin = readCharFromStdin();
-                if(cin == ' ')
+                // pause before processing
+                paused = true;
+                while(paused && ros::ok())
                 {
-                    paused = false;
-                    break;
+                    char cin = readCharFromStdin();
+                    if(cin == ' ')
+                    {
+                        paused = false;
+                        break;
+                    }
+                    ros::spinOnce();
+                    loop_rate.sleep();
                 }
-                ros::spinOnce();
-                loop_rate.sleep();
+
+                // process frame
+                kl.trackDepthRgbImage( depth_img_msg, rgb_img_msg, camera );
+                valid_depth = false;
+                valid_rgb = false;
             }
-            // exit
-            if(!ros::ok())
-                break;
-            // get message
-            sensor_msgs::Image::ConstPtr depth_img_msg = m.instantiate<sensor_msgs::Image>();
-//            cout << BLUE << " - depth image topic: " << depth_img_msg->header.seq << RESET << endl;
-            // process one cloud message
-            kl.trackDepthImage( depth_img_msg, camera );
-            // Reset symbol
-            paused = true;
         }
+
+
+        // rgb topic
+        if (m.getTopic() == rgb_topic || ("/" + m.getTopic() == rgb_topic))
+        {
+            rgb_img_msg = m.instantiate<sensor_msgs::Image>();
+            valid_rgb = true;
+
+            // check if synchronous
+            if( valid_depth && valid_rgb
+                    && fabs( (depth_img_msg->header.stamp - rgb_img_msg->header.stamp).toSec() ) < 0.015 )
+            {
+                // pause before processing
+                paused = true;
+                while(paused && ros::ok())
+                {
+                    char cin = readCharFromStdin();
+                    if(cin == ' ')
+                    {
+                        paused = false;
+                        break;
+                    }
+                    ros::spinOnce();
+                    loop_rate.sleep();
+                }
+
+                // process frame
+                kl.trackDepthRgbImage( depth_img_msg, rgb_img_msg, camera );
+                valid_depth = false;
+                valid_rgb = false;
+
+            }
+        }
+
     }
 
     // Restore terminal

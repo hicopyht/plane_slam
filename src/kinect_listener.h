@@ -64,6 +64,10 @@ public:
 
     ~KinectListener();
 
+    void trackDepthRgbImage( const sensor_msgs::ImageConstPtr &depth_img_msg,
+                             const sensor_msgs::ImageConstPtr &visual_img_msg,
+                             const PlaneFromLineSegment::CAMERA_PARAMETERS &camera);
+
     void trackDepthImage( const sensor_msgs::ImageConstPtr &depth_img_msg,
                           PlaneFromLineSegment::CAMERA_PARAMETERS &camera_parameters );
 
@@ -225,6 +229,11 @@ public:
 
     std::vector<cv::DMatch> randomChooseMatches( const unsigned int sample_size,
                                              vector< cv::DMatch > &matches );
+
+    inline void setCameraParameters( const PlaneFromLineSegment::CAMERA_PARAMETERS & camera )
+    {
+        camera_parameters_ = camera;
+    }
 
 protected:
     void noCloudCallback (const sensor_msgs::ImageConstPtr& visual_img_msg,

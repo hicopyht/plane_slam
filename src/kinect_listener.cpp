@@ -268,6 +268,7 @@ void KinectListener::trackDepthImage( const sensor_msgs::ImageConstPtr &depth_im
 
     // Current Frame
     KinectFrame current_frame;
+    camera_parameters_ = camera_parameters;
 
     // Get Mat Image
     current_frame.depth_image = cv_bridge::toCvCopy(depth_img_msg)->image; // to cv image
@@ -279,6 +280,33 @@ void KinectListener::trackDepthImage( const sensor_msgs::ImageConstPtr &depth_im
     // Process data
     processCloud( current_frame );
 
+}
+
+void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &depth_img_msg,
+                                         const sensor_msgs::ImageConstPtr &visual_img_msg,
+                                         const PlaneFromLineSegment::CAMERA_PARAMETERS & camera)
+{
+    static int skip = 0;
+
+    printf("no cloud msg: %d\n", depth_img_msg->header.seq);
+
+    skip = (skip + 1) % skip_message_;
+    if( skip )
+        return;
+
+    // Current Frame
+    KinectFrame current_frame;
+    camera_parameters_ = camera;
+
+    // Get Mat Image
+    current_frame.visual_image = cv_bridge::toCvCopy(visual_img_msg)->image; // to cv image
+    current_frame.depth_image = cv_bridge::toCvCopy(depth_img_msg)->image; // to cv image
+    depthToCV8UC1( current_frame.depth_image, current_frame.depth_mono );
+    // Get PointCloud
+    current_frame.cloud = image2PointCloud( current_frame.visual_image, current_frame.depth_image, camera_parameters_);
+
+    // Process data
+    processFrame( current_frame );
 }
 
 void KinectListener::processCloud( KinectFrame &frame, const tf::Transform &odom_pose )
