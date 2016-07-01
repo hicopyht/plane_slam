@@ -425,6 +425,45 @@ void cvToEigen(const cv::Mat& src, Eigen::Matrix3d& dst )
 //    cout<< BLUE << dst << RESET << endl;
 }
 
+geometry_msgs::PoseStamped pose3ToGeometryPose( const gtsam::Pose3 pose3 )
+{
+    geometry_msgs::PoseStamped pose;
+    pose.pose.position.x = pose3.translation()[0];
+    pose.pose.position.y = pose3.translation()[1];
+    pose.pose.position.z = pose3.translation()[2];
+    tf::Transform trans;
+    trans.setOrigin( tf::Vector3( pose3.translation()[0], pose3.translation()[1], pose3.translation()[2] ) );
+    trans.setBasis( matrixEigen2TF( pose3.rotation().matrix() ) );
+    tf::quaternionTFToMsg( trans.getRotation(), pose.pose.orientation );
+
+    return pose;
+}
+
+geometry_msgs::PoseStamped tfToGeometryPose( const tf::Transform &trans )
+{
+    geometry_msgs::PoseStamped pose;
+    pose.pose.position.x = trans.getOrigin().x();
+    pose.pose.position.y = trans.getOrigin().y();
+    pose.pose.position.z = trans.getOrigin().z();
+    tf::quaternionTFToMsg( trans.getRotation(), pose.pose.orientation );
+
+    return pose;
+}
+
+geometry_msgs::PoseStamped motionToGeometryPose( const RESULT_OF_MOTION &motion )
+{
+    geometry_msgs::PoseStamped pose;
+    pose.pose.position.x = motion.translation.x();
+    pose.pose.position.y = motion.translation.y();
+    pose.pose.position.z = motion.translation.z();
+    tf::Transform trans;
+    trans.setOrigin( tf::Vector3( motion.translation.x(), motion.translation.y(), motion.translation.z() ) );
+    trans.setBasis( matrixEigen2TF(motion.rotation) );
+    tf::quaternionTFToMsg( trans.getRotation(), pose.pose.orientation );
+
+    return pose;
+}
+
 static inline int hamming_distance_orb32x8_popcountll(const uint64_t* v1, const uint64_t* v2) {
   return (__builtin_popcountll(v1[0] ^ v2[0]) + __builtin_popcountll(v1[1] ^ v2[1])) +
          (__builtin_popcountll(v1[2] ^ v2[2]) + __builtin_popcountll(v1[3] ^ v2[3]));

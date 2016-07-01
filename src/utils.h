@@ -273,6 +273,10 @@ double errorFunction2(const Eigen::Vector4f& x1,
 
 void cvToEigen(const cv::Mat& src, Eigen::Matrix3d& dst );
 
+geometry_msgs::PoseStamped pose3ToGeometryPose( const gtsam::Pose3 pose3 );
+geometry_msgs::PoseStamped tfToGeometryPose( const tf::Transform &trans );
+geometry_msgs::PoseStamped motionToGeometryPose( const RESULT_OF_MOTION &motion );
+
 int bruteForceSearchORB(const uint64_t* v, const uint64_t* search_array, const unsigned int& size, int& result_index);
 
 

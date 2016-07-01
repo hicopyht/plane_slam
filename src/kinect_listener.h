@@ -386,6 +386,7 @@ private:
     ORBextractor* orb_extractor_;
 
     // Plane slam
+    bool do_visual_odometry_;
     bool do_slam_;
     string map_frame_;
     string base_frame_;

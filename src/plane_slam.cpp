@@ -88,7 +88,7 @@ bool PlaneSlam::initialize(Pose3 &init_pose, KinectFrame &frame)
         graph_.push_back( OrientedPlane3Factor(plane.coefficients, obs_noise, x0, ln) );
 
         // Add initial guesses to all observed landmarks
-        cout << "Key: " << ln << endl;
+//        cout << "Key: " << ln << endl;
         OrientedPlane3 lmn( plane.coefficients );
         OrientedPlane3 glmn = lmn.transform( init_pose.inverse() );
         initial_estimate_.insert<OrientedPlane3>( ln,  glmn );

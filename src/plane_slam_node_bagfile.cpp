@@ -120,6 +120,8 @@ int main(int argc, char** argv)
     // depth image topic to load
     std::string depth_topic = "/camera/depth_registered/image";
     std::string rgb_topic = "/camera/rgb/image_color";
+//    std::string depth_topic = "/camera/depth/image";
+//    std::string rgb_topic = "/camera/rgb/image_color";
     std::vector<std::string> topics;
     topics.push_back( depth_topic );
     topics.push_back( rgb_topic );
@@ -226,6 +228,21 @@ int main(int argc, char** argv)
             }
         }
 
+    }
+
+    // pause before processing
+    cout << MAGENTA << "Press 'p' to stop processing." << RESET << endl;
+    paused = true;
+    while(paused && ros::ok())
+    {
+        char cin = readCharFromStdin();
+        if(cin == 'p')
+        {
+            paused = false;
+            break;
+        }
+        ros::spinOnce();
+        loop_rate.sleep();
     }
 
     // Restore terminal

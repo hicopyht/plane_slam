@@ -42,18 +42,18 @@ KinectListener::KinectListener() :
         line_based_segment_config_server_.setCallback(line_based_segment_config_callback_);
     }
 
-//    private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
-//    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "");
-//    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth_registered/image");
-//    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/depth_registered/camera_info");
-//    private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
-
     private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
     private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/camera/rgb/image_color");
-//    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "");
-    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth/image");
-    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/depth/camera_info");
+    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth_registered/image");
+    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/rgb/camera_info");
     private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
+
+//    private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
+//    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/camera/rgb/image_color");
+////    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "");
+//    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth/image");
+//    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/depth/camera_info");
+//    private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
 
 
     pcl_viewer_->createViewPort(0, 0.5, 0.5, 1.0, viewer_v1_);
@@ -496,19 +496,9 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     static gtsam::Pose3 estimated_pose;
     static KinectFrame last_frame;
     static gtsam::Pose3 last_odom_pose;
-//    bool use_odom = true;
-//    if( odom_pose == tf::Transform::getIdentity() )
-//        use_odom = false;
 
+    //
     gtsam::Pose3 odom_pose3 = plane_slam_->tfToPose3( odom_pose );
-
-    geometry_msgs::PoseStamped pstamped;
-    pstamped.pose.position.x = odom_pose.getOrigin().x();
-    pstamped.pose.position.y = odom_pose.getOrigin().y();
-    pstamped.pose.position.z = odom_pose.getOrigin().z();
-    tf::quaternionTFToMsg( odom_pose.getRotation(), pstamped.pose.orientation );
-    true_poses_.push_back( pstamped );
-    publishTruePath();
 
     // if use downsample cloud
     cloud_size_type_ = cloud_size_type_config_;
@@ -569,12 +559,50 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     keypoint_dura = time.toc();
     time.tic();
 
-
-    // Do slam
+    //
     std::vector<PlaneType> landmarks;
-    if( do_slam_ )
+    if( do_visual_odometry_ ) // Do visual odometry
     {
-        if(!is_initialized) // First frame, initialize slam system
+        cout << GREEN << "Estimate visual odometry." << RESET << endl;
+
+        if( !is_initialized )
+        {
+            estimated_pose = gtsam::Pose3::identity();
+            is_initialized = true;
+
+            // first pose
+            true_poses_.clear();
+            true_poses_.push_back( tfToGeometryPose(tf::Transform::getIdentity()) );
+            publishTruePath();
+        }
+        else
+        {
+            // Estimate motion
+            RESULT_OF_MOTION motion;
+            std::vector<cv::DMatch> inlier;
+            time.tic();
+            motion.valid = solveRelativeTransform( last_frame, frame, motion, inlier );
+            solveRT_dura = time.toc();
+            time.tic();
+
+            //
+            if( !motion.valid )
+                return;
+
+            // New odometry pose
+            gtsam::Pose3 rel( gtsam::Rot3(motion.rotation), gtsam::Point3(motion.translation) );
+            gtsam::Pose3 o_pose = estimated_pose * rel;
+            estimated_pose = o_pose;
+
+            // Publish odometry pose
+            true_poses_.push_back( pose3ToGeometryPose(estimated_pose) );
+            publishTruePath();
+        }
+
+    }
+    else if( do_slam_ ) // Do slam
+    {
+        if( !is_initialized ) // First frame, initialize slam system
         {
             if( plane_slam_->initialize( odom_pose3, frame ) )
             {
@@ -583,6 +611,11 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
                 last_odom_pose = odom_pose3; // store odom pose
                 last_frame = frame; // store current frame
                 cout << GREEN << "Initialized Planar SLAM." << RESET << endl;
+
+                // first pose
+                true_poses_.clear();
+                true_poses_.push_back( tfToGeometryPose(tf::Transform::getIdentity()) );
+                publishTruePath();
             }
             else
                 return;
@@ -664,7 +697,11 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
             }
             // Publish pose and trajectory
             publishPose( estimated_pose );
+
+            // Publish odom path
+            true_poses_.push_back( tfToGeometryPose(odom_pose) );
             publishTruePath();
+
             //
             if( display_path_ )
                 plane_slam_->publishEstimatedPath();
@@ -2397,6 +2434,7 @@ void KinectListener::organizedPlaneSegment(PointCloudTypePtr &input, std::vector
 
 void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &config, uint32_t level)
 {
+    do_visual_odometry_ = config.do_visual_odometry;
     do_slam_ = config.do_slam;
     map_frame_ = config.map_frame;
     base_frame_ = config.base_frame;
@@ -3267,10 +3305,10 @@ bool KinectListener::autoSpinMapViewerCallback(std_srvs::SetBool::Request &req, 
     auto_spin_map_viewer_ = true;
     ROS_INFO("Auto spin map viewer for 30 seconds.");
     ros::Time time = ros::Time::now() + ros::Duration(30.0);
-    ros::Rate loop_rate( 50 );
-    while( auto_spin_map_viewer_ && nh_.ok())
+    ros::Rate loop_rate( 25 );
+    while( auto_spin_map_viewer_ && ros::ok())
     {
-        if( !nh_.ok() )
+        if( !ros::ok() )
         {
             res.message = "Node shutdown.";
             return true;
