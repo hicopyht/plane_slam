@@ -146,9 +146,6 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, KinectFrame &frame)
     // calculate relative pose and new pose
     Pose3 rel_pose = odom_pose_.inverse() * odom_pose;
     Pose3 new_pose = last_estimate_pose_ * rel_pose;
-    // Store odom_pose
-    odom_pose_ = odom_pose;
-    odom_poses_.push_back( odom_pose_ );
 
     // convert to gtsam plane type
     std::vector<OrientedPlane3> observations;
@@ -252,6 +249,10 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, KinectFrame &frame)
         refinePlanarMap();
     }
 
+    // Store odom_pose
+    odom_pose_ = odom_pose;
+    odom_poses_.push_back( odom_pose_ );
+
     return current_estimate;
 }
 
@@ -264,6 +265,8 @@ bool PlaneSlam::refinePlanarMap()
     // find co-planar landmark pair
     bool find_coplanar = false;
     const int num = landmarks_.size();
+    const double direction_threshold = planar_merge_direction_threshold_;
+    const double distance_threshold = planar_merge_distance_threshold_;
     for( int i = 0; i < (num - 1 ); i++)
     {
         PlaneType &p1 = landmarks_[i];
@@ -298,8 +301,6 @@ bool PlaneSlam::refinePlanarMap()
             const OrientedPlane3 &llm2 = lm2.transform( local );
             double dr_error = acos( llm1.normal().dot( llm2.normal() ));
             double ds_error = fabs( llm1.distance() - llm2.distance() );
-            const double direction_threshold = 20.0 * M_PI / 180.0;
-            const double distance_threshold = 0.1;
 //            cout << CYAN << "  - " << i << "*" << j << ": " << dr_error << "("<< direction_threshold << "), "
 //                 << ds_error << "(" << distance_threshold << ")" << RESET << endl;
             if( (fabs(dr_error) < direction_threshold)

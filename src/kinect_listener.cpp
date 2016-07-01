@@ -42,18 +42,18 @@ KinectListener::KinectListener() :
         line_based_segment_config_server_.setCallback(line_based_segment_config_callback_);
     }
 
-    private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
-    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/camera/rgb/image_color");
-    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth_registered/image");
-    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/rgb/camera_info");
-    private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
-
 //    private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
 //    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/camera/rgb/image_color");
-////    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "");
-//    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth/image");
-//    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/depth/camera_info");
+//    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth_registered/image");
+//    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/rgb/camera_info");
 //    private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
+
+    private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
+    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/camera/rgb/image_color");
+//    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "");
+    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth/image");
+    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/depth/camera_info");
+    private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
 
 
     pcl_viewer_->createViewPort(0, 0.5, 0.5, 1.0, viewer_v1_);
@@ -71,7 +71,8 @@ KinectListener::KinectListener() :
 
     map_viewer_->addCoordinateSystem(0.5);
     map_viewer_->initCameraParameters();
-    map_viewer_->setCameraPosition( 0, 3.0, 3.0, -3.0, 0, 0, -1, -1, 0 );
+    map_viewer_->setCameraPosition(0.0, 0.0, -2.4, 0, 0, 0.6, 0, -1, 0);
+//    map_viewer_->setCameraPosition( 0, 3.0, 3.0, -3.0, 0, 0, -1, -1, 0 );
     map_viewer_->setShowFPS(true);
 
     //
@@ -93,6 +94,7 @@ KinectListener::KinectListener() :
     orb_extractor_ = new ORBextractor(nFeatures, fScaleFactor, nLevels, fIniThFAST, fMinThFAST);
 
     true_path_publisher_ = nh_.advertise<nav_msgs::Path>("true_path", 10);
+    odometry_path_publisher_ = nh_.advertise<nav_msgs::Path>("odometry_path", 10);
     pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("estimate_pose", 10);
     planar_map_publisher_ = nh_.advertise<sensor_msgs::PointCloud2>("planar_map", 10);
     auto_spin_map_viewer_ss_ = nh_.advertiseService("auto_spin_map_viewer", &KinectListener::autoSpinMapViewerCallback, this);
@@ -163,7 +165,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
     if( !getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
     {
         odom_pose.setIdentity();
-//        return;
+        return;
     }
 
     // Get camera parameter
@@ -496,6 +498,7 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     static gtsam::Pose3 estimated_pose;
     static KinectFrame last_frame;
     static gtsam::Pose3 last_odom_pose;
+    static gtsam::Pose3 visual_odometry_pose;
 
     //
     gtsam::Pose3 odom_pose3 = plane_slam_->tfToPose3( odom_pose );
@@ -567,12 +570,18 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
 
         if( !is_initialized )
         {
-            estimated_pose = gtsam::Pose3::identity();
+            // Initialize visual odometry pose
+            visual_odometry_pose = odom_pose3;
             is_initialized = true;
 
             // first pose
+            odometry_poses_.clear();
+            odometry_poses_.push_back( pose3ToGeometryPose(visual_odometry_pose) );
+            publishOdometryPath();
+
+            // first true pose
             true_poses_.clear();
-            true_poses_.push_back( tfToGeometryPose(tf::Transform::getIdentity()) );
+            true_poses_.push_back( pose3ToGeometryPose(odom_pose3) );
             publishTruePath();
         }
         else
@@ -589,13 +598,17 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
             if( !motion.valid )
                 return;
 
-            // New odometry pose
+            // New visual odometry pose
             gtsam::Pose3 rel( gtsam::Rot3(motion.rotation), gtsam::Point3(motion.translation) );
-            gtsam::Pose3 o_pose = estimated_pose * rel;
-            estimated_pose = o_pose;
+            gtsam::Pose3 o_pose = visual_odometry_pose * rel;
+            visual_odometry_pose = o_pose;
 
-            // Publish odometry pose
-            true_poses_.push_back( pose3ToGeometryPose(estimated_pose) );
+            // Publish visual odometry pose
+            odometry_poses_.push_back( pose3ToGeometryPose(visual_odometry_pose) );
+            publishOdometryPath();
+
+            // Publish true path
+            true_poses_.push_back( tfToGeometryPose(odom_pose) );
             publishTruePath();
         }
 
@@ -612,10 +625,16 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
                 last_frame = frame; // store current frame
                 cout << GREEN << "Initialized Planar SLAM." << RESET << endl;
 
-                // first pose
+                // True pose
                 true_poses_.clear();
                 true_poses_.push_back( tfToGeometryPose(tf::Transform::getIdentity()) );
                 publishTruePath();
+
+                // Initialize visual odometry pose
+                visual_odometry_pose = odom_pose3;
+                odometry_poses_.clear();
+                odometry_poses_.push_back( pose3ToGeometryPose(visual_odometry_pose) );
+                publishOdometryPath();
             }
             else
                 return;
@@ -655,10 +674,13 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
             }
             else
             {
-                cout << RED << "Failed to estimate relative motion using planes. " << RESET << endl;
-                cout << RED << "Use Identity as transformation." << RESET << endl;
-                motion.setTransform4d( Eigen::Matrix4d::Identity() );
+                cout << RED << "Failed to estimate relative motion, exit. " << RESET << endl;
+                return;
+//                cout << RED << "Use Identity as transformation." << RESET << endl;
+//                motion.setTransform4d( Eigen::Matrix4d::Identity() );
             }
+
+
 
             // Slam iteration
             gtsam::Pose3 rel( gtsam::Rot3(motion.rotation), gtsam::Point3(motion.translation) );
@@ -698,15 +720,21 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
             // Publish pose and trajectory
             publishPose( estimated_pose );
 
-            // Publish odom path
+            // Publish true path
             true_poses_.push_back( tfToGeometryPose(odom_pose) );
             publishTruePath();
 
-            //
+            // Publish visual odometry path
+            gtsam::Pose3 o_pose = visual_odometry_pose * rel;
+            visual_odometry_pose = o_pose;
+            odometry_poses_.push_back( pose3ToGeometryPose(visual_odometry_pose) );
+            publishOdometryPath();
+
+            // Publish estimated path
             if( display_path_ )
                 plane_slam_->publishEstimatedPath();
-            if( display_odom_path_ )
-                plane_slam_->publishOdomPath();
+//            if( display_odom_path_ )
+//                plane_slam_->publishOdomPath();
 
 
             // project and recalculate contour
@@ -2443,13 +2471,13 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     use_keyframe_ = config.use_keyframe;
     keyframe_linear_threshold_ = config.keyframe_linear_threshold;
     keyframe_angular_threshold_ = config.keyframe_angular_threshold * DEG_TO_RAD;
-    plane_slam_->setPlaneMatchThreshold( config.plane_match_direction_threshold * M_PI / 180.0, config.plane_match_distance_threshold);
+    plane_slam_->setPlaneMatchThreshold( config.plane_match_direction_threshold * DEG_TO_RAD, config.plane_match_distance_threshold);
     plane_slam_->setPlaneMatchCheckOverlap( config.plane_match_check_overlap );
     plane_slam_->setPlaneMatchOverlapAlpha( config.plane_match_overlap_alpha );
     plane_slam_->setPlaneInlierLeafSize( config.plane_inlier_leaf_size );
     plane_slam_->setPlaneHullAlpha( config.plane_hull_alpha );
     plane_slam_->setRefinePlanarMap( config.refine_planar_map );
-    plane_slam_->setPlanarMergeThreshold( config.planar_merge_direction_threshold, config.planar_merge_distance_threshold );
+    plane_slam_->setPlanarMergeThreshold( config.planar_merge_direction_threshold * DEG_TO_RAD, config.planar_merge_distance_threshold );
     display_path_ = config.display_path;
     display_odom_path_ = config.display_odom_path;
     display_landmarks_ = config.display_landmarks;
@@ -3289,6 +3317,17 @@ bool KinectListener::getOdomPose( tf::Transform &odom_pose, const std::string &c
 
     return true;
 }
+
+void KinectListener::publishOdometryPath()
+{
+    nav_msgs::Path path;
+    path.header.frame_id = "/world";
+    path.header.stamp = ros::Time::now();
+    path.poses = odometry_poses_;
+    odometry_path_publisher_.publish( path );
+    cout << GREEN << "Publish odometry path, p = " << odometry_poses_.size() << RESET << endl;
+}
+
 
 void KinectListener::publishTruePath()
 {

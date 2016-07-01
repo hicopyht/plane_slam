@@ -80,6 +80,8 @@ int main(int argc, char** argv)
     if( argc >= 5 )
         duration = atof(argv[4]);
 
+    bool is_paused = false;
+
     // Check parameter file
     std::string camera_parameter_file(argv[1]);
     cv::FileStorage fsp(camera_parameter_file.c_str(), cv::FileStorage::READ);
@@ -118,10 +120,10 @@ int main(int argc, char** argv)
     cout << GREEN << " Open bag file: " << filename << RESET << endl;
 
     // depth image topic to load
-    std::string depth_topic = "/camera/depth_registered/image";
-    std::string rgb_topic = "/camera/rgb/image_color";
-//    std::string depth_topic = "/camera/depth/image";
+//    std::string depth_topic = "/camera/depth_registered/image";
 //    std::string rgb_topic = "/camera/rgb/image_color";
+    std::string depth_topic = "/camera/depth/image";
+    std::string rgb_topic = "/camera/rgb/image_color";
     std::vector<std::string> topics;
     topics.push_back( depth_topic );
     topics.push_back( rgb_topic );
@@ -150,7 +152,7 @@ int main(int argc, char** argv)
 
     // Load all messages
     ros::Rate loop_rate(20);
-    bool paused = true;
+    bool paused = is_paused;
 
     //
     bool valid_depth = false;
@@ -164,6 +166,23 @@ int main(int argc, char** argv)
         if(!ros::ok())
             break;
 
+        // pause
+        if( readCharFromStdin() == ' ')
+        {
+            paused = true;
+            while(paused && ros::ok())
+            {
+                char cin = readCharFromStdin();
+                if(cin == ' ')
+                {
+                    paused = false;
+                    break;
+                }
+                ros::spinOnce();
+                loop_rate.sleep();
+            }
+        }
+
         // depth topic
         if (m.getTopic() == depth_topic || ("/" + m.getTopic() == depth_topic))
         {
@@ -175,7 +194,7 @@ int main(int argc, char** argv)
                     && fabs( (depth_img_msg->header.stamp - rgb_img_msg->header.stamp).toSec() ) < 0.015 )
             {
                 // pause before processing
-                paused = true;
+                paused = is_paused;
                 while(paused && ros::ok())
                 {
                     char cin = readCharFromStdin();
@@ -207,7 +226,7 @@ int main(int argc, char** argv)
                     && fabs( (depth_img_msg->header.stamp - rgb_img_msg->header.stamp).toSec() ) < 0.015 )
             {
                 // pause before processing
-                paused = true;
+                paused = is_paused;
                 while(paused && ros::ok())
                 {
                     char cin = readCharFromStdin();
@@ -231,16 +250,9 @@ int main(int argc, char** argv)
     }
 
     // pause before processing
-    cout << MAGENTA << "Press 'p' to stop processing." << RESET << endl;
-    paused = true;
-    while(paused && ros::ok())
+    cout << MAGENTA << "Press ctrl+c to stop processing." << RESET << endl;
+    while( ros::ok() )
     {
-        char cin = readCharFromStdin();
-        if(cin == 'p')
-        {
-            paused = false;
-            break;
-        }
         ros::spinOnce();
         loop_rate.sleep();
     }

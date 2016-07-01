@@ -317,6 +317,8 @@ protected:
 
     bool getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time &time = ros::Time(0) );
 
+    void publishOdometryPath();
+
     void publishTruePath();
 
     inline bool isValidPoint(const PointType &p)
@@ -362,6 +364,7 @@ private:
     DepthSynchronizer *depth_sync_;
     //
     ros::Publisher true_path_publisher_;
+    ros::Publisher odometry_path_publisher_;
     ros::Publisher pose_publisher_;
     ros::Publisher planar_map_publisher_;
     ros::ServiceServer auto_spin_map_viewer_ss_;
@@ -488,6 +491,7 @@ private:
     bool is_initialized;
     PlaneSlam* plane_slam_;
     std::vector<geometry_msgs::PoseStamped> true_poses_;
+    std::vector<geometry_msgs::PoseStamped> odometry_poses_;
 };
 
 #endif // KINECT_LISTENER_H
