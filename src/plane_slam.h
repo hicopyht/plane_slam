@@ -68,6 +68,8 @@ public:
 
     Pose3 planeSlam(Pose3 &rel_pose, KinectFrame &frame);
 
+    Pose3 planeMapping(Pose3 &odom_pose, KinectFrame &frame);
+
     bool refinePlanarMap();
 
     void matchPlanes( const std::vector<OrientedPlane3> &predicted_observations,
@@ -114,17 +116,6 @@ public:
     bool checkLandmarksOverlap( const PlaneType &lm1, const PlaneType &lm2);
 
     void mergeLandmarkInlier( PlaneType &from, PlaneType &to);
-
-    void tfToPose3( const tf::Transform &trans, gtsam::Pose3 &pose );
-
-    gtsam::Pose3 tfToPose3( const tf::Transform &trans)
-    {
-        gtsam::Pose3 pose3;
-        tfToPose3( trans, pose3 );
-        return pose3;
-    }
-
-    void pose3ToTF( const gtsam::Pose3 &pose, tf::Transform &trans );
 
     inline void setPlaneMatchThreshold( double direction_thresh, double distance_thresh) {
         plane_match_direction_threshold_ = direction_thresh;

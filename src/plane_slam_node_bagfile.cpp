@@ -69,18 +69,23 @@ int main(int argc, char** argv)
 
     if( argc < 3)
     {
-        cerr << endl << "Usage: ./plane_slam_node_depth camera_parameter_file bagfile <skip> <duration>" << endl;
+        cerr << endl << "Usage: ./plane_slam_node_depth camera_parameter_file bagfile <skip> <duration> <paused>" << endl;
         return 1;
     }
 
     double skip_time = 1.0;
     double duration = 300;
+    bool is_paused = false;
     if( argc >= 4 )
         skip_time = atof(argv[3]);
     if( argc >= 5 )
         duration = atof(argv[4]);
+    if( argc >= 6 )
+    {
+        std::string paused_str = argv[5];
+        is_paused = !paused_str.compare("true");
+    }
 
-    bool is_paused = false;
 
     // Check parameter file
     std::string camera_parameter_file(argv[1]);

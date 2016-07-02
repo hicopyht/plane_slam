@@ -273,6 +273,11 @@ double errorFunction2(const Eigen::Vector4f& x1,
 
 void cvToEigen(const cv::Mat& src, Eigen::Matrix3d& dst );
 
+void tfToPose3( const tf::Transform &trans, gtsam::Pose3 &pose );
+gtsam::Pose3 tfToPose3( const tf::Transform &trans);
+void pose3ToTF( const gtsam::Pose3 &pose, tf::Transform &trans );
+tf::Transform pose3ToTF( const gtsam::Pose3 &pose );
+
 geometry_msgs::PoseStamped pose3ToGeometryPose( const gtsam::Pose3 pose3 );
 geometry_msgs::PoseStamped tfToGeometryPose( const tf::Transform &trans );
 geometry_msgs::PoseStamped motionToGeometryPose( const RESULT_OF_MOTION &motion );

@@ -425,6 +425,41 @@ void cvToEigen(const cv::Mat& src, Eigen::Matrix3d& dst )
 //    cout<< BLUE << dst << RESET << endl;
 }
 
+
+void tfToPose3( const tf::Transform &trans, gtsam::Pose3 &pose )
+{
+    Eigen::Matrix3d m33 = matrixTF2Eigen( trans.getBasis() );
+    gtsam::Rot3 rot3(m33);
+    gtsam::Point3 point3;
+    tf::Vector3 origin = trans.getOrigin();
+    point3[0] = origin.getX();
+    point3[1] = origin.getY();
+    point3[2] = origin.getZ();
+    pose = gtsam::Pose3( rot3, point3 );
+}
+
+gtsam::Pose3 tfToPose3( const tf::Transform &trans)
+{
+    gtsam::Pose3 pose3;
+    tfToPose3( trans, pose3 );
+    return pose3;
+}
+
+void pose3ToTF( const gtsam::Pose3 &pose, tf::Transform &trans )
+{
+    trans.setOrigin( tf::Vector3( pose.x(), pose.y(), pose.z()) );
+    tf::Matrix3x3 m33;
+    matrixEigen2TF( pose.rotation().matrix(), m33 );
+    trans.setBasis( m33 );
+}
+
+tf::Transform pose3ToTF( const gtsam::Pose3 &pose )
+{
+    tf::Transform trans;
+    pose3ToTF( pose, trans);
+    return trans;
+}
+
 geometry_msgs::PoseStamped pose3ToGeometryPose( const gtsam::Pose3 pose3 )
 {
     geometry_msgs::PoseStamped pose;

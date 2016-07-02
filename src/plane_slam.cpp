@@ -23,9 +23,11 @@ PlaneSlam::PlaneSlam() :
   , plane_hull_alpha_( 0.5 )
   , rng(12345)
 {
-    isam2_parameters_.relinearizeThreshold = 0.05;
-    isam2_parameters_.relinearizeSkip = 1;
-//    isam2_parameters_.print( "ISAM2 parameters:" );
+//    isam2_parameters_.relinearizeThreshold = 0.1;
+//    isam2_parameters_.relinearizeSkip = 1;
+    isam2_parameters_.enableRelinearization = 0;
+    isam2_parameters_.factorization = ISAM2Params::Factorization::QR;
+    isam2_parameters_.print( "ISAM2 parameters:" );
     isam2_ = new ISAM2( isam2_parameters_ );
 
     //
@@ -55,7 +57,8 @@ bool PlaneSlam::initialize(Pose3 &init_pose, KinectFrame &frame)
     pose_count_ = 0;
     Key x0 = Symbol('x', 0);
     Vector pose_sigmas(6);
-    pose_sigmas << init_pose.translation().vector()*0.2, init_pose.rotation().rpy() * 0.1;
+//    pose_sigmas << init_pose.translation().vector()*0.2, init_pose.rotation().rpy() * 0.1;
+    pose_sigmas << 0.2, 0.2, 0.2, 0.1, 0.1, 0.1;
     noiseModel::Diagonal::shared_ptr poseNoise = noiseModel::Diagonal::Sigmas( pose_sigmas ); // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
     graph_.push_back( PriorFactor<Pose3>( x0, init_pose, poseNoise ) );
 
@@ -163,14 +166,22 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, KinectFrame &frame)
     std::vector<PlanePair> pairs;
     matchPlanes( predicted_observations, landmarks_, observations, planes, odom_pose, pairs);
 
+    cout << GREEN << " find pairs(obs, lm): " << pairs.size() << RESET << endl;
+    // Print pairs
+    for( int i = 0; i < pairs.size(); i++)
+    {
+        const PlanePair &pair = pairs[i];
+        cout << "  - " << pair.iobs << ", " << pair.ilm << endl;
+    }
+
 //    // check pairs
 //    if( pairs.size() < 3 )
 //        return new_pose;
 
-
     // Add odometry factors
     Vector odom_sigmas(6);
-    odom_sigmas << rel_pose.translation().vector()*0.2, rel_pose.rotation().rpy() * 0.1;
+//    odom_sigmas << rel_pose.translation().vector()*0.2, rel_pose.rotation().rpy() * 0.1;
+    odom_sigmas << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1;
     noiseModel::Diagonal::shared_ptr odometry_noise =
             noiseModel::Diagonal::Sigmas( odom_sigmas );
 //    cout << GREEN << "odom noise dim: " << odometry_noise->dim() << RESET << endl;
@@ -192,7 +203,6 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, KinectFrame &frame)
         noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( obs.sigmas );
         graph_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
     }
-    cout << GREEN << " find pairs: " << pairs.size() << RESET << endl;
 
     // Add new landmark
     for( int i = 0; i < unpairs.size(); i++ )
@@ -218,7 +228,8 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, KinectFrame &frame)
     // Update graph
     cout << "update " << endl;
     isam2_->update(graph_, initial_estimate_);
-    // isam2->update(); // call additionally
+    isam2_->update(); // call additionally
+    isam2_->update(); // call additionally
 
     // Update estimated poses and planes
     updateSlamResult( estimated_poses_, estimated_planes_ );
@@ -254,6 +265,89 @@ Pose3 PlaneSlam::planeSlam(Pose3 &odom_pose, KinectFrame &frame)
     odom_poses_.push_back( odom_pose_ );
 
     return current_estimate;
+}
+
+Pose3 PlaneSlam::planeMapping(Pose3 &odom_pose, KinectFrame &frame)
+{
+    std::vector<PlaneType> &planes = frame.segment_planes;
+
+    if(first_pose_)
+    {
+        ROS_ERROR("You should call initialize() before doing slam.");
+        exit(1);
+    }
+    // calculate relative pose and new pose
+    Pose3 new_pose = odom_pose;
+
+    // convert to gtsam plane type
+    std::vector<OrientedPlane3> observations;
+    for( int i = 0; i < planes.size(); i++)
+    {
+        observations.push_back( OrientedPlane3(planes[i].coefficients) );
+    }
+
+    // Transform modeled landmakr to pose frame
+    std::vector<OrientedPlane3> predicted_observations;
+    predictObservation( estimated_planes_, new_pose, predicted_observations);
+
+    // Match modelled landmark with measurement
+    std::vector<PlanePair> pairs;
+    matchPlanes( predicted_observations, landmarks_, observations, planes, new_pose, pairs);
+
+    cout << GREEN << " find pairs(obs, lm): " << pairs.size() << RESET << endl;
+    // Print pairs
+    for( int i = 0; i < pairs.size(); i++)
+    {
+        const PlanePair &pair = pairs[i];
+        cout << "  - " << pair.iobs << ", " << pair.ilm << endl;
+    }
+
+//    // check pairs
+//    if( pairs.size() < 3 )
+//        return new_pose;
+
+
+    // Update landmarks
+    ros::Time utime =  ros::Time::now();
+    updateLandmarks( landmarks_, planes, pairs, new_pose, estimated_planes_ );
+    cout << YELLOW << " - landmarks update time: " << (ros::Time::now() - utime).toSec()*1000
+         << " ms " << RESET << endl;
+
+    // Add new landmark to estimated planes
+    Eigen::VectorXi unpairs = Eigen::VectorXi::Ones( observations.size() );
+    for( int i = 0; i < pairs.size(); i++)
+    {
+        unpairs[ pairs[i].iobs ] = 0;
+    }
+    for( int i = 0; i < unpairs.rows(); i++)
+    {
+        if( unpairs[i] )
+        {
+
+            OrientedPlane3 &obs = observations[i];
+            OrientedPlane3 lm = obs.transform( new_pose.inverse() );
+            estimated_planes_.push_back( lm );
+        }
+    }
+
+
+    // Refine map
+    if( refine_planar_map_ )
+    {
+        refinePlanarMap();
+    }
+
+    last_estimate_pose_ = odom_pose;
+
+    // Store odom_pose
+    odom_pose_ = odom_pose;
+    odom_poses_.push_back( odom_pose_ );
+
+    // Store estimated pose
+    estimated_poses_.push_back( odom_pose );
+    pose_count_ ++;
+
+    return last_estimate_pose_;
 }
 
 // return true if being refined.
@@ -767,22 +861,3 @@ void PlaneSlam::mergeLandmarkInlier( PlaneType &from, PlaneType &to)
     voxelGridFilter( cloud, to.cloud, plane_inlier_leaf_size_ );
 }
 
-void PlaneSlam::tfToPose3( const tf::Transform &trans, gtsam::Pose3 &pose )
-{
-    Eigen::Matrix3d m33 = matrixTF2Eigen( trans.getBasis() );
-    gtsam::Rot3 rot3(m33);
-    gtsam::Point3 point3;
-    tf::Vector3 origin = trans.getOrigin();
-    point3[0] = origin.getX();
-    point3[1] = origin.getY();
-    point3[2] = origin.getZ();
-    pose = gtsam::Pose3( rot3, point3 );
-}
-
-void PlaneSlam::pose3ToTF( const gtsam::Pose3 &pose, tf::Transform &trans )
-{
-    trans.setOrigin( tf::Vector3( pose.x(), pose.y(), pose.z()) );
-    tf::Matrix3x3 m33;
-    matrixEigen2TF( pose.rotation().matrix(), m33 );
-    trans.setBasis( m33 );
-}

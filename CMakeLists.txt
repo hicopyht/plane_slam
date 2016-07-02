@@ -19,7 +19,7 @@ else()
 endif()
 
 #SET( CMAKE_BUILD_TYPE RelWithDebInfo )
-SET(CMAKE_BUILD_TYPE Release )
+SET(CMAKE_BUILD_TYPE Release)
 SET(ROS_BUILD_TYPE Release)
 
 ## Find catkin macros and libraries

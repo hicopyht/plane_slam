@@ -501,7 +501,7 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     static gtsam::Pose3 visual_odometry_pose;
 
     //
-    gtsam::Pose3 odom_pose3 = plane_slam_->tfToPose3( odom_pose );
+    gtsam::Pose3 odom_pose3 = tfToPose3( odom_pose );
 
     // if use downsample cloud
     cloud_size_type_ = cloud_size_type_config_;
@@ -613,6 +613,123 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
         }
 
     }
+    else if( do_mapping_ )
+    {
+        if( !is_initialized ) // First frame, initialize slam system
+        {
+            if( plane_slam_->initialize( odom_pose3, frame ) )
+            {
+                is_initialized = true;
+                last_odom_pose = odom_pose3; // store odom pose
+                last_frame = frame; // store current frame
+                cout << GREEN << "Initialized Planar SLAM." << RESET << endl;
+
+                // True pose
+                true_poses_.clear();
+                true_poses_.push_back( pose3ToGeometryPose( odom_pose3 ) );
+                publishTruePath();
+
+                // Initialize visual odometry pose
+                visual_odometry_pose = odom_pose3;
+                odometry_poses_.clear();
+                odometry_poses_.push_back( pose3ToGeometryPose(visual_odometry_pose) );
+                publishOdometryPath();
+            }
+            else
+                return;
+
+        }
+        else
+        {
+            // Estimate motion
+            RESULT_OF_MOTION motion;
+            std::vector<cv::DMatch> inlier;
+            time.tic();
+            motion.valid = solveRelativeTransform( last_frame, frame, motion, inlier );
+            solveRT_dura = time.toc();
+            time.tic();
+
+            // Print motion info
+            if( motion.valid )
+            {
+                // print motion
+                gtsam::Rot3 rot3( motion.rotation );
+                cout << MAGENTA << " estimated motion, rmse = " << motion.rmse << endl;
+                cout << "  - R(rpy): " << rot3.roll()
+                     << ", " << rot3.pitch()
+                     << ", " << rot3.yaw() << endl;
+                cout << "  - T:      " << motion.translation[0]
+                     << ", " << motion.translation[1]
+                     << ", " << motion.translation[2] << RESET << endl;
+
+                gtsam::Pose3 real_r_pose = last_odom_pose.inverse() * odom_pose3;
+                cout << CYAN << " true motion: " << endl;
+                cout << "  - R(rpy): " << real_r_pose.rotation().roll()
+                     << ", " << real_r_pose.rotation().pitch()
+                     << ", " << real_r_pose.rotation().yaw() << endl;
+                cout << "  - T:      " << real_r_pose.translation().x()
+                     << ", " << real_r_pose.translation().y()
+                     << ", " << real_r_pose.translation().z() << RESET << endl;
+            }
+            else
+            {
+                cout << RED << "Failed to estimate relative motion, exit. " << RESET << endl;
+                return;
+//                cout << RED << "Use Identity as transformation." << RESET << endl;
+//                motion.setTransform4d( Eigen::Matrix4d::Identity() );
+            }
+
+
+
+            // Iteration
+            gtsam::Pose3 rel( gtsam::Rot3(motion.rotation), gtsam::Point3(motion.translation) );
+            gtsam::Pose3 pose3 = visual_odometry_pose * rel;
+            visual_odometry_pose = pose3;
+            if( use_keyframe_ )
+            {
+                if( rel.translation().norm() >= keyframe_linear_threshold_
+                        || acos( cos(rel.rotation().yaw()) * cos(rel.rotation().pitch()) * cos(rel.rotation().roll()) ) > keyframe_angular_threshold_ )
+                {
+                    estimated_pose = plane_slam_->planeMapping( pose3, frame );
+                    // visualize landmark
+                    landmarks = plane_slam_->getLandmarks();
+                }
+                else
+                {
+                    return;
+                }
+            }
+            else
+            {
+                if( motion.valid && frame.segment_planes.size() > 0)    // do slam
+                {
+                    estimated_pose = plane_slam_->planeMapping( pose3, frame );
+                    // visualize landmark
+                    landmarks = plane_slam_->getLandmarks();
+                }
+                else if( motion.valid && frame.segment_planes.size() == 0) // accumulate estimated pose
+                {
+                    estimated_pose = pose3;
+                }
+                else
+                {
+                    cout << RED << "[Error]: " << "Motion estimation failed, stop processing current frame." << RESET << endl;
+                    return;
+                }
+            }
+            // Publish pose and trajectory
+            publishPose( pose3 );
+
+            // Publish true path
+            true_poses_.push_back( pose3ToGeometryPose(odom_pose3) );
+            publishTruePath();
+
+            // Publish visual odometry path
+            odometry_poses_.push_back( pose3ToGeometryPose(visual_odometry_pose) );
+            publishOdometryPath();
+
+        }
+    }
     else if( do_slam_ ) // Do slam
     {
         if( !is_initialized ) // First frame, initialize slam system
@@ -627,7 +744,7 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
 
                 // True pose
                 true_poses_.clear();
-                true_poses_.push_back( tfToGeometryPose(tf::Transform::getIdentity()) );
+                true_poses_.push_back( pose3ToGeometryPose( odom_pose3 ) );
                 publishTruePath();
 
                 // Initialize visual odometry pose
@@ -736,8 +853,6 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
 //            if( display_odom_path_ )
 //                plane_slam_->publishOdomPath();
 
-
-            // project and recalculate contour
 
         }
     }
@@ -1699,7 +1814,7 @@ bool KinectListener::solveRelativeTransform( KinectFrame &last_frame,
     if( pairs_num >= 3 )
     {
         best_transform.valid = solveRelativeTransformPlanes( last_frame, current_frame, pairs, best_transform );
-        if( best_transform.valid )
+        if( best_transform.valid && validRelativeTransform(best_transform) )
         {
             result = best_transform;
             return true;
@@ -1732,7 +1847,7 @@ bool KinectListener::solveRelativeTransform( KinectFrame &last_frame,
     {
         best_transform.valid = solveRelativeTransformPlanesPointsRansac( last_frame, current_frame, pairs, good_matches, best_transform, matches );
     }
-    if( best_transform.valid )
+    if( best_transform.valid && validRelativeTransform(best_transform) )
     {
         result = best_transform;
         return true;
@@ -1754,7 +1869,7 @@ bool KinectListener::solveRelativeTransform( KinectFrame &last_frame,
         best_transform.valid = solveRelativeTransformPointsRansac( last_frame, current_frame, good_matches, best_transform, matches );
     }
 
-    if( best_transform.valid )
+    if( best_transform.valid && validRelativeTransform(best_transform) )
     {
         result = best_transform;
         return true;
@@ -1775,7 +1890,7 @@ bool KinectListener::solveRelativeTransform( KinectFrame &last_frame,
         best_transform.valid = solveRelativeTransformIcp( last_frame, current_frame, best_transform );
     }
 
-    if( best_transform.valid )
+    if( best_transform.valid && validRelativeTransform(best_transform) )
     {
         result = best_transform;
         return true;
@@ -1796,7 +1911,7 @@ bool KinectListener::solveRelativeTransform( KinectFrame &last_frame,
         best_transform.valid = solveRelativeTransformPnP( last_frame, current_frame, good_matches, camera_parameters_, best_transform );
     }
 
-    if( best_transform.valid )
+    if( best_transform.valid && validRelativeTransform(best_transform) )
     {
         result = best_transform;
         return true;
@@ -2402,9 +2517,9 @@ void KinectListener::lineBasedPlaneSegment(PointCloudTypePtr &input,
         plane.coefficients[1] = normal.coefficients[1];
         plane.coefficients[2] = normal.coefficients[2];
         plane.coefficients[3] = normal.coefficients[3];
-        plane.sigmas[0] = fabs(normal.coefficients[0]*0.1);
-        plane.sigmas[1] = fabs(normal.coefficients[1]*0.1);
-        plane.sigmas[2] = fabs(normal.coefficients[3]*0.1);
+        plane.sigmas[0] = 0.1;
+        plane.sigmas[1] = 0.1;
+        plane.sigmas[2] = 0.1;
         plane.inlier = normal.inliers;
         plane.boundary_inlier = normal.boundary_inlier;
         plane.hull_inlier = normal.hull_inlier;
@@ -2439,9 +2554,9 @@ void KinectListener::organizedPlaneSegment(PointCloudTypePtr &input, std::vector
         plane.coefficients[1] = coef.values[1];
         plane.coefficients[2] = coef.values[2];
         plane.coefficients[3] = coef.values[3];
-        plane.sigmas[0] = fabs(plane.coefficients[0]*0.1);
-        plane.sigmas[1] = fabs(plane.coefficients[1]*0.1);
-        plane.sigmas[2] = fabs(plane.coefficients[3]*0.1);
+        plane.sigmas[0] = 0.1;
+        plane.sigmas[1] = 0.1;
+        plane.sigmas[2] = 0.1;
         //
         plane.inlier = indices.indices;
         plane.boundary_inlier = result.boundary_indices[i].indices;
@@ -2463,6 +2578,7 @@ void KinectListener::organizedPlaneSegment(PointCloudTypePtr &input, std::vector
 void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &config, uint32_t level)
 {
     do_visual_odometry_ = config.do_visual_odometry;
+    do_mapping_ = config.do_mapping;
     do_slam_ = config.do_slam;
     map_frame_ = config.map_frame;
     base_frame_ = config.base_frame;

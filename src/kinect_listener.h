@@ -151,6 +151,23 @@ public:
                                  Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4));
 
 
+    inline bool validRelativeTransform( const RESULT_OF_MOTION &motion )
+    {
+        if( !motion.valid )
+            return false;
+
+        if( motion.translation.norm() > 0.15 )
+            return false;
+
+        gtsam::Pose3 rel( gtsam::Rot3(motion.rotation), gtsam::Point3(motion.translation) );
+        double angle = acos( cos(rel.rotation().yaw()) * cos(rel.rotation().pitch()) * cos(rel.rotation().roll()) );
+
+        if( angle > 15.0*DEG_TO_RAD )
+            return false;
+
+        return true;
+
+    }
 
     void computeCorrespondenceInliersAndError( const std::vector<cv::DMatch> & matches,
                                                const Eigen::Matrix4f& transform4f,
@@ -390,6 +407,7 @@ private:
 
     // Plane slam
     bool do_visual_odometry_;
+    bool do_mapping_;
     bool do_slam_;
     string map_frame_;
     string base_frame_;
