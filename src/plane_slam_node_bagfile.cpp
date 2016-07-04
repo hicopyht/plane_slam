@@ -73,7 +73,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    double skip_time = 1.0;
+    double skip_time = 0;
     double duration = 300;
     bool is_paused = false;
     if( argc >= 4 )
@@ -125,32 +125,52 @@ int main(int argc, char** argv)
     cout << GREEN << " Open bag file: " << filename << RESET << endl;
 
     // depth image topic to load
-//    std::string depth_topic = "/camera/depth_registered/image";
-//    std::string rgb_topic = "/camera/rgb/image_color";
-    std::string depth_topic = "/camera/depth/image";
+    std::string depth_topic = "/camera/depth_registered/image";
     std::string rgb_topic = "/camera/rgb/image_color";
+//    std::string depth_topic = "/camera/depth/image";
+//    std::string rgb_topic = "/camera/rgb/image_color";
     std::vector<std::string> topics;
     topics.push_back( depth_topic );
     topics.push_back( rgb_topic );
-    cout << GREEN << " Depth image topic: " << depth_topic << RESET << endl;
-    cout << GREEN << " Rgb image topic: " << rgb_topic << RESET << endl;
 
+    // Valid duration
     rosbag::View full_view;
     full_view.addQuery( bag );
     const ros::Time initial_time = full_view.getBeginTime();
     const ros::Time start_time = initial_time + ros::Duration( skip_time );
-    const ros::Time finish_time = start_time + ros::Duration( duration );
+    ros::Time finish_time = full_view.getEndTime();
+    if( !duration == 0)
+    {
+        finish_time = start_time + ros::Duration( duration );
+        if( finish_time > full_view.getEndTime() )
+            finish_time = full_view.getEndTime();
+    }
 
     rosbag::View view;
     view.addQuery( bag, rosbag::TopicQuery( topics ), start_time, finish_time );
 
-    KinectListener kl;
-    kl.setCameraParameters( camera );   // set camera parameter
+    std::vector<size_t> topic_sizes(topics.size());
+    for( int i = 0; i < topic_sizes.size(); i++)
+    {
+        rosbag::View topic_view;
+        topic_view.addQuery( bag, rosbag::TopicQuery( topics[i] ), start_time, finish_time );
+        topic_sizes[i] = topic_view.size();
+    }
 
+    // Print info
+    cout << GREEN << " Depth image topic: " << depth_topic << ", size = " << topic_sizes[0] << RESET << endl;
+    cout << GREEN << " Rgb image topic: " << rgb_topic << ", size = " << topic_sizes[1] << RESET << endl;
     cout << GREEN << "##############################################################" << RESET << endl;
     cout << GREEN << " Skip = " << skip_time << " seconds, play duration = " << duration << RESET << endl;
     cout << GREEN << " Press space to process one message." << RESET << endl;
     cout << GREEN << "##############################################################" << RESET << endl;
+
+    // Save
+    rosbag::Bag save_bag;
+
+
+    KinectListener kl;
+    kl.setCameraParameters( camera );   // set camera parameter
 
     // Setup terminal
     setupTerminal();

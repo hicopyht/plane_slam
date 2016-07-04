@@ -615,6 +615,7 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     }
     else if( do_mapping_ )
     {
+
         if( !is_initialized ) // First frame, initialize slam system
         {
             if( plane_slam_->initialize( odom_pose3, frame ) )
@@ -732,6 +733,16 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     }
     else if( do_slam_ ) // Do slam
     {
+
+        // convert ax + by + cz-d = 0
+        std::vector<PlaneType> planes;
+        planes = frame.segment_planes;
+        for( int i = 0; i < planes.size(); i++)
+        {
+            planes[i].coefficients[3] = -planes[i].coefficients[3];
+        }
+
+
         if( !is_initialized ) // First frame, initialize slam system
         {
             if( plane_slam_->initialize( odom_pose3, frame ) )
@@ -854,6 +865,12 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
 //                plane_slam_->publishOdomPath();
 
 
+        }
+
+        // convert ax + by + cz - d = 0
+        for( int i = 0; i < landmarks.size(); i++)
+        {
+            landmarks[i].coefficients[3] = -landmarks[i].coefficients[3];
         }
     }
 
