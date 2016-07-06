@@ -734,13 +734,12 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
     else if( do_slam_ ) // Do slam
     {
 
-        // convert ax + by + cz-d = 0
-        std::vector<PlaneType> planes;
-        planes = frame.segment_planes;
-        for( int i = 0; i < planes.size(); i++)
-        {
-            planes[i].coefficients[3] = -planes[i].coefficients[3];
-        }
+//        // convert ax + by + cz-d = 0
+//        std::vector<PlaneType> &planes = frame.segment_planes;
+//        for( int i = 0; i < planes.size(); i++)
+//        {
+//            planes[i].coefficients[3] = -planes[i].coefficients[3];
+//        }
 
 
         if( !is_initialized ) // First frame, initialize slam system
@@ -867,11 +866,15 @@ void KinectListener::processFrame( KinectFrame &frame, const tf::Transform &odom
 
         }
 
-        // convert ax + by + cz - d = 0
-        for( int i = 0; i < landmarks.size(); i++)
-        {
-            landmarks[i].coefficients[3] = -landmarks[i].coefficients[3];
-        }
+//        // convert ax + by + cz - d = 0
+//        for( int i = 0; i < landmarks.size(); i++)
+//        {
+//            landmarks[i].coefficients[3] = -landmarks[i].coefficients[3];
+//        }
+//        for( int i = 0; i < planes.size(); i++)
+//        {
+//            planes[i].coefficients[3] = -planes[i].coefficients[3];
+//        }
     }
 
     slam_dura = time.toc();
@@ -3476,22 +3479,49 @@ bool KinectListener::autoSpinMapViewerCallback(std_srvs::SetBool::Request &req, 
 {
     auto_spin_map_viewer_ = true;
     ROS_INFO("Auto spin map viewer for 30 seconds.");
-    ros::Time time = ros::Time::now() + ros::Duration(30.0);
-    ros::Rate loop_rate( 25 );
+    double dura = 30.0;
+    int sec = 0;
+    bool added = false;
+    ros::Time time = ros::Time::now();
+    ros::Time finish_time = time + ros::Duration(dura);
+    ros::Rate loop_rate( 40 );
     while( auto_spin_map_viewer_ && ros::ok())
     {
         if( !ros::ok() )
         {
             res.message = "Node shutdown.";
+            auto_spin_map_viewer_ = false;
             return true;
+        }
+
+        // info
+        if( ros::Time::now() > (time + ros::Duration(1.0)) )
+        {
+            time += ros::Duration(1.0);
+            sec ++;
+            ROS_INFO("Spinning time %d of %d seconds...", sec, (int)dura);
+            //
+            stringstream ss;
+            ss << "Spinning " << sec << "/" << ((int)dura) << " seconds";
+            if( ! added )
+            {
+                map_viewer_->addText( ss.str(), 100, 20, "spinning_text" );
+                added = true;
+            }
+            else
+                map_viewer_->updateText( ss.str(), 100, 20, "spinning_text" );
         }
 
         map_viewer_->spinOnce( 20 );
         loop_rate.sleep();
 
-        if( ros::Time::now() > time )
+        if( ros::Time::now() > finish_time )
             auto_spin_map_viewer_ = false;
     }
+
+    map_viewer_->updateText( " ", 100, 20, "spinning_text" );
+    map_viewer_->spinOnce( 20 );
+    ROS_INFO("Stop spinning.");
     res.success = true;
     return true;
 }

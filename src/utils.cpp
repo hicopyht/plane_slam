@@ -174,6 +174,7 @@ void transformPlane( const Eigen::Vector4d &input,
     output = p1.transform( pose ).planeCoefficients();
 }
 
+
 void projectPoints ( const PointCloudType &input,
                     const Eigen::Vector4d &model_coefficients,
                     PointCloudType &projected_points )

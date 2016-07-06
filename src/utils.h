@@ -229,6 +229,7 @@ void transformPlane( const Eigen::Vector4d &input,
                      const Eigen::Matrix4d &transform,
                      Eigen::Vector4d &output);
 
+
 void projectPoints ( const PointCloudType &input,
                      const Eigen::Vector4d &model_coefficients,
                      PointCloudType &projected_points );

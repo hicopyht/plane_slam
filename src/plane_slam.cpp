@@ -760,12 +760,7 @@ void PlaneSlam::extractPlaneHulls(const PointCloudTypePtr &input, std::vector<Pl
     {
         PlaneType &plane = planes[i];
         // projected cloud
-        Eigen::Vector4f model_coefficients;
-        model_coefficients[0] = plane.coefficients[0];
-        model_coefficients[1] = plane.coefficients[1];
-        model_coefficients[2] = plane.coefficients[2];
-        model_coefficients[3] = plane.coefficients[3];
-        projectPoints( *input, plane.inlier, model_coefficients, *(plane.cloud) );
+        projectPoints( *input, plane.inlier, plane.coefficients, *(plane.cloud) );
         // hull
         cloudHull( plane.cloud, plane.cloud_hull );
     }

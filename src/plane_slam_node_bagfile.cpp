@@ -63,9 +63,50 @@ char readCharFromStdin() {
 
 using namespace std;
 
+std::string timeToStr()
+{
+    std::stringstream msg;
+    const boost::posix_time::ptime now=
+        boost::posix_time::second_clock::local_time();
+    boost::posix_time::time_facet *const f=
+        new boost::posix_time::time_facet("%Y-%m-%d-%H-%M-%S");
+    msg.imbue(std::locale(msg.getloc(),f));
+    msg << now;
+    return msg.str();
+}
+
+void saveBagFile( const std::string &file_name, rosbag::View &view )
+{
+    cout << BLUE << "Save bagfile: " << file_name << RESET << endl;
+
+    rosbag::Bag bagfile;
+    bagfile.open( file_name, rosbag::bagmode::Write );
+
+    // write
+    BOOST_FOREACH(rosbag::MessageInstance const m, view)
+    {
+        // image topic
+        sensor_msgs::Image::ConstPtr image_msg = m.instantiate<sensor_msgs::Image>();
+        if( image_msg )
+        {
+//            std::string topic = m.getTopic();
+//            ros::Time time = m.getTime();
+//            sensor_msgs::Image image = *image_msg;
+            bagfile.write<sensor_msgs::Image>( m.getTopic(), m.getTime(), *image_msg );
+        }
+    }
+
+    // close
+    bagfile.close();
+
+    cout << BLUE << "Done." << RESET << endl;
+}
+
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "plane_slam_node_depth");
+
+    ros::NodeHandle nh_;
 
     if( argc < 3)
     {
@@ -76,14 +117,20 @@ int main(int argc, char** argv)
     double skip_time = 0;
     double duration = 300;
     bool is_paused = false;
+    bool save_bagfile = false;
     if( argc >= 4 )
         skip_time = atof(argv[3]);
     if( argc >= 5 )
         duration = atof(argv[4]);
     if( argc >= 6 )
     {
-        std::string paused_str = argv[5];
-        is_paused = !paused_str.compare("true");
+        std::string bool_str = argv[5];
+        is_paused = !bool_str.compare("true");
+    }
+    if( argc >= 7 )
+    {
+        std::string bool_str = argv[6];
+        save_bagfile = !bool_str.compare("true");
     }
 
 
@@ -166,7 +213,12 @@ int main(int argc, char** argv)
     cout << GREEN << "##############################################################" << RESET << endl;
 
     // Save
-    rosbag::Bag save_bag;
+    if( save_bagfile )
+    {
+        stringstream ss;
+        ss << "bag_" << timeToStr() << ".bag";
+        saveBagFile( ss.str(), view);
+    }
 
 
     KinectListener kl;
@@ -233,6 +285,8 @@ int main(int argc, char** argv)
                 }
 
                 // process frame
+                cout << BLUE << "Processing frame " << depth_img_msg->header.seq
+                     << ", time = " << (m.getTime() - start_time).toSec() << " seconds." << RESET << endl;
                 kl.trackDepthRgbImage( depth_img_msg, rgb_img_msg, camera );
                 valid_depth = false;
                 valid_rgb = false;
@@ -265,6 +319,8 @@ int main(int argc, char** argv)
                 }
 
                 // process frame
+                cout << BLUE << "Processing frame " << depth_img_msg->header.seq
+                     << ", time = " << (m.getTime() - start_time).toSec() << " seconds." << RESET << endl;
                 kl.trackDepthRgbImage( depth_img_msg, rgb_img_msg, camera );
                 valid_depth = false;
                 valid_rgb = false;
