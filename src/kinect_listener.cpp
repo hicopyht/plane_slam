@@ -3487,7 +3487,7 @@ bool KinectListener::autoSpinMapViewerCallback(std_srvs::SetBool::Request &req, 
     ros::Rate loop_rate( 40 );
     while( auto_spin_map_viewer_ && ros::ok())
     {
-        if( !ros::ok() )
+        if( !ros::ok() || ros::isShuttingDown() )
         {
             res.message = "Node shutdown.";
             auto_spin_map_viewer_ = false;
