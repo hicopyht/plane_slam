@@ -27,11 +27,14 @@
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/geometry/OrientedPlane3.h>
 
+#include <plane_from_line/plane_from_line_segment.h>
+
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 #include <stdio.h>
 #include <vector>
 #include <stdlib.h>
+#include <thread>
 
 using namespace std;
 using namespace Eigen;
@@ -39,7 +42,9 @@ using namespace Eigen;
 const double DEG_TO_RAD = ( M_PI / 180.0 );
 const double RAD_TO_DEG = ( 180.0 / M_PI );
 
-//
+
+typedef PlaneFromLineSegment::CAMERA_PARAMETERS  CameraParameters;
+
 typedef pcl::PointCloud< pcl::PointXYZ > PointCloudXYZ;
 typedef PointCloudXYZ::Ptr PointCloudXYZPtr;
 
@@ -52,9 +57,7 @@ typedef PointCloudType::Ptr PointCloudTypePtr;
 typedef PointCloudType::ConstPtr PointCloudTypeConstPtr;
 
 typedef boost::shared_ptr<const pcl::PointRepresentation< PointType > > PointRepresentationConstPtr;
-
 typedef std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> > std_vector_of_eigen_vector4f;
-
 typedef Eigen::Vector4d PlaneCoefficients;
 
 // RGB Value
@@ -70,13 +73,6 @@ typedef union
     float float_value;
     long long_value;
 } RGBValue;
-
-struct CAMERA_INTRINSIC_PARAMETERS
-{
-    int width, height;
-    float cx, cy, fx, fy, scale;
-    CAMERA_INTRINSIC_PARAMETERS() : width(640), height(480), cx(319.5), cy(239.5), fx(525.0), fy(525.0), scale(1.0) {}
-};
 
 
 /*
@@ -134,28 +130,6 @@ struct PlanePair
     {
         return distance < m.distance;
     }
-};
-
-
-struct KinectFrame
-{
-    cv::Mat visual_image;
-    cv::Mat depth_image;
-    cv::Mat depth_mono;
-    PointCloudTypePtr cloud;
-    //
-    PointCloudTypePtr cloud_in; //
-    cv::Mat visual; //
-    //
-    std::vector<cv::KeyPoint> feature_locations_2d;
-    std_vector_of_eigen_vector4f feature_locations_3d;
-    cv::Mat feature_descriptors;
-    PointCloudXYZPtr feature_cloud;
-    //
-    std::vector<PlaneType> segment_planes;
-
-    KinectFrame() : cloud( new PointCloudType ), cloud_in( new PointCloudType )
-    , feature_cloud( new PointCloudXYZ ){}
 };
 
 // PnP Result
@@ -243,6 +217,21 @@ void projectPoints ( const PointCloudType &input, const std::vector<int> &inlier
 
 void projectPoints ( const PointCloudType &input, const std::vector<int> &inlier,
                      const Eigen::Vector4f &model_coefficients, PointCloudType &projected_points );
+
+void getPointCloudFromIndices( const PointCloudTypePtr &input,
+                               pcl::PointIndices &indices,
+                               PointCloudTypePtr &output);
+
+void getPointCloudFromIndices( const PointCloudTypePtr &input,
+                               std::vector<int> &indices,
+                               PointCloudTypePtr &output);
+
+PointCloudTypePtr getPointCloudFromIndices( const PointCloudTypePtr &input,
+                                             pcl::PointIndices &indices);
+
+PointCloudTypePtr getPointCloudFromIndices( const PointCloudTypePtr &input,
+                                             std::vector<int> &indices);
+
 
 void depthToCV8UC1(cv::Mat& depth_img, cv::Mat& mono8_img);
 

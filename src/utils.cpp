@@ -285,6 +285,51 @@ void projectPoints ( const PointCloudType &input, const std::vector<int> &inlier
     }
 }
 
+
+void getPointCloudFromIndices( const PointCloudTypePtr &input,
+                               pcl::PointIndices &indices,
+                               PointCloudTypePtr &output)
+{
+    output->clear();
+    for(int i = 0; i < indices.indices.size(); i++)
+    {
+        output->points.push_back( input->points[ indices.indices[i] ]);
+    }
+    output->is_dense = false;
+    output->height = 1;
+    output->width = output->points.size();
+}
+
+void getPointCloudFromIndices( const PointCloudTypePtr &input,
+                               std::vector<int> &indices,
+                               PointCloudTypePtr &output)
+{
+    output->clear();
+    for(int i = 0; i < indices.size(); i++)
+    {
+        output->points.push_back( input->points[ indices[i] ]);
+    }
+    output->is_dense = false;
+    output->height = 1;
+    output->width = output->points.size();
+}
+
+PointCloudTypePtr getPointCloudFromIndices( const PointCloudTypePtr &input,
+                                            pcl::PointIndices &indices)
+{
+    PointCloudTypePtr output (new PointCloudType );
+    getPointCloudFromIndices( input, indices, output);
+    return output;
+}
+
+PointCloudTypePtr getPointCloudFromIndices( const PointCloudTypePtr &input,
+                                            std::vector<int> &indices)
+{
+    PointCloudTypePtr output (new PointCloudType );
+    getPointCloudFromIndices( input, indices, output);
+    return output;
+}
+
 void depthToCV8UC1(cv::Mat& depth_img, cv::Mat& mono8_img)
 {
     //Process images
