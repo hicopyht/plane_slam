@@ -31,6 +31,8 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
     // Construct organized pointcloud
     PointCloudTypePtr input = image2PointCloud( visual, depth, camera_params );
 
+    cout << BLUE << "Done getting pointcloud." << RESET << endl;
+
     // Observation
     visual_image_ = visual;
     cloud_ = input;
@@ -39,10 +41,15 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
     // Downsample cloud
     downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
 
-    // Spin 2 threads, one for plane segmentation, another for keypoint extraction.
-    thread threadSegment( &Frame::segmentPlane, this );
-    thread threadExtract( &Frame::extractORB, this );
+    cout << BLUE << "Done downsampling pointcloud." << RESET << endl;
 
+    // Spin 2 threads, one for plane segmentation, another for keypoint extraction.
+    extractORB();
+    segmentPlane();
+//    thread threadSegment( &Frame::segmentPlane, this );
+//    thread threadExtract( &Frame::extractORB, this );
+//    threadSegment.join();
+//    threadExtract.join();
 }
 
 // Feature Extraction, using visual image and cloud in VGA resolution.
@@ -69,7 +76,7 @@ void Frame::segmentPlane()
 void Frame::downsampleOrganizedCloud( const PointCloudTypePtr &input, CameraParameters &in_camera,
                                       PointCloudTypePtr &output, CameraParameters &out_camera, int size_type)
 {
-    ROS_ASSERT( input->width == 640 && input->header == 480);
+//    ROS_ASSERT( input->width == 640 && input->header == 480);
 
     int skip = pow(2, size_type);
     int width = input->width / skip;

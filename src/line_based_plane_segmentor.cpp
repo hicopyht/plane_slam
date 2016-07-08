@@ -6,12 +6,12 @@ namespace plane_slam
 LineBasedPlaneSegmentor::LineBasedPlaneSegmentor( ros::NodeHandle &nh )
     : private_nh_(nh),
       plane_from_line_segment_(),
-      line_based_segment_config_server_( ros::NodeHandle( private_nh_, "LineBasedSegment" ) )
+      line_based_segment_config_server_( ros::NodeHandle( private_nh_, "LineBasedSegment" ) ),
+      is_update_line_based_parameters_( true )
 {
     // reconfigure gui
     line_based_segment_config_callback_ = boost::bind(&LineBasedPlaneSegmentor::lineBasedSegmentReconfigCallback, this, _1, _2);
     line_based_segment_config_server_.setCallback(line_based_segment_config_callback_);
-
 
 }
 

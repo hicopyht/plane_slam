@@ -89,17 +89,17 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
 
     printf("no cloud msg: %d\n", depth_img_msg->header.seq);
 
-    skip = (skip + 1) % skip_message_;
-    if( skip )
-        return;
+//    skip = (skip + 1) % skip_message_;
+//    if( skip )
+//        return;
 
-    // Get odom pose
-    tf::Transform odom_pose;
-    if( !getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
-    {
-        odom_pose.setIdentity();
-        return;
-    }
+//    // Get odom pose
+//    tf::Transform odom_pose;
+//    if( !getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
+//    {
+//        odom_pose.setIdentity();
+//        return;
+//    }
 
     // Get camera parameter
     getCameraParameter( cam_info_msg, camera_parameters_);
@@ -122,33 +122,6 @@ void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img
 {
     printf("cloud msg: %d\n", point_cloud->header.seq);
 
-//    // Get odom pose
-//    tf::Transform odom_pose;
-//    if( !getOdomPose( odom_pose, point_cloud->header.frame_id, ros::Time(0) ) )
-//        return;
-
-//    // Get camera parameter
-//    getCameraParameter( cam_info_msg, camera_parameters_);
-
-//    // Current Frame
-//    KinectFrame current_frame;
-
-//    // Get Mat Image
-//    current_frame.visual_image = cv_bridge::toCvCopy(visual_img_msg)->image; // to cv image
-//    // To pcl pointcloud
-//    PointCloudTypePtr cloud_in ( new PointCloudType );
-//    pcl::fromROSMsg( *point_cloud, *cloud_in);
-
-
-//    //
-//    if(!loop_one_message_)
-//        processCloud( cloud_in, visual_image, odom_pose );
-//    else
-//        while(loop_one_message_ && ros::ok())
-//        {
-//            ros::Duration(0.2).sleep();
-//            processCloud( cloud_in, visual_image, odom_pose );
-//        }
 }
 
 void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &depth_img_msg,
@@ -159,21 +132,19 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &depth
 
     printf("no cloud msg: %d\n", depth_img_msg->header.seq);
 
-    skip = (skip + 1) % skip_message_;
-    if( skip )
-        return;
+//    skip = (skip + 1) % skip_message_;
+//    if( skip )
+//        return;
 
-//    // Current Frame
-//    KinectFrame current_frame;
-//    camera_parameters_ = camera;
+    // Get camera parameter
+    camera_parameters_ = camera;
 
-//    // Get Mat Image
-//    current_frame.visual_image = cv_bridge::toCvCopy(visual_img_msg)->image; // to cv image
-//    current_frame.depth_image = cv_bridge::toCvCopy(depth_img_msg)->image; // to cv image
-//    depthToCV8UC1( current_frame.depth_image, current_frame.depth_mono );
-//    // Get PointCloud
-//    current_frame.cloud = image2PointCloud( current_frame.visual_image, current_frame.depth_image, camera_parameters_);
+    // Get Mat Image
+    cv::Mat visual_image = cv_bridge::toCvCopy(visual_img_msg)->image; // to cv image
+    cv::Mat depth_image = cv_bridge::toCvCopy(depth_img_msg)->image; // to cv image
 
+    // Frame
+    Frame *frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_);
 //    // Process data
 //    processFrame( current_frame );
 }

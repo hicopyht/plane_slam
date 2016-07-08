@@ -8,6 +8,7 @@ const std::string MatchesWindow = "MatchesFeatures";
 
 Viewer::Viewer( ros::NodeHandle &nh)
     : nh_(nh)
+    , viewer_config_server_( ros::NodeHandle( nh_, "Viewer" ) )
     , pcl_viewer_( new pcl::visualization::PCLVisualizer("3D Viewer"))
     , map_viewer_( new pcl::visualization::PCLVisualizer("Map Viewer"))
     , viewer_v1_(1)
