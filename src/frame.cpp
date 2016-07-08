@@ -1,5 +1,8 @@
 #include "frame.h"
 
+namespace plane_slam
+{
+
 Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camera_params,
               ORBextractor* orb_extractor, LineBasedPlaneSegmentor* plane_segmentor)
     : orb_extractor_(orb_extractor),
@@ -51,7 +54,7 @@ void Frame::extractORB()
     else
         visual_image_ = gray_image_;
     // Extract features
-    (*orb_extractor)( gray_image_, cv::Mat(), feature_locations_2d_, feature_descriptors_);
+    (*orb_extractor_)( gray_image_, cv::Mat(), feature_locations_2d_, feature_descriptors_);
 
     // Project Keypoint to 3D
     projectKeypointTo3D( cloud_, feature_locations_2d_, feature_locations_3d_, feature_cloud_);
@@ -196,3 +199,5 @@ PointCloudTypePtr Frame::image2PointCloud( const cv::Mat &rgb_img, const cv::Mat
 
     return cloud;
 }
+
+} // end of namespace plane_slam

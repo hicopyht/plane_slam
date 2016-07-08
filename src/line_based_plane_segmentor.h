@@ -2,9 +2,13 @@
 #define LINE_BASED_PLANE_SEGMENTOR_H
 
 #include <ros/ros.h>
+#include <dynamic_reconfigure/server.h>
 #include <plane_from_line/plane_from_line_segment.h>
 #include <plane_slam/LineBasedSegmentConfig.h>
 #include "utils.h"
+
+namespace plane_slam
+{
 
 class LineBasedPlaneSegmentor
 {
@@ -59,5 +63,7 @@ private:
     bool project_points_;
     bool extract_boundary_;
 };
+
+} // end of namespace plane_slam
 
 #endif // LINE_BASED_PLANE_SEGMENTOR_H

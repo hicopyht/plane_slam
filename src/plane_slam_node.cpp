@@ -4,6 +4,6 @@
 int main(int argc, char** argv)
 {
     ros::init(argc, argv, "plane_slam_node");
-    KinectListener kl;
+    plane_slam::KinectListener kl;
     ros::spin();
 }

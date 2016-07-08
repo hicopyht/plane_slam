@@ -66,6 +66,8 @@
 using namespace cv;
 using namespace std;
 
+namespace plane_slam
+{
 
 const int PATCH_SIZE = 31;
 const int HALF_PATCH_SIZE = 15;
@@ -1128,3 +1130,6 @@ void ORBextractor::ComputePyramid(cv::Mat image)
     }
 
 }
+
+} // end of namespace plane_slam
+

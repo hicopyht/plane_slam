@@ -10,6 +10,9 @@
 #include "line_based_plane_segmentor.h"
 #include "utils.h"
 
+namespace plane_slam
+{
+
 class Frame
 {
 
@@ -67,5 +70,7 @@ private:
     // Planes
     std::vector<PlaneType> segment_planes_;
 };
+
+} // end of namespace plane_slam
 
 #endif // FRAME_H

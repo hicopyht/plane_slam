@@ -81,8 +81,8 @@ find_package(TBB)
 generate_dynamic_reconfigure_options(
   cfg/PlaneSlam.cfg
   cfg/PlaneSegment.cfg
-  cfg/OrganizedSegment.cfg
   cfg/LineBasedSegment.cfg
+  cfg/Viewer.cfg
 )
 
 ###################################
@@ -121,11 +121,11 @@ include_directories(
 #Declare a C++ library
 add_library( ${PROJECT_NAME}
     src/kinect_listener.cpp
-    src/organized_plane_segment.cpp
-    src/ORBextractor.cpp
-    src/plane_slam.cpp
+    src/viewer.cpp
+    src/line_based_plane_segmentor.cpp
+    src/orb_extractor.cpp
     src/utils.cpp
-    src/itree.cpp
+    src/frame.cpp
 )
 
 ## Specify libraries to link a library or executable target against

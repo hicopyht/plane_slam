@@ -221,7 +221,7 @@ int main(int argc, char** argv)
     }
 
 
-    KinectListener kl;
+    plane_slam::KinectListener kl;
     kl.setCameraParameters( camera );   // set camera parameter
 
     // Setup terminal

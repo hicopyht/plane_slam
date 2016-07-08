@@ -60,6 +60,8 @@ typedef boost::shared_ptr<const pcl::PointRepresentation< PointType > > PointRep
 typedef std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> > std_vector_of_eigen_vector4f;
 typedef Eigen::Vector4d PlaneCoefficients;
 
+bool isValidPoint(const PointType &p);
+
 // RGB Value
 typedef union
 {

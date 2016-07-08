@@ -25,6 +25,8 @@
 #include <list>
 #include <opencv/cv.h>
 
+namespace plane_slam
+{
 
 class ExtractorNode
 {
@@ -107,6 +109,7 @@ protected:
     std::vector<float> mvInvLevelSigma2;
 };
 
+} // end of namespace plane_slam
 
 #endif
 

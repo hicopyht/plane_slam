@@ -1,5 +1,7 @@
 #include "line_based_plane_segmentor.h"
 
+namespace plane_slam
+{
 
 LineBasedPlaneSegmentor::LineBasedPlaneSegmentor( ros::NodeHandle &nh )
     : private_nh_(nh),
@@ -143,3 +145,5 @@ void LineBasedPlaneSegmentor::lineBasedSegmentReconfigCallback( plane_slam::Line
 
     is_update_line_based_parameters_ = true;
 }
+
+} // end of namespace plane_slam

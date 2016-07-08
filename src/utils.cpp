@@ -1,5 +1,12 @@
 #include "utils.h"
 
+PointRepresentationConstPtr prttcp_(new pcl::DefaultPointRepresentation<PointType>) ;
+//
+bool isValidPoint(const PointType &p)
+{
+    return ( prttcp_->isValid(p) );
+}
+
 void matrixTF2Eigen(const tf::Matrix3x3 &t, Eigen::Matrix3d &e)
 {
     e.matrix()(0,0) = t[0][0];
