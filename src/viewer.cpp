@@ -46,11 +46,52 @@ Viewer::Viewer( ros::NodeHandle &nh)
 
 }
 
+void Viewer::removeAll()
+{
+    // Clear Display
+    pcl_viewer_->removeAllPointClouds();
+    pcl_viewer_->removeAllShapes();
+    map_viewer_->removeAllPointClouds();
+    map_viewer_->removeAllShapes();
+}
+
+void Viewer::spinOnce( int time )
+{
+    pcl_viewer_->spinOnce( time );
+    map_viewer_->spinOnce( time );
+}
+
+void Viewer::displayFrame(const Frame &frame, int viewport )
+{
+    // Input cloud
+    if( display_input_cloud_ )
+    {
+        pcl_viewer_->addPointCloud( frame.cloud_, "rgba_cloud", viewport );
+        pcl_viewer_->setPointCloudRenderingProperties ( pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "rgba_cloud", viewport );
+    }
+
+    // Keypoint on image
+    if( show_keypoint_ )
+    {
+        displayKeypoint( frame.visual_image_, frame.feature_locations_2d_ );
+    }
+
+    // 3d keypoint in viewer
+    if( display_feature_cloud_ )
+    {
+        display3DKeypoint( frame.feature_locations_3d_, "3d_keypoint", viewport );
+    }
+
+    // planes
+    displayPlanes( frame.cloud_downsampled_, frame.segment_planes_, "planes", viewport );
+}
 
 void Viewer::displayMatched3DKeypoint( std_vector_of_eigen_vector4f &query,
-                                    std_vector_of_eigen_vector4f &train,
-                                    std::vector<cv::DMatch> &matches,
-                                    const std::string &id)
+                                       std_vector_of_eigen_vector4f &train,
+                                       std::vector<cv::DMatch> &matches,
+                                       int viewport_query,
+                                       int viewport_train,
+                                       const std::string &id )
 {
     PointCloudXYZPtr query_cloud( new PointCloudXYZ ), train_cloud( new PointCloudXYZ );
     query_cloud->is_dense = false;
@@ -83,24 +124,27 @@ void Viewer::displayMatched3DKeypoint( std_vector_of_eigen_vector4f &query,
     }
     //
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> query_color( query_cloud, 0, 255, 0);
-    pcl_viewer_->addPointCloud( query_cloud, query_color, id+"_query", viewer_v1_ );
-    pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_query", viewer_v1_ );
+    pcl_viewer_->addPointCloud( query_cloud, query_color, id+"_query", viewport_query );
+    pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_query", viewport_query );
     //
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> train_color( train_cloud, 255, 255, 0);
-    pcl_viewer_->addPointCloud( train_cloud, train_color, id+"_train", viewer_v3_ );
-    pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_train", viewer_v3_ );
+    pcl_viewer_->addPointCloud( train_cloud, train_color, id+"_train", viewport_train );
+    pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_train", viewport_query );
 
 }
 
-void Viewer::displayKeypoint( const cv::Mat &visual, std::vector<cv::KeyPoint> &keypoints )
+void Viewer::displayKeypoint( const cv::Mat &visual, const std::vector<cv::KeyPoint> &keypoints )
 {
+    if( !show_keypoint_ )
+        return;
+
     cv::Mat image;
     cv::drawKeypoints( visual, keypoints, image, cv::Scalar::all(-1), cv::DrawMatchesFlags::DEFAULT );
     cv::imshow( KeypointWindow, image );
-//    cv::waitKey(1);
+    cv::waitKey(1);
 }
 
-void Viewer::display3DKeypoint( std_vector_of_eigen_vector4f &feature_location_3d, const std::string &id, int viewport )
+void Viewer::display3DKeypoint( const std_vector_of_eigen_vector4f &feature_location_3d, const std::string &id, int viewport )
 {
     PointCloudXYZPtr cloud( new PointCloudXYZ );
     cloud->is_dense = false;
@@ -126,7 +170,7 @@ void Viewer::display3DKeypoint( std_vector_of_eigen_vector4f &feature_location_3
 
 }
 
-void Viewer::displayLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix)
+void Viewer::displayMapLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix )
 {
 
     if( display_landmarks_ )
@@ -158,7 +202,7 @@ void Viewer::displayLandmarks( const std::vector<PlaneType> &landmarks, const st
     }
 }
 
-void Viewer::displayPlanes( const PointCloudTypePtr &input, std::vector<PlaneType> &planes, const std::string &prefix, int viewport)
+void Viewer::displayPlanes( const PointCloudTypePtr &input, const std::vector<PlaneType> &planes, const std::string &prefix, int viewport)
 {
     if(display_plane_)
     {
@@ -310,7 +354,7 @@ void Viewer::pclViewerNormal( const PointCloudTypePtr &input, PlaneFromLineSegme
         PointType p1, p2;
         p1 = normal.centroid;
         // check centroid
-        if( p1.z == 0)
+        if( p1.z == 0 && p1.x == 0 && p1.y == 0 )
         {
             Eigen::Vector4f cen;
             pcl::compute3DCentroid( *input, normal.inliers, cen);
@@ -343,7 +387,7 @@ void Viewer::pclViewerNormal( const PointCloudTypePtr &input, PlaneFromLineSegme
 
 }
 
-void Viewer::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &plane, const std::string &id, int viewport, int number)
+void Viewer::pclViewerPlane( const PointCloudTypePtr &input, const PlaneType &plane, const std::string &id, int viewport, int number)
 {
     double r = rng.uniform(0.0, 255.0);
     double g = rng.uniform(0.0, 255.0);
@@ -362,7 +406,7 @@ void Viewer::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &plane, c
             PointType p1, p2;
             p1 = plane.centroid;
             // check centroid
-            if( p1.z == 0)
+            if( p1.z == 0 && p1.x == 0 && p1.y == 0 )
             {
                 Eigen::Vector4f cen;
                 pcl::compute3DCentroid( *plane.cloud, cen );
@@ -409,7 +453,7 @@ void Viewer::pclViewerPlane( const PointCloudTypePtr &input, PlaneType &plane, c
             PointType p1, p2;
             p1 = plane.centroid;
             // check centroid
-            if( p1.z == 0)
+            if( p1.z == 0 && p1.x == 0 && p1.y == 0 )
             {
                 Eigen::Vector4f cen;
                 pcl::compute3DCentroid( *cloud, cen);
@@ -530,6 +574,10 @@ void Viewer::viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t 
     display_plane_projected_inlier_ = config.display_plane_projected_inlier;
     display_plane_boundary_ = config.display_plane_boundary;
     display_plane_hull_ = config.display_plane_hull;
+    display_feature_cloud_ = config.display_feature_cloud;
+    //
+    show_keypoint_ = config.show_keypoint;
+    show_keypoint_matches_ = config.show_keypoint_matches;
     // parameter for landmark
     display_landmarks_ = config.display_landmarks;
     display_landmark_inlier_ = config.display_landmark_inlier;

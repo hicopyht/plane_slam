@@ -294,7 +294,7 @@ void projectPoints ( const PointCloudType &input, const std::vector<int> &inlier
 
 
 void getPointCloudFromIndices( const PointCloudTypePtr &input,
-                               pcl::PointIndices &indices,
+                               const pcl::PointIndices &indices,
                                PointCloudTypePtr &output)
 {
     output->clear();
@@ -308,7 +308,7 @@ void getPointCloudFromIndices( const PointCloudTypePtr &input,
 }
 
 void getPointCloudFromIndices( const PointCloudTypePtr &input,
-                               std::vector<int> &indices,
+                               const std::vector<int> &indices,
                                PointCloudTypePtr &output)
 {
     output->clear();
@@ -322,7 +322,7 @@ void getPointCloudFromIndices( const PointCloudTypePtr &input,
 }
 
 PointCloudTypePtr getPointCloudFromIndices( const PointCloudTypePtr &input,
-                                            pcl::PointIndices &indices)
+                                            const pcl::PointIndices &indices)
 {
     PointCloudTypePtr output (new PointCloudType );
     getPointCloudFromIndices( input, indices, output);
@@ -330,7 +330,7 @@ PointCloudTypePtr getPointCloudFromIndices( const PointCloudTypePtr &input,
 }
 
 PointCloudTypePtr getPointCloudFromIndices( const PointCloudTypePtr &input,
-                                            std::vector<int> &indices)
+                                            const std::vector<int> &indices)
 {
     PointCloudTypePtr output (new PointCloudType );
     getPointCloudFromIndices( input, indices, output);

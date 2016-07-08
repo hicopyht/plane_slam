@@ -5,7 +5,10 @@ namespace plane_slam
 
 Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camera_params,
               ORBextractor* orb_extractor, LineBasedPlaneSegmentor* plane_segmentor)
-    : orb_extractor_(orb_extractor),
+    : camera_params_(),
+      cloud_downsampled_( new PointCloudType ),
+      feature_cloud_( new PointCloudXYZ ),
+      orb_extractor_(orb_extractor),
       plane_segmentor_(plane_segmentor)
 {
     // Observation
@@ -25,13 +28,14 @@ Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camer
 
 Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
               ORBextractor* orb_extractor, LineBasedPlaneSegmentor* plane_segmentor)
-    : orb_extractor_(orb_extractor),
+    : camera_params_(),
+      cloud_downsampled_( new PointCloudType ),
+      feature_cloud_( new PointCloudXYZ ),
+      orb_extractor_(orb_extractor),
       plane_segmentor_(plane_segmentor)
 {
     // Construct organized pointcloud
     PointCloudTypePtr input = image2PointCloud( visual, depth, camera_params );
-
-    cout << BLUE << "Done getting pointcloud." << RESET << endl;
 
     // Observation
     visual_image_ = visual;
@@ -41,15 +45,13 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
     // Downsample cloud
     downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
 
-    cout << BLUE << "Done downsampling pointcloud." << RESET << endl;
-
     // Spin 2 threads, one for plane segmentation, another for keypoint extraction.
-    extractORB();
-    segmentPlane();
-//    thread threadSegment( &Frame::segmentPlane, this );
-//    thread threadExtract( &Frame::extractORB, this );
-//    threadSegment.join();
-//    threadExtract.join();
+//    extractORB();
+//    segmentPlane();
+    thread threadSegment( &Frame::segmentPlane, this );
+    thread threadExtract( &Frame::extractORB, this );
+    threadSegment.join();
+    threadExtract.join();
 }
 
 // Feature Extraction, using visual image and cloud in VGA resolution.

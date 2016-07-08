@@ -6,7 +6,6 @@ namespace plane_slam
 KinectListener::KinectListener() :
     private_nh_("~")
   , plane_slam_config_server_( ros::NodeHandle( "PlaneSlam" ) )
-  , plane_segment_config_server_( ros::NodeHandle( "PlaneSegment" ) )
   , tf_listener_( nh_, ros::Duration(10.0) )
   , camera_parameters_()
 {
@@ -16,8 +15,6 @@ KinectListener::KinectListener() :
 
     plane_slam_config_callback_ = boost::bind(&KinectListener::planeSlamReconfigCallback, this, _1, _2);
     plane_slam_config_server_.setCallback(plane_slam_config_callback_);
-    plane_segment_config_callback_ = boost::bind(&KinectListener::planeSegmentReconfigCallback, this, _1, _2);
-    plane_segment_config_server_.setCallback(plane_segment_config_callback_);
 
 //    private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
 //    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/camera/rgb/image_color");
@@ -89,9 +86,9 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
 
     printf("no cloud msg: %d\n", depth_img_msg->header.seq);
 
-//    skip = (skip + 1) % skip_message_;
-//    if( skip )
-//        return;
+    skip = (skip + 1) % skip_message_;
+    if( skip )
+        return;
 
 //    // Get odom pose
 //    tf::Transform odom_pose;
@@ -111,8 +108,11 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
     // Frame
     Frame* frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_ );
 
-    // Process data
-//    processFrame( current_frame, odom_pose );
+    // Display frame
+    viewer_->removeAll();
+    viewer_->displayFrame( *frame, viewer_->vp1() );
+    viewer_->spinOnce();
+
 
 }
 
@@ -132,9 +132,12 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &depth
 
     printf("no cloud msg: %d\n", depth_img_msg->header.seq);
 
-//    skip = (skip + 1) % skip_message_;
-//    if( skip )
-//        return;
+    skip = (skip + 1) % skip_message_;
+    if( skip )
+    {
+        cout << BLUE << " Skip message." << RESET << endl;
+        return;
+    }
 
     // Get camera parameter
     camera_parameters_ = camera;
@@ -143,10 +146,21 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &depth
     cv::Mat visual_image = cv_bridge::toCvCopy(visual_img_msg)->image; // to cv image
     cv::Mat depth_image = cv_bridge::toCvCopy(depth_img_msg)->image; // to cv image
 
+    ros::Time start_time = ros::Time::now();
     // Frame
     Frame *frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_);
-//    // Process data
-//    processFrame( current_frame );
+    //
+    float dura = (ros::Time::now() - start_time).toSec() * 1000.0f;
+    cout << GREEN << "Frame time = " << dura << RESET << endl;
+
+    start_time = ros::Time::now();
+    // Display frame
+    viewer_->removeAll();
+    viewer_->displayFrame( *frame, viewer_->vp1() );
+    viewer_->spinOnce();
+    //
+    dura = (ros::Time::now() - start_time).toSec() * 1000.0f;
+    cout << GREEN << "Display time = " << dura << RESET << endl;
 }
 
 void KinectListener::processFrame( Frame &frame, const tf::Transform &odom_pose )
@@ -602,34 +616,6 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     display_odom_path_ = config.display_odom_path;
 
     cout << GREEN <<"Common Slam Config." << RESET << endl;
-}
-
-void KinectListener::planeSegmentReconfigCallback(plane_slam::PlaneSegmentConfig &config, uint32_t level)
-{
-    cloud_size_type_config_ = config.cloud_size_type;
-    plane_segment_method_ = config.segment_method;
-    feature_detector_type_ = config.feature_detector_type;
-    feature_extractor_type_ = config.feature_extractor_type;
-    feature_good_match_threshold_ = config.feature_good_match_threshold;
-    feature_min_good_match_size_ = config.feature_min_good_match_size;
-    ransac_sample_size_ = config.ransac_sample_size;
-    ransac_iterations_ = config.ransac_iterations;
-    ransac_min_inlier_ = config.ransac_min_inlier;
-    ransac_inlier_max_mahal_distance_ = config.ransac_inlier_max_mahal_distance;
-    //
-    icp_max_distance_ = config.icp_max_distance;
-    icp_iterations_ = config.icp_iterations;
-    icp_tf_epsilon_ = config.icp_tf_epsilon;
-    icp_min_indices_ = config.icp_min_indices;
-    icp_score_threshold_ = config.icp_score_threshold;
-    //
-    pnp_iterations_ = config.pnp_iterations;
-    pnp_min_inlier_ = config.pnp_min_inlier;
-    pnp_repreject_error_ = config.pnp_repreject_error;
-    //
-    loop_one_message_ = config.loop_one_message;
-
-    cout << GREEN <<"Common Segment Config." << RESET << endl;
 }
 
 

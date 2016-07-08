@@ -80,9 +80,9 @@ find_package(TBB)
 ## Generate dynamic reconfigure parameters in the 'cfg' folder
 generate_dynamic_reconfigure_options(
   cfg/PlaneSlam.cfg
-  cfg/PlaneSegment.cfg
   cfg/LineBasedSegment.cfg
   cfg/Viewer.cfg
+  cfg/Tracking.cfg
 )
 
 ###################################

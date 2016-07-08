@@ -49,7 +49,7 @@ private:
     ORBextractor *orb_extractor_;
     LineBasedPlaneSegmentor *plane_segmentor_;
 
-
+public:
     // Robot Pose
     gtsam::Pose3 pose_;
     // Sensor data
@@ -57,11 +57,11 @@ private:
     cv::Mat gray_image_;    // gray image
     PointCloudTypePtr cloud_;   // organized point cloud
     // Camera parameters
-    PlaneFromLineSegment::CAMERA_PARAMETERS camera_params_;
+    CameraParameters camera_params_;
     // Downsampling data
     PointCloudTypePtr cloud_downsampled_; //
     cv::Mat visual_image_downsampled_; //
-    PlaneFromLineSegment::CAMERA_PARAMETERS camera_params_downsampled_;
+    CameraParameters camera_params_downsampled_;
     // Keypoint
     std::vector<cv::KeyPoint> feature_locations_2d_;
     cv::Mat feature_descriptors_;

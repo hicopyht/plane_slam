@@ -78,8 +78,6 @@ protected:
 
     void planeSlamReconfigCallback( plane_slam::PlaneSlamConfig &config, uint32_t level);
 
-    void planeSegmentReconfigCallback( plane_slam::PlaneSegmentConfig &config, uint32_t level);
-
     void publishPose( gtsam::Pose3 &pose);
 
     void publishPlanarMap( const std::vector<PlaneType> &landmarks);
@@ -101,8 +99,6 @@ private:
     //
     dynamic_reconfigure::Server<plane_slam::PlaneSlamConfig> plane_slam_config_server_;
     dynamic_reconfigure::Server<plane_slam::PlaneSlamConfig>::CallbackType plane_slam_config_callback_;
-    dynamic_reconfigure::Server<plane_slam::PlaneSegmentConfig> plane_segment_config_server_;
-    dynamic_reconfigure::Server<plane_slam::PlaneSegmentConfig>::CallbackType plane_segment_config_callback_;
 
     // subscribers
     int subscriber_queue_size_;
@@ -143,33 +139,6 @@ private:
     double keyframe_angular_threshold_;
     bool display_path_;
     bool display_odom_path_;
-
-    // Plane segment
-    int cloud_size_type_;
-    int cloud_size_type_config_;
-    int plane_segment_method_;
-    std::string feature_detector_type_;
-    std::string feature_extractor_type_;
-    double feature_good_match_threshold_;
-    int feature_min_good_match_size_;
-    int ransac_sample_size_;
-    int ransac_iterations_;
-    int ransac_min_inlier_;
-    double ransac_inlier_max_mahal_distance_;
-    //
-    int pnp_iterations_;
-    int pnp_min_inlier_;
-    double pnp_repreject_error_;
-
-
-    bool loop_one_message_;
-
-    // ICP parameters
-    double icp_max_distance_;
-    int icp_iterations_;
-    double icp_tf_epsilon_;
-    int icp_min_indices_;
-    double icp_score_threshold_;
 
     //
     // Plane segment based line segment

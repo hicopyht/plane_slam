@@ -5,13 +5,55 @@
 #include <pcl/point_types.h>
 #include <opencv2/calib3d/calib3d.hpp>
 #include <boost/foreach.hpp>
+#include <dynamic_reconfigure/server.h>
+#include <plane_slam/TrackingConfig.h>
 #include "frame.h"
 #include "utils.h"
+
+namespace plane_slam
+{
 
 class Tracking
 {
 public:
-    Tracking( Frame &source, Frame &target, RESULT_OF_MOTION &motion );
+    Tracking(ros::NodeHandle &nh);
+
+    bool track( const Frame &source, const Frame &target, RESULT_OF_MOTION &motion );
+
+public:
+    bool solveRelativeTransformPlanes( const Frame &source,
+                                       const Frame &target,
+                                       const std::vector<PlanePair> &pairs,
+                                       RESULT_OF_MOTION &result);
+
+    bool solveRelativeTransformPlanesPointsRansac( Frame &last_frame,
+                                                   Frame &current_frame,
+                                                   std::vector<PlanePair> &pairs,
+                                                   std::vector<cv::DMatch> &good_matches,
+                                                   RESULT_OF_MOTION &result,
+                                                   std::vector<cv::DMatch> &matches );
+
+    bool solveRelativeTransformPointsRansac( const Frame &source,
+                                             const Frame &target,
+                                             const std::vector<cv::DMatch> &good_matches,
+                                             RESULT_OF_MOTION &result,
+                                             std::vector<cv::DMatch> &matches );
+
+    bool solveRelativeTransformIcp( Frame &last_frame,
+                                    Frame &current_frame,
+                                    RESULT_OF_MOTION &result);
+
+    bool solveRelativeTransformPnP( Frame& last_frame,
+                                    Frame& current_frame,
+                                    std::vector<cv::DMatch> &good_matches,
+                                    PlaneFromLineSegment::CAMERA_PARAMETERS& camera,
+                                    RESULT_OF_MOTION &result );
+
+    bool solveRelativeTransform( Frame &last_frame,
+                                 Frame &current_frame,
+                                 RESULT_OF_MOTION &result,
+                                 std::vector<cv::DMatch> &matches,
+                                 Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4));
 
 private:
     bool solveRtIcp( const PointCloudXYZPtr &source,
@@ -39,7 +81,7 @@ private:
                   RESULT_OF_MOTION &result);
 
     bool solveRtPlanes( const std::vector<PlaneCoefficients> &before,
-                            const std::vector<PlaneCoefficients> &after,
+                        const std::vector<PlaneCoefficients> &after,
                             RESULT_OF_MOTION &result);
 
     Eigen::Matrix4f solveRtPlanesPoints( std::vector<PlaneType> &last_planes,
@@ -49,40 +91,6 @@ private:
                                          std_vector_of_eigen_vector4f &feature_3d,
                                          std::vector<cv::DMatch> &matches,
                                          bool &valid );
-
-    bool solveRelativeTransformPlanes( KinectFrame &last_frame,
-                                       KinectFrame &current_frame,
-                                       const std::vector<PlanePair> &pairs,
-                                       RESULT_OF_MOTION &result);
-
-    bool solveRelativeTransformPlanesPointsRansac( KinectFrame &last_frame,
-                                                   KinectFrame &current_frame,
-                                                   std::vector<PlanePair> &pairs,
-                                                   std::vector<cv::DMatch> &good_matches,
-                                                   RESULT_OF_MOTION &result,
-                                                   std::vector<cv::DMatch> &matches );
-
-    bool solveRelativeTransformPointsRansac( KinectFrame &last_frame,
-                                             KinectFrame &frame,
-                                             std::vector<cv::DMatch> &good_matches,
-                                             RESULT_OF_MOTION &result,
-                                             std::vector<cv::DMatch> &matches );
-
-    bool solveRelativeTransformIcp( KinectFrame &last_frame,
-                                    KinectFrame &current_frame,
-                                    RESULT_OF_MOTION &result);
-
-    bool solveRelativeTransformPnP( KinectFrame& last_frame,
-                                    KinectFrame& current_frame,
-                                    std::vector<cv::DMatch> &good_matches,
-                                    PlaneFromLineSegment::CAMERA_PARAMETERS& camera,
-                                    RESULT_OF_MOTION &result );
-
-    bool solveRelativeTransform( KinectFrame &last_frame,
-                                 KinectFrame &current_frame,
-                                 RESULT_OF_MOTION &result,
-                                 std::vector<cv::DMatch> &matches,
-                                 Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4));
 
     inline bool validRelativeTransform( const RESULT_OF_MOTION &motion )
     {
@@ -103,8 +111,8 @@ private:
     }
 
 
-    void matchImageFeatures( KinectFrame& last_frame,
-                             KinectFrame& current_frame,
+    void matchImageFeatures( Frame& last_frame,
+                             Frame& current_frame,
                              vector< cv::DMatch > &goodMatches,
                              double good_match_threshold,
                              int min_match_size);
@@ -133,6 +141,35 @@ private:
 
     std::vector<cv::DMatch> randomChooseMatches( const unsigned int sample_size,
                                              vector< cv::DMatch > &matches );
+
+protected:
+
+    void trackingReconfigCallback(plane_slam::TrackingConfig &config, uint32_t level);
+
+private:
+    ros::NodeHandle nh_;
+    dynamic_reconfigure::Server<plane_slam::TrackingConfig> tracking_config_server_;
+    dynamic_reconfigure::Server<plane_slam::TrackingConfig>::CallbackType tracking_config_callback_;
+    // Feature match
+    double feature_good_match_threshold_;
+    int feature_min_good_match_size_;
+    // Point ransac
+    int ransac_sample_size_;
+    int ransac_iterations_;
+    int ransac_min_inlier_;
+    double ransac_inlier_max_mahal_distance_;
+    // ICP
+    double icp_max_distance_;
+    int icp_iterations_;
+    double icp_tf_epsilon_;
+    int icp_min_indices_;
+    double icp_score_threshold_;
+    // PnP
+    int pnp_iterations_;
+    int pnp_min_inlier_;
+    double pnp_repreject_error_;
 };
+
+} // end of namespace plane_slam
 
 #endif // TRACKING_H

@@ -2,11 +2,12 @@
 #define VIEWER_H
 
 #include <ros/ros.h>
-#include <dynamic_reconfigure/server.h>
 #include <pcl/visualization/pcl_visualizer.h>
+#include <dynamic_reconfigure/server.h>
 #include <plane_slam/ViewerConfig.h>
 #include <std_srvs/SetBool.h>
 #include "utils.h"
+#include "frame.h"
 
 namespace plane_slam
 {
@@ -16,18 +17,27 @@ class Viewer
 public:
     Viewer( ros::NodeHandle &nh );
 
+    void removeAll();
+
+    void spinOnce( int time = 1);
+
+    void displayFrame(const Frame &frame, int viewport);
+
+
     void displayMatched3DKeypoint( std_vector_of_eigen_vector4f &query,
                                    std_vector_of_eigen_vector4f &train,
                                    std::vector<cv::DMatch> &matches,
-                                   const std::string &id = "matched_features");
+                                   int viewport_query,
+                                   int viewport_train,
+                                   const std::string &id = "matched_features" );
 
-    void displayKeypoint( const cv::Mat &visual, std::vector<cv::KeyPoint> &keypoints );
+    void displayKeypoint( const cv::Mat &visual, const std::vector<cv::KeyPoint> &keypoints );
 
-    void display3DKeypoint( std_vector_of_eigen_vector4f &feature_location_3d, const std::string &id, int viewport );
+    void display3DKeypoint( const std_vector_of_eigen_vector4f &feature_location_3d, const std::string &id, int viewport );
 
-    void displayLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix = "landmark");
+    void displayMapLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix = "landmark" );
 
-    void displayPlanes( const PointCloudTypePtr &input, std::vector<PlaneType> &planes, const std::string &prefix, int viewport);
+    void displayPlanes( const PointCloudTypePtr &input, const std::vector<PlaneType> &planes, const std::string &prefix, int viewport);
 
     void displayLinesAndNormals( const PointCloudTypePtr &input,
                                  std::vector<PlaneFromLineSegment::LineType> &lines,
@@ -40,8 +50,12 @@ public:
 
     void pclViewerNormal( const PointCloudTypePtr &input, PlaneFromLineSegment::NormalType &normal, const std::string &id, int viewpoint);
 
-    void pclViewerPlane( const PointCloudTypePtr &input, PlaneType &plane, const std::string &id, int viewport, int number = -1);
+    void pclViewerPlane( const PointCloudTypePtr &input, const PlaneType &plane, const std::string &id, int viewport, const int number = -1);
 
+    const int& vp1() const { return viewer_v1_; }
+    const int& vp2() const { return viewer_v2_; }
+    const int& vp3() const { return viewer_v3_; }
+    const int& vp4() const { return viewer_v4_; }
 
 protected:
     void viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t level);
@@ -76,6 +90,9 @@ private:
     bool display_plane_projected_inlier_;
     bool display_plane_boundary_;
     bool display_plane_hull_;
+    bool display_feature_cloud_;
+    bool show_keypoint_;
+    bool show_keypoint_matches_;
     // parameter for landmark
     bool display_landmarks_;
     bool display_landmark_inlier_;

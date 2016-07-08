@@ -221,18 +221,18 @@ void projectPoints ( const PointCloudType &input, const std::vector<int> &inlier
                      const Eigen::Vector4f &model_coefficients, PointCloudType &projected_points );
 
 void getPointCloudFromIndices( const PointCloudTypePtr &input,
-                               pcl::PointIndices &indices,
+                               const pcl::PointIndices &indices,
                                PointCloudTypePtr &output);
 
 void getPointCloudFromIndices( const PointCloudTypePtr &input,
-                               std::vector<int> &indices,
+                               const std::vector<int> &indices,
                                PointCloudTypePtr &output);
 
 PointCloudTypePtr getPointCloudFromIndices( const PointCloudTypePtr &input,
-                                             pcl::PointIndices &indices);
+                                            const pcl::PointIndices &indices);
 
 PointCloudTypePtr getPointCloudFromIndices( const PointCloudTypePtr &input,
-                                             std::vector<int> &indices);
+                                            const std::vector<int> &indices);
 
 
 void depthToCV8UC1(cv::Mat& depth_img, cv::Mat& mono8_img);
