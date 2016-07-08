@@ -33,6 +33,7 @@ KinectListener::KinectListener() :
     orb_extractor_ = new ORBextractor( 1000, 1.2, 8, 20, 7);
     plane_segmentor_ = new LineBasedPlaneSegmentor(nh_);
     viewer_ = new Viewer(nh_);
+    tracker_ = new Tracking(nh_);
 
     true_path_publisher_ = nh_.advertise<nav_msgs::Path>("true_path", 10);
     odometry_path_publisher_ = nh_.advertise<nav_msgs::Path>("odometry_path", 10);
@@ -82,38 +83,33 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
                                 const sensor_msgs::ImageConstPtr& depth_img_msg,
                                 const sensor_msgs::CameraInfoConstPtr& cam_info_msg)
 {
-    static int skip = 0;
+    static tf::Transform last_odom_pose = tf::Transform::getIdentity();
 
-    printf("no cloud msg: %d\n", depth_img_msg->header.seq);
+    // Get odom pose
+    tf::Transform odom_pose;
+    if( !getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
+    {
+        odom_pose.setIdentity();
+    }
 
-    skip = (skip + 1) % skip_message_;
-    if( skip )
-        return;
-
-//    // Get odom pose
-//    tf::Transform odom_pose;
-//    if( !getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
-//    {
-//        odom_pose.setIdentity();
-//        return;
-//    }
+    // Relative transform
+    tf::Transform rel_tf = last_odom_pose.inverse() * odom_pose;
+    gtsam::Pose3 real_r_pose = tfToPose3( rel_tf );
+    cout << CYAN << " true motion: " << endl;
+    cout << "  - R(rpy): " << real_r_pose.rotation().roll()
+         << ", " << real_r_pose.rotation().pitch()
+         << ", " << real_r_pose.rotation().yaw() << endl;
+    cout << "  - T:      " << real_r_pose.translation().x()
+         << ", " << real_r_pose.translation().y()
+         << ", " << real_r_pose.translation().z() << RESET << endl;
 
     // Get camera parameter
-    getCameraParameter( cam_info_msg, camera_parameters_);
+    CameraParameters camera;
+    getCameraParameter( cam_info_msg, camera);
 
-    // Get Mat Image
-    cv::Mat visual_image = cv_bridge::toCvCopy(visual_img_msg)->image; // to cv image
-    cv::Mat depth_image = cv_bridge::toCvCopy(depth_img_msg)->image; // to cv image
+    trackDepthRgbImage( visual_img_msg, depth_img_msg, camera );
 
-    // Frame
-    Frame* frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_ );
-
-    // Display frame
-    viewer_->removeAll();
-    viewer_->displayFrame( *frame, viewer_->vp1() );
-    viewer_->spinOnce();
-
-
+    last_odom_pose = odom_pose;
 }
 
 void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img_msg,
@@ -124,10 +120,11 @@ void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img
 
 }
 
-void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &depth_img_msg,
-                                         const sensor_msgs::ImageConstPtr &visual_img_msg,
-                                         const PlaneFromLineSegment::CAMERA_PARAMETERS & camera)
+void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visual_img_msg,
+                                         const sensor_msgs::ImageConstPtr &depth_img_msg,
+                                         CameraParameters & camera)
 {
+    static Frame *last_frame;
     static int skip = 0;
 
     printf("no cloud msg: %d\n", depth_img_msg->header.seq);
@@ -139,7 +136,6 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &depth
         return;
     }
 
-    // Get camera parameter
     camera_parameters_ = camera;
 
     // Get Mat Image
@@ -153,6 +149,34 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &depth
     float dura = (ros::Time::now() - start_time).toSec() * 1000.0f;
     cout << GREEN << "Frame time = " << dura << RESET << endl;
 
+    // Tracking
+    start_time = ros::Time::now();
+    if( last_frame )
+    {
+        RESULT_OF_MOTION motion;
+        tracker_->track( *last_frame, *frame, motion );
+
+        // print motion
+        if( motion.valid )
+        {
+            gtsam::Rot3 rot3( motion.rotation );
+            cout << MAGENTA << " estimated motion, rmse = " << motion.rmse << endl;
+            cout << "  - R(rpy): " << rot3.roll()
+                 << ", " << rot3.pitch()
+                 << ", " << rot3.yaw() << endl;
+            cout << "  - T:      " << motion.translation[0]
+                 << ", " << motion.translation[1]
+                 << ", " << motion.translation[2] << RESET << endl;
+        }
+        else
+        {
+            cout << RED << "failed to estimated motion." << RESET << endl;
+        }
+    }
+    //
+    dura = (ros::Time::now() - start_time).toSec() * 1000.0f;
+    cout << GREEN << "Tracking time = " << dura << RESET << endl;
+
     start_time = ros::Time::now();
     // Display frame
     viewer_->removeAll();
@@ -161,6 +185,8 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &depth
     //
     dura = (ros::Time::now() - start_time).toSec() * 1000.0f;
     cout << GREEN << "Display time = " << dura << RESET << endl;
+
+    last_frame = frame;
 }
 
 void KinectListener::processFrame( Frame &frame, const tf::Transform &odom_pose )
@@ -656,8 +682,8 @@ void KinectListener::publishPlanarMap( const std::vector<PlaneType> &landmarks)
 
 
 
-void KinectListener::getCameraParameter(const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
-                                      PlaneFromLineSegment::CAMERA_PARAMETERS &camera)
+void KinectListener::getCameraParameter( const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
+                                         CameraParameters &camera)
 {
     /* Intrinsic camera matrix for the raw (distorted) images.
          [fx  0 cx]

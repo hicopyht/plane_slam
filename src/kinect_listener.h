@@ -28,6 +28,7 @@
 #include "utils.h"
 #include "frame.h"
 #include "viewer.h"
+#include "tracking.h"
 
 using namespace std;
 
@@ -55,9 +56,9 @@ public:
 
     ~KinectListener();
 
-    void trackDepthRgbImage( const sensor_msgs::ImageConstPtr &depth_img_msg,
-                             const sensor_msgs::ImageConstPtr &visual_img_msg,
-                             const PlaneFromLineSegment::CAMERA_PARAMETERS &camera);
+    void trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visual_img_msg,
+                             const sensor_msgs::ImageConstPtr &depth_img_msg,
+                             CameraParameters &camera);
 
     void processFrame( Frame &frame, const tf::Transform &odom_pose = tf::Transform::getIdentity() );
 
@@ -82,8 +83,8 @@ protected:
 
     void publishPlanarMap( const std::vector<PlaneType> &landmarks);
 
-    void getCameraParameter(const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
-                            PlaneFromLineSegment::CAMERA_PARAMETERS &camera);
+    void getCameraParameter( const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
+                             CameraParameters &camera);
 
     bool getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time &time = ros::Time(0) );
 
@@ -125,6 +126,7 @@ private:
     ORBextractor* orb_extractor_;
     LineBasedPlaneSegmentor* plane_segmentor_;
     Viewer *viewer_;
+    Tracking *tracker_;
 
     // Plane slam
     bool do_visual_odometry_;

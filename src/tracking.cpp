@@ -24,7 +24,7 @@ bool Tracking::track(const Frame &source, const Frame &target, RESULT_OF_MOTION 
 
     // Find plane correspondences
     std::vector<PlanePair> pairs;
-    Eigen::Matrix4f estimated_transform = Eigen::MatrixXf::Identity(4,4);
+    Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4);
     if( planes.size() > 0 && last_planes.size() > 0 )
     {
         ITree::euclidianPlaneCorrespondences( planes, last_planes, pairs, estimated_transform );
