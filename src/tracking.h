@@ -9,6 +9,7 @@
 #include <plane_slam/TrackingConfig.h>
 #include "frame.h"
 #include "utils.h"
+#include "itree.h"
 
 namespace plane_slam
 {
@@ -24,7 +25,8 @@ public:
     bool solveRelativeTransformPlanes( const Frame &source,
                                        const Frame &target,
                                        const std::vector<PlanePair> &pairs,
-                                       RESULT_OF_MOTION &result);
+                                       RESULT_OF_MOTION &result,
+                                       std::vector<PlanePair> &return_inlier );
 
     bool solveRelativeTransformPlanesPointsRansac( Frame &last_frame,
                                                    Frame &current_frame,
@@ -126,21 +128,25 @@ private:
                                                double& return_mean_error,//pure output var: rms-mahalanobis-distance
                                                double squared_max_distance) const;
 
-    void computeEuclidianDistance( const std::vector<PlaneType>& last_planes,
-                                   const std::vector<PlaneType>& planes,
-                                   const std::vector<PlanePair>& pairs,
-                                   RESULT_OF_MOTION &relative );
+    void computePairInliersAndError( const Eigen::Matrix4d &transform,
+                                     const std::vector<PlanePair>& pairs,
+                                     const std::vector<PlaneType>& last_planes,
+                                     const std::vector<PlaneType>& planes,
+                                     std::vector<PlanePair> &inlier,
+                                     double &return_mean_error,
+                                     const double max_direction_error,
+                                     const double max_distance_error );
 
     // Random pick
-    std::vector<PlanePair> randomChoosePlanePairsPreferGood( std::vector< std::vector<PlanePair> > &sample_pairs );
+    std::vector<PlanePair> randomChoosePlanePairsPreferGood( const std::vector< std::vector<PlanePair> > &sample_pairs );
 
-    std::vector<PlanePair> randomChoosePlanePairs( std::vector< std::vector<PlanePair> > &sample_pairs );
+    std::vector<PlanePair> randomChoosePlanePairs( const std::vector< std::vector<PlanePair> > &sample_pairs );
 
     std::vector<cv::DMatch> randomChooseMatchesPreferGood( const unsigned int sample_size,
-                                             vector< cv::DMatch > &matches_with_depth );
+                                                        const vector< cv::DMatch > &matches_with_depth );
 
     std::vector<cv::DMatch> randomChooseMatches( const unsigned int sample_size,
-                                             vector< cv::DMatch > &matches );
+                                                const vector< cv::DMatch > &matches );
 
 protected:
 

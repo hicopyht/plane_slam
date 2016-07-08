@@ -11,6 +11,64 @@ Tracking::Tracking( ros::NodeHandle &nh )
 
 bool Tracking::track(const Frame &source, const Frame &target, RESULT_OF_MOTION &motion)
 {
+    motion.valid = false;
+    motion.rmse = 1e9;
+    motion.inlier = 0;
+
+    const std::vector<PlaneType> &planes = target.segment_planes_;
+    const std::vector<PlaneType> &last_planes = source.segment_planes_;
+
+    ros::Time start_time = ros::Time::now();
+    double pairs_dura, planes_dura, match_f_dura, points_planes_dura,
+            points_dura, icp_dura, pnp_dura;
+
+    // Find plane correspondences
+    std::vector<PlanePair> pairs;
+    Eigen::Matrix4f estimated_transform = Eigen::MatrixXf::Identity(4,4);
+    if( planes.size() > 0 && last_planes.size() > 0 )
+    {
+        ITree::euclidianPlaneCorrespondences( planes, last_planes, pairs, estimated_transform );
+        std::sort( pairs.begin(), pairs.end() );
+    }
+    const int pairs_num = pairs.size();
+
+    pairs_dura = (ros::Time::now() - start_time).toSec() * 1000;
+    start_time = ros::Time::now();
+
+    cout << GREEN << "Plane pairs = " << pairs_num << RESET << endl;
+
+    /// case 1: Estimate motion using plane correspondences
+    RESULT_OF_MOTION best_transform;
+    std::vector<PlanePair> best_inlier;
+    best_transform.rmse = 1e6; // no inlier
+    best_transform.valid = false;   // no result
+    if( pairs_num >= 3 )
+    {
+        best_transform.valid = solveRelativeTransformPlanes( source, target, pairs, best_transform, best_inlier );
+        if( best_transform.valid && validRelativeTransform(best_transform) )
+        {
+            motion = best_transform;
+            return true;
+        }
+    }
+
+    //
+    planes_dura = (ros::Time::now() - start_time).toSec() * 1000;
+    start_time = ros::Time::now();
+
+    /// Print info
+    double total_time = pairs_dura + planes_dura + match_f_dura
+            + points_planes_dura + points_dura + icp_dura + pnp_dura;
+    cout << GREEN << "Transformation total time: " << total_time << endl;
+    cout << "Time:"
+         << " pairs: " << pairs_dura
+         << ", planes: " << planes_dura
+         << ", match_f: "<< match_f_dura
+         << ", planes/points: " << points_planes_dura
+         << ", points: " << points_dura
+         << ", icp: " << icp_dura
+         << ", pnp: " << pnp_dura
+         << RESET << endl;
 
 }
 
@@ -18,7 +76,8 @@ bool Tracking::track(const Frame &source, const Frame &target, RESULT_OF_MOTION 
 bool Tracking::solveRelativeTransformPlanes( const Frame &source,
                                              const Frame &target,
                                              const std::vector<PlanePair> &pairs,
-                                             RESULT_OF_MOTION &result)
+                                             RESULT_OF_MOTION &result,
+                                             std::vector<PlanePair> &return_inlier )
 {
     const std::vector<PlaneType> &planes = target.segment_planes_;
     const std::vector<PlaneType> &last_planes = source.segment_planes_;
@@ -30,6 +89,7 @@ bool Tracking::solveRelativeTransformPlanes( const Frame &source,
 
     // Estimate transformation using all the plane correspondences
     RESULT_OF_MOTION best_transform;
+    std::vector<PlanePair> best_inlier;
     best_transform.rmse = 1e9; // no inlier
     best_transform.valid = false;
     unsigned int real_iterations = 0;
@@ -61,13 +121,19 @@ bool Tracking::solveRelativeTransformPlanes( const Frame &source,
                 {
                     valid_iterations++;
                     // check if better
-                    std::vector<PlanePair> pairs3;
-                    pairs3.push_back( p1 );
-                    pairs3.push_back( p2 );
-                    pairs3.push_back( p3 );
-                    motion.rmse = computeEuclidianDistance( last_planes, planes, pairs3, motion );
-                    if( motion.rmse < best_transform.rmse )
+                    std::vector<PlanePair> inlier;
+                    computePairInliersAndError( motion.transform4d(), pairs, last_planes, planes,
+                                                inlier, motion.rmse, 5.0*DEG_TO_RAD, 0.05);
+                    if( inlier.size() > best_inlier.size() )
+                    {
                         best_transform = motion;
+                        best_inlier = inlier;
+                    }
+                    else if( inlier.size() == best_inlier.size() && motion.rmse < best_transform.rmse )
+                    {
+                        best_transform = motion;
+                        best_inlier = inlier;
+                    }
                 }
             }
         }
@@ -78,6 +144,7 @@ bool Tracking::solveRelativeTransformPlanes( const Frame &source,
 
 //    Eigen::umeyama
     result = best_transform;
+    return_inlier = best_inlier;
     return best_transform.valid;
 }
 
@@ -266,11 +333,11 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
 
 
 bool Tracking::solveRelativeTransformPlanesPointsRansac( Frame &source,
-                                                       Frame &target,
-                                                       std::vector<PlanePair> &pairs,
-                                                       std::vector<cv::DMatch> &good_matches,
-                                                       RESULT_OF_MOTION &result,
-                                                       std::vector<cv::DMatch> &matches )
+                                                         Frame &target,
+                                                         std::vector<PlanePair> &pairs,
+                                                         std::vector<cv::DMatch> &good_matches,
+                                                         RESULT_OF_MOTION &result,
+                                                         std::vector<cv::DMatch> &matches )
 {
     if( !pairs.size() )
         return false;
@@ -389,11 +456,11 @@ bool Tracking::solveRelativeTransformPlanesPointsRansac( Frame &source,
 
 
 bool Tracking::solveRelativeTransformIcp( Frame &source,
-                                                Frame &target,
-                                                RESULT_OF_MOTION &result)
+                                          Frame &target,
+                                          RESULT_OF_MOTION &result)
 {
     PointCloudXYZPtr cloud_icp( new PointCloudXYZ );
-    result.valid = solveRtIcp( target.feature_cloud, source.feature_cloud, cloud_icp, result );
+    result.valid = solveRtIcp( target.feature_cloud_, source.feature_cloud_, cloud_icp, result );
     return result.valid;
 }
 
@@ -401,10 +468,10 @@ bool Tracking::solveRelativeTransformIcp( Frame &source,
 // 输入：帧1和帧2
 // 输出：rvec 和 tvec
 bool Tracking::solveRelativeTransformPnP( Frame& source,
-                                                Frame& target,
-                                                std::vector<cv::DMatch> &good_matches,
-                                                PlaneFromLineSegment::CAMERA_PARAMETERS& camera,
-                                                RESULT_OF_MOTION &result)
+                                          Frame& target,
+                                          std::vector<cv::DMatch> &good_matches,
+                                          PlaneFromLineSegment::CAMERA_PARAMETERS& camera,
+                                          RESULT_OF_MOTION &result)
 {
     int min_inlier_threshold = pnp_min_inlier_;
     if( min_inlier_threshold > 0.75*good_matches.size() )
@@ -460,17 +527,17 @@ bool Tracking::solveRelativeTransformPnP( Frame& source,
 
 
 bool Tracking::solveRelativeTransform( Frame &source,
-                                             Frame &target,
-                                             RESULT_OF_MOTION &result,
-                                             std::vector<cv::DMatch> &matches,
-                                             Eigen::Matrix4d estimated_transform)
+                                       Frame &target,
+                                       RESULT_OF_MOTION &result,
+                                       std::vector<cv::DMatch> &matches,
+                                       Eigen::Matrix4d estimated_transform)
 {
     result.valid = false;
     result.rmse = 1e9;
     result.inlier = 0;
 
-    std::vector<PlaneType> &planes = target.segment_planes;
-    std::vector<PlaneType> &last_planes = source.segment_planes;
+    std::vector<PlaneType> &planes = target.segment_planes_;
+    std::vector<PlaneType> &last_planes = source.segment_planes_;
 
     ros::Time start_time = ros::Time::now();
     double pairs_dura, planes_dura, match_f_dura, points_planes_dura,
@@ -492,11 +559,12 @@ bool Tracking::solveRelativeTransform( Frame &source,
 
     /// case 1: Estimate motion using plane correspondences
     RESULT_OF_MOTION best_transform;
+    std::vector<PlanePair> best_inlier;
     best_transform.rmse = 1e6; // no inlier
     best_transform.valid = false;   // no result
     if( pairs_num >= 3 )
     {
-        best_transform.valid = solveRelativeTransformPlanes( source, target, pairs, best_transform );
+        best_transform.valid = solveRelativeTransformPlanes( source, target, pairs, best_transform, best_inlier );
         if( best_transform.valid && validRelativeTransform(best_transform) )
         {
             result = best_transform;
@@ -591,7 +659,7 @@ bool Tracking::solveRelativeTransform( Frame &source,
     /// case 5: using PnP
     if( !best_transform.valid && good_matches.size() >= 20 )
     {
-        best_transform.valid = solveRelativeTransformPnP( source, target, good_matches, camera_parameters_, best_transform );
+        best_transform.valid = solveRelativeTransformPnP( source, target, good_matches, target.camera_params_, best_transform );
     }
 
     if( best_transform.valid && validRelativeTransform(best_transform) )
@@ -1047,28 +1115,17 @@ void Tracking::matchImageFeatures( Frame& source,
                                          int min_match_size)
 {
     vector< cv::DMatch > matches;
-    if( !feature_extractor_type_.compare(("ORB")))
-    {
-        uint64_t* query_value =  reinterpret_cast<uint64_t*>(source.feature_descriptors.data);
-        uint64_t* search_array = reinterpret_cast<uint64_t*>(target.feature_descriptors.data);
-        for(unsigned int i = 0; i < source.feature_locations_2d_.size(); ++i, query_value += 4)
-        {   //ORB feature = 32*8bit = 4*64bit
-            int result_index = -1;
-            int hd = bruteForceSearchORB(query_value, search_array, target.feature_locations_2d_.size(), result_index);
-            if(hd >= 128)
-                continue;//not more than half of the bits matching: Random
-            cv::DMatch match(i, result_index, hd /256.0 + (float)rand()/(1000.0*RAND_MAX));
-            matches.push_back(match);
-        }
-    }
-    else
-    {
-        cv::FlannBasedMatcher matcher;
-    //    cout << MAGENTA << " features: " << source.feature_locations_2d_.size() << ", "
-    //         << target.feature_locations_2d_.size() << RESET << endl;
-    //    cout << MAGENTA << " descriptors: " << source.feature_descriptors.rows << ", "
-    //         << target.feature_descriptors.rows << RESET << endl;
-        matcher.match( source.feature_descriptors, target.feature_descriptors, matches );
+
+    uint64_t* query_value =  reinterpret_cast<uint64_t*>(source.feature_descriptors_.data);
+    uint64_t* search_array = reinterpret_cast<uint64_t*>(target.feature_descriptors_.data);
+    for(unsigned int i = 0; i < source.feature_locations_2d_.size(); ++i, query_value += 4)
+    {   //ORB feature = 32*8bit = 4*64bit
+        int result_index = -1;
+        int hd = bruteForceSearchORB(query_value, search_array, target.feature_locations_2d_.size(), result_index);
+        if(hd >= 128)
+            continue;//not more than half of the bits matching: Random
+        cv::DMatch match(i, result_index, hd /256.0 + (float)rand()/(1000.0*RAND_MAX));
+        matches.push_back(match);
     }
 
     // Sort
@@ -1094,11 +1151,7 @@ void Tracking::matchImageFeatures( Frame& source,
     else
     {
         double minDis = -1.0;
-//        for ( size_t i=0; i<matches.size(); i++ )
-//        {
-//            if ( matches[i].distance < minDis )
-//                minDis = matches[i].distance;
-//        }
+
         if( matches.size() >= ransac_sample_size_ )
             minDis = matches[0].distance;
 
@@ -1185,15 +1238,19 @@ void Tracking::computeCorrespondenceInliersAndError( const std::vector<cv::DMatc
     }
 }
 
-double Tracking::computeEuclidianDistance( const std::vector<PlaneType>& last_planes,
-                                                 const std::vector<PlaneType>& planes,
-                                                 const std::vector<PlanePair>& pairs,
-                                                 RESULT_OF_MOTION &relative )
+void Tracking::computePairInliersAndError( const Eigen::Matrix4d &transform,
+                                           const std::vector<PlanePair>& pairs,
+                                           const std::vector<PlaneType>& last_planes,
+                                           const std::vector<PlaneType>& planes,
+                                           std::vector<PlanePair> &inlier,
+                                           double &return_mean_error,
+                                           const double max_direction_error,
+                                           const double max_distance_error )
 {
-    double rmse = 0;
-    Eigen::Matrix4d transform = relative.transform4d();
-    double direction_squared = 0;
-    double distance_squared = 0;
+    inlier.clear();
+
+    double direction_squared_sum = 0;
+    double distance_squared_sum = 0;
     for( int i = 0; i < pairs.size(); i++)
     {
         const PlaneType &plane = planes[ pairs[i].iobs ];
@@ -1208,17 +1265,21 @@ double Tracking::computeEuclidianDistance( const std::vector<PlaneType>& last_pl
 //             << RESET << endl;
         double direction, distance;
         ITree::euclidianDistance( plane, transformed_plane, direction, distance );
-//        deviation = direction + distance;
-        direction_squared += direction * direction;
-        distance_squared += distance * distance;
+
+        // check inlier
+        if( (direction < max_direction_error) && (distance < max_distance_error) )
+        {
+            inlier.push_back( pairs[i] );
+            direction_squared_sum += direction * direction;
+            distance_squared_sum += distance * distance;
+        }
     }
 
-    rmse = sqrt( direction_squared / pairs.size() ) + sqrt( distance_squared / pairs.size() );
-    return rmse;
+    return_mean_error = sqrt( direction_squared_sum / inlier.size() )
+            + sqrt( distance_squared_sum / inlier.size() );
 }
 
-
-std::vector<PlanePair> Tracking::randomChoosePlanePairsPreferGood( std::vector< std::vector<PlanePair> > &sample_pairs )
+std::vector<PlanePair> Tracking::randomChoosePlanePairsPreferGood( const std::vector< std::vector<PlanePair> > &sample_pairs )
 {
     if( sample_pairs.size() > 0 )
     {
@@ -1232,7 +1293,7 @@ std::vector<PlanePair> Tracking::randomChoosePlanePairsPreferGood( std::vector< 
         return std::vector<PlanePair>();
 }
 
-std::vector<PlanePair> Tracking::randomChoosePlanePairs( std::vector< std::vector<PlanePair> > &sample_pairs )
+std::vector<PlanePair> Tracking::randomChoosePlanePairs( const std::vector< std::vector<PlanePair> > &sample_pairs )
 {
     if( sample_pairs.size() > 0 )
     {
@@ -1244,7 +1305,7 @@ std::vector<PlanePair> Tracking::randomChoosePlanePairs( std::vector< std::vecto
 }
 
 std::vector<cv::DMatch> Tracking::randomChooseMatchesPreferGood( const unsigned int sample_size,
-                                         vector< cv::DMatch > &matches_with_depth )
+                                                                const vector< cv::DMatch > &matches_with_depth )
 {
     std::set<std::vector<cv::DMatch>::size_type> sampled_ids;
     int safety_net = 0;
@@ -1271,7 +1332,7 @@ std::vector<cv::DMatch> Tracking::randomChooseMatchesPreferGood( const unsigned 
 }
 
 std::vector<cv::DMatch> Tracking::randomChooseMatches( const unsigned int sample_size,
-                                         vector< cv::DMatch > &matches )
+                                                    const vector< cv::DMatch > &matches )
 {
     std::set<std::vector<cv::DMatch>::size_type> sampled_ids;
     int safety_net = 0;
