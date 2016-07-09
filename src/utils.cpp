@@ -513,7 +513,7 @@ tf::Transform pose3ToTF( const gtsam::Pose3 &pose )
     return trans;
 }
 
-geometry_msgs::PoseStamped pose3ToGeometryPose( const gtsam::Pose3 pose3 )
+geometry_msgs::PoseStamped pose3ToGeometryPose( const gtsam::Pose3 &pose3 )
 {
     geometry_msgs::PoseStamped pose;
     pose.pose.position.x = pose3.translation()[0];
@@ -538,6 +538,13 @@ geometry_msgs::PoseStamped tfToGeometryPose( const tf::Transform &trans )
     return pose;
 }
 
+tf::Transform geometryPoseToTf( const geometry_msgs::PoseStamped &pose)
+{
+    tf::Quaternion quater;
+    tf::quaternionMsgToTF( pose.pose.orientation, quater );
+    return tf::Transform( quater, tf::Vector3( pose.pose.position.x, pose.pose.position.y, pose.pose.position.z ) );
+}
+
 geometry_msgs::PoseStamped motionToGeometryPose( const RESULT_OF_MOTION &motion )
 {
     geometry_msgs::PoseStamped pose;
@@ -550,6 +557,15 @@ geometry_msgs::PoseStamped motionToGeometryPose( const RESULT_OF_MOTION &motion 
     tf::quaternionTFToMsg( trans.getRotation(), pose.pose.orientation );
 
     return pose;
+}
+
+tf::Transform motionToTf( const RESULT_OF_MOTION &motion )
+{
+    tf::Transform trans;
+    trans.setOrigin( tf::Vector3( motion.translation.x(), motion.translation.y(), motion.translation.z() ) );
+    trans.setBasis( matrixEigen2TF(motion.rotation) );
+
+    return trans;
 }
 
 static inline int hamming_distance_orb32x8_popcountll(const uint64_t* v1, const uint64_t* v2) {

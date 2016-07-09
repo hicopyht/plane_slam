@@ -19,7 +19,8 @@ class Tracking
 public:
     Tracking(ros::NodeHandle &nh);
 
-    bool track( const Frame &source, const Frame &target, RESULT_OF_MOTION &motion );
+    bool track( const Frame &source, const Frame &target, RESULT_OF_MOTION &motion,
+                const Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4) );
 
 public:
     bool solveRelativeTransformPlanes( const Frame &source,
@@ -28,10 +29,10 @@ public:
                                        RESULT_OF_MOTION &result,
                                        std::vector<PlanePair> &return_inlier );
 
-    bool solveRelativeTransformPlanesPointsRansac( Frame &last_frame,
-                                                   Frame &current_frame,
-                                                   std::vector<PlanePair> &pairs,
-                                                   std::vector<cv::DMatch> &good_matches,
+    bool solveRelativeTransformPlanesPointsRansac( const Frame &source,
+                                                   const Frame &target,
+                                                   const std::vector<PlanePair> &pairs,
+                                                   const std::vector<cv::DMatch> &good_matches,
                                                    RESULT_OF_MOTION &result,
                                                    std::vector<cv::DMatch> &matches );
 
@@ -41,21 +42,23 @@ public:
                                              RESULT_OF_MOTION &result,
                                              std::vector<cv::DMatch> &matches );
 
-    bool solveRelativeTransformIcp( Frame &last_frame,
-                                    Frame &current_frame,
+    bool solveRelativeTransformIcp( const Frame &source,
+                                    const Frame &target,
                                     RESULT_OF_MOTION &result);
 
-    bool solveRelativeTransformPnP( Frame& last_frame,
-                                    Frame& current_frame,
-                                    std::vector<cv::DMatch> &good_matches,
-                                    PlaneFromLineSegment::CAMERA_PARAMETERS& camera,
+    bool solveRelativeTransformPnP( const Frame& source,
+                                    const Frame& target,
+                                    const std::vector<cv::DMatch> &good_matches,
+                                    const CameraParameters& camera,
                                     RESULT_OF_MOTION &result );
 
-    bool solveRelativeTransform( Frame &last_frame,
-                                 Frame &current_frame,
+    bool solveRelativeTransform( const Frame &source,
+                                 const Frame &target,
+                                 const std::vector<PlanePair> &pairs,
+                                 const std::vector<cv::DMatch> &good_matches,
                                  RESULT_OF_MOTION &result,
-                                 std::vector<cv::DMatch> &matches,
-                                 Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4));
+                                 std::vector<PlanePair> &pl_inlier,
+                                 std::vector<cv::DMatch> &kp_inlier );
 
 private:
     bool solveRtIcp( const PointCloudXYZPtr &source,
@@ -86,12 +89,12 @@ private:
                         const std::vector<PlaneCoefficients> &after,
                             RESULT_OF_MOTION &result);
 
-    Eigen::Matrix4f solveRtPlanesPoints( std::vector<PlaneType> &last_planes,
-                                         std::vector<PlaneType> &planes,
-                                         std::vector<PlanePair> &pairs,
-                                         std_vector_of_eigen_vector4f &last_feature_3d,
-                                         std_vector_of_eigen_vector4f &feature_3d,
-                                         std::vector<cv::DMatch> &matches,
+    Eigen::Matrix4f solveRtPlanesPoints( const std::vector<PlaneType> &last_planes,
+                                         const std::vector<PlaneType> &planes,
+                                         const std::vector<PlanePair> &pairs,
+                                         const std_vector_of_eigen_vector4f &last_feature_3d,
+                                         const std_vector_of_eigen_vector4f &feature_3d,
+                                         const std::vector<cv::DMatch> &matches,
                                          bool &valid );
 
     inline bool validRelativeTransform( const RESULT_OF_MOTION &motion )
@@ -113,11 +116,11 @@ private:
     }
 
 
-    void matchImageFeatures( Frame& last_frame,
-                             Frame& current_frame,
-                             vector< cv::DMatch > &goodMatches,
-                             double good_match_threshold,
-                             int min_match_size);
+    void matchImageFeatures( const Frame& source,
+                             const Frame& target,
+                             vector< cv::DMatch > &good_matches,
+                             double good_match_threshold = 4.0,
+                             int min_match_size = 0);
 
     void computeCorrespondenceInliersAndError( const std::vector<cv::DMatch> & matches,
                                                const Eigen::Matrix4f& transform4f,

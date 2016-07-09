@@ -89,19 +89,24 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
     tf::Transform odom_pose;
     if( !getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
     {
-        odom_pose.setIdentity();
-    }
+        // Relative transform
+        tf::Transform rel_tf = last_odom_pose.inverse() * odom_pose;
+        gtsam::Pose3 real_r_pose = tfToPose3( rel_tf );
+        cout << CYAN << " true motion: " << endl;
+        cout << "  - R(rpy): " << real_r_pose.rotation().roll()
+             << ", " << real_r_pose.rotation().pitch()
+             << ", " << real_r_pose.rotation().yaw() << endl;
+        cout << "  - T:      " << real_r_pose.translation().x()
+             << ", " << real_r_pose.translation().y()
+             << ", " << real_r_pose.translation().z() << RESET << endl;
 
-    // Relative transform
-    tf::Transform rel_tf = last_odom_pose.inverse() * odom_pose;
-    gtsam::Pose3 real_r_pose = tfToPose3( rel_tf );
-    cout << CYAN << " true motion: " << endl;
-    cout << "  - R(rpy): " << real_r_pose.rotation().roll()
-         << ", " << real_r_pose.rotation().pitch()
-         << ", " << real_r_pose.rotation().yaw() << endl;
-    cout << "  - T:      " << real_r_pose.translation().x()
-         << ", " << real_r_pose.translation().y()
-         << ", " << real_r_pose.translation().z() << RESET << endl;
+        // Publish true path
+        true_poses_.push_back( tfToGeometryPose(odom_pose) );
+        publishTruePath();
+
+        // store pose
+        last_odom_pose = odom_pose;
+    }
 
     // Get camera parameter
     CameraParameters camera;
@@ -109,7 +114,6 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
 
     trackDepthRgbImage( visual_img_msg, depth_img_msg, camera );
 
-    last_odom_pose = odom_pose;
 }
 
 void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img_msg,
@@ -126,8 +130,9 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
 {
     static Frame *last_frame;
     static int skip = 0;
+    static tf::Transform last_tf;
 
-    printf("no cloud msg: %d\n", depth_img_msg->header.seq);
+    cout << BOLDMAGENTA << "no cloud msg: " << depth_img_msg->header.seq << RESET << endl;
 
     skip = (skip + 1) % skip_message_;
     if( skip )
@@ -142,18 +147,22 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     cv::Mat visual_image = cv_bridge::toCvCopy(visual_img_msg)->image; // to cv image
     cv::Mat depth_image = cv_bridge::toCvCopy(depth_img_msg)->image; // to cv image
 
-    ros::Time start_time = ros::Time::now();
+    const ros::Time start_time = ros::Time::now();
+    ros::Time step_time = start_time;
+    double frame_dura, track_dura, display_dura;
+    double total_dura;
+
     // Frame
     Frame *frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_);
     //
-    float dura = (ros::Time::now() - start_time).toSec() * 1000.0f;
-    cout << GREEN << "Frame time = " << dura << RESET << endl;
+    frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
 
     // Tracking
-    start_time = ros::Time::now();
+    RESULT_OF_MOTION motion;
+    motion.valid = false;
     if( last_frame )
     {
-        RESULT_OF_MOTION motion;
         tracker_->track( *last_frame, *frame, motion );
 
         // print motion
@@ -173,18 +182,52 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
             cout << RED << "failed to estimated motion." << RESET << endl;
         }
     }
-    //
-    dura = (ros::Time::now() - start_time).toSec() * 1000.0f;
-    cout << GREEN << "Tracking time = " << dura << RESET << endl;
 
-    start_time = ros::Time::now();
+    //
+    track_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
+    // Publish visual odometry path
+    if( !last_frame )
+    {
+        if( true_poses_.size() > 0)
+        {
+            odometry_poses_.clear();
+            odometry_poses_.push_back( true_poses_[true_poses_.size()-1]);
+            last_tf = geometryPoseToTf( odometry_poses_[0] );
+        }
+    }
+    else if( motion.valid )
+    {
+        tf::Transform rel_tf = motionToTf( motion );
+        rel_tf.setOrigin( tf::Vector3( motion.translation[0], motion.translation[1], motion.translation[2]) );
+        tf::Transform new_tf = last_tf * rel_tf;
+        odometry_poses_.push_back( tfToGeometryPose(new_tf) );
+        publishOdometryPath();
+        last_tf = new_tf;
+    }
+    else
+    {
+        return;
+    }
+
     // Display frame
     viewer_->removeAll();
     viewer_->displayFrame( *frame, viewer_->vp1() );
     viewer_->spinOnce();
     //
-    dura = (ros::Time::now() - start_time).toSec() * 1000.0f;
-    cout << GREEN << "Display time = " << dura << RESET << endl;
+    display_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
+    //
+    total_dura = (start_time - step_time).toSec() * 1000.0f;
+    // Print time
+    cout << GREEN << "Processing total time: " << total_dura << endl;
+    cout << "Time:"
+         << " frame: " << frame_dura
+         << ", tracking: " << track_dura
+         << ", display: " << display_dura
+         << RESET << endl;
 
     last_frame = frame;
 }

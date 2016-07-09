@@ -7,68 +7,59 @@ Tracking::Tracking( ros::NodeHandle &nh )
     : nh_(nh),
       tracking_config_server_( ros::NodeHandle(nh_, "Tracking") )
 {
+    tracking_config_callback_ = boost::bind(&Tracking::trackingReconfigCallback, this, _1, _2);
+    tracking_config_server_.setCallback(tracking_config_callback_);
 }
 
-bool Tracking::track(const Frame &source, const Frame &target, RESULT_OF_MOTION &motion)
+bool Tracking::track(const Frame &source, const Frame &target,
+                     RESULT_OF_MOTION &motion, const Eigen::Matrix4d estimated_transform)
 {
-    motion.valid = false;
-    motion.rmse = 1e9;
-    motion.inlier = 0;
-
-    const std::vector<PlaneType> &planes = target.segment_planes_;
-    const std::vector<PlaneType> &last_planes = source.segment_planes_;
-
     ros::Time start_time = ros::Time::now();
-    double pairs_dura, planes_dura, match_f_dura, points_planes_dura,
-            points_dura, icp_dura, pnp_dura;
+    double pairs_dura, match_f_dura, m_e_dura;
 
     // Find plane correspondences
+    const std::vector<PlaneType> &planes = target.segment_planes_;
+    const std::vector<PlaneType> &last_planes = source.segment_planes_;
     std::vector<PlanePair> pairs;
-    Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4);
     if( planes.size() > 0 && last_planes.size() > 0 )
     {
-        ITree::euclidianPlaneCorrespondences( planes, last_planes, pairs, estimated_transform );
+        ITree::euclidianPlaneCorrespondences( planes, last_planes, pairs, estimated_transform);
         std::sort( pairs.begin(), pairs.end() );
     }
     const int pairs_num = pairs.size();
-
+    cout << GREEN << "Plane pairs = " << pairs_num << RESET << endl;
+    //
     pairs_dura = (ros::Time::now() - start_time).toSec() * 1000;
     start_time = ros::Time::now();
 
-    cout << GREEN << "Plane pairs = " << pairs_num << RESET << endl;
-
-    /// case 1: Estimate motion using plane correspondences
-    RESULT_OF_MOTION best_transform;
-    std::vector<PlanePair> best_inlier;
-    best_transform.rmse = 1e6; // no inlier
-    best_transform.valid = false;   // no result
-    if( pairs_num >= 3 )
-    {
-        best_transform.valid = solveRelativeTransformPlanes( source, target, pairs, best_transform, best_inlier );
-        if( best_transform.valid && validRelativeTransform(best_transform) )
-        {
-            motion = best_transform;
-            return true;
-        }
-    }
-
+    // matches keypoint features
+    std::vector<cv::DMatch> good_matches;
+    matchImageFeatures( source, target, good_matches,
+                        feature_good_match_threshold_, feature_min_good_match_size_ );
     //
-    planes_dura = (ros::Time::now() - start_time).toSec() * 1000;
+    cout << GREEN << "Matches features, good_matches = " << good_matches.size() << RESET << endl;
+    //
+    match_f_dura = (ros::Time::now() - start_time).toSec() * 1000;
     start_time = ros::Time::now();
 
-    /// Print info
-    double total_time = pairs_dura + planes_dura + match_f_dura
-            + points_planes_dura + points_dura + icp_dura + pnp_dura;
-    cout << GREEN << "Transformation total time: " << total_time << endl;
+
+    // Estimate transform
+    std::vector<cv::DMatch> kp_inlier;
+    std::vector<PlanePair> pl_inlier;
+    bool valid = solveRelativeTransform( source, target, pairs, good_matches,
+                                         motion, pl_inlier, kp_inlier );
+    m_e_dura = (ros::Time::now() - start_time).toSec() * 1000;
+    start_time = ros::Time::now();
+
+    double total_time = pairs_dura + match_f_dura + m_e_dura;
+    cout << GREEN << "Tracking total time: " << total_time << endl;
     cout << "Time:"
-         << " pairs: " << pairs_dura
-         << ", planes: " << planes_dura
-         << ", match_f: "<< match_f_dura
-         << ", planes/points: " << points_planes_dura
-         << ", points: " << points_dura
-         << ", icp: " << icp_dura
-         << ", pnp: " << pnp_dura
+         << " pairing: " << pairs_dura
+         << ", kp_matching: " << match_f_dura
+         << ", motion_estimate: " << m_e_dura
          << RESET << endl;
+
+    return valid;
 
 }
 
@@ -84,6 +75,8 @@ bool Tracking::solveRelativeTransformPlanes( const Frame &source,
 
     if( planes.size() < 3 || last_planes.size() < 3 || pairs.size() < 3)
         return false;
+
+    return_inlier.clear();
 
     const unsigned int pairs_num = pairs.size();
 
@@ -165,6 +158,8 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
     int min_inlier_threshold = ransac_min_inlier_;
     if( min_inlier_threshold > 0.6*good_matches.size() )
         min_inlier_threshold = 0.6*good_matches.size();
+
+    matches.clear();
 
 //    std::sort( good_matches.begin(), good_matches.end() );
 
@@ -332,19 +327,21 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
 }
 
 
-bool Tracking::solveRelativeTransformPlanesPointsRansac( Frame &source,
-                                                         Frame &target,
-                                                         std::vector<PlanePair> &pairs,
-                                                         std::vector<cv::DMatch> &good_matches,
+bool Tracking::solveRelativeTransformPlanesPointsRansac( const Frame &source,
+                                                         const Frame &target,
+                                                         const std::vector<PlanePair> &pairs,
+                                                         const std::vector<cv::DMatch> &good_matches,
                                                          RESULT_OF_MOTION &result,
                                                          std::vector<cv::DMatch> &matches )
 {
     if( !pairs.size() )
         return false;
 
+    matches.clear();
+
     const int pairs_num = pairs.size();
-    std::vector<PlaneType> &planes = target.segment_planes_;
-    std::vector<PlaneType> &last_planes = source.segment_planes_;
+    const std::vector<PlaneType> &planes = target.segment_planes_;
+    const std::vector<PlaneType> &last_planes = source.segment_planes_;
 
     // using all plane correspondences
     std::vector< std::vector<PlanePair> > sample_plane_pairs;
@@ -455,8 +452,8 @@ bool Tracking::solveRelativeTransformPlanesPointsRansac( Frame &source,
 }
 
 
-bool Tracking::solveRelativeTransformIcp( Frame &source,
-                                          Frame &target,
+bool Tracking::solveRelativeTransformIcp( const Frame &source,
+                                          const Frame &target,
                                           RESULT_OF_MOTION &result)
 {
     PointCloudXYZPtr cloud_icp( new PointCloudXYZ );
@@ -467,10 +464,10 @@ bool Tracking::solveRelativeTransformIcp( Frame &source,
 // estimateMotion 计算两个帧之间的运动
 // 输入：帧1和帧2
 // 输出：rvec 和 tvec
-bool Tracking::solveRelativeTransformPnP( Frame& source,
-                                          Frame& target,
-                                          std::vector<cv::DMatch> &good_matches,
-                                          PlaneFromLineSegment::CAMERA_PARAMETERS& camera,
+bool Tracking::solveRelativeTransformPnP( const Frame& source,
+                                          const Frame& target,
+                                          const std::vector<cv::DMatch> &good_matches,
+                                          const CameraParameters& camera,
                                           RESULT_OF_MOTION &result)
 {
     int min_inlier_threshold = pnp_min_inlier_;
@@ -526,48 +523,34 @@ bool Tracking::solveRelativeTransformPnP( Frame& source,
 }
 
 
-bool Tracking::solveRelativeTransform( Frame &source,
-                                       Frame &target,
+bool Tracking::solveRelativeTransform( const Frame &source,
+                                       const Frame &target,
+                                       const std::vector<PlanePair> &pairs,
+                                       const std::vector<cv::DMatch> &good_matches,
                                        RESULT_OF_MOTION &result,
-                                       std::vector<cv::DMatch> &matches,
-                                       Eigen::Matrix4d estimated_transform)
+                                       std::vector<PlanePair> &pl_inlier ,
+                                       std::vector<cv::DMatch> &kp_inlier)
 {
     result.valid = false;
     result.rmse = 1e9;
     result.inlier = 0;
 
-    std::vector<PlaneType> &planes = target.segment_planes_;
-    std::vector<PlaneType> &last_planes = source.segment_planes_;
-
     ros::Time start_time = ros::Time::now();
-    double pairs_dura, planes_dura, match_f_dura, points_planes_dura,
+    double planes_dura, points_planes_dura,
             points_dura, icp_dura, pnp_dura;
-
-    // Find plane correspondences
-    std::vector<PlanePair> pairs;
-    if( planes.size() > 0 && last_planes.size() > 0 )
-    {
-        ITree::euclidianPlaneCorrespondences( planes, last_planes, pairs, estimated_transform );
-        std::sort( pairs.begin(), pairs.end() );
-    }
-    const int pairs_num = pairs.size();
-
-    pairs_dura = (ros::Time::now() - start_time).toSec() * 1000;
-    start_time = ros::Time::now();
-
-    cout << GREEN << "Plane pairs = " << pairs_num << RESET << endl;
 
     /// case 1: Estimate motion using plane correspondences
     RESULT_OF_MOTION best_transform;
     std::vector<PlanePair> best_inlier;
     best_transform.rmse = 1e6; // no inlier
     best_transform.valid = false;   // no result
-    if( pairs_num >= 3 )
+    if( pairs.size() >= 3 )
     {
         best_transform.valid = solveRelativeTransformPlanes( source, target, pairs, best_transform, best_inlier );
         if( best_transform.valid && validRelativeTransform(best_transform) )
         {
             result = best_transform;
+            pl_inlier = best_inlier;
             return true;
         }
     }
@@ -582,21 +565,10 @@ bool Tracking::solveRelativeTransform( Frame &source,
 //    printTransform( best_transform.transform4d() );
 
 //    best_transform.valid = false;   // for test
-    // matches keypoint features
-    std::vector<cv::DMatch> good_matches;
-    matchImageFeatures( source, target, good_matches,
-                        feature_good_match_threshold_, feature_min_good_match_size_ );
-
-    cout << GREEN << "Matches features, good_matches = " << good_matches.size() << RESET << endl;
-
-    //
-    match_f_dura = (ros::Time::now() - start_time).toSec() * 1000;
-    start_time = ros::Time::now();
-
     /// case 2: Estimate motion using plane and point correspondences
-    if( !best_transform.valid && pairs_num > 0 && good_matches.size() >= 3)
+    if( !best_transform.valid && pairs.size() > 0 && good_matches.size() >= 3)
     {
-        best_transform.valid = solveRelativeTransformPlanesPointsRansac( source, target, pairs, good_matches, best_transform, matches );
+        best_transform.valid = solveRelativeTransformPlanesPointsRansac( source, target, pairs, good_matches, best_transform, kp_inlier );
     }
     if( best_transform.valid && validRelativeTransform(best_transform) )
     {
@@ -616,8 +588,8 @@ bool Tracking::solveRelativeTransform( Frame &source,
     /// case 3: Estimate motion using point correspondences
     if( !best_transform.valid && good_matches.size() >= 3 )
     {
-        matches.clear();
-        best_transform.valid = solveRelativeTransformPointsRansac( source, target, good_matches, best_transform, matches );
+        kp_inlier.clear();
+        best_transform.valid = solveRelativeTransformPointsRansac( source, target, good_matches, best_transform, kp_inlier );
     }
 
     if( best_transform.valid && validRelativeTransform(best_transform) )
@@ -676,19 +648,16 @@ bool Tracking::solveRelativeTransform( Frame &source,
 //    cout << GREEN << "  - rmse: " << best_transform.rmse << RESET << endl;
 //    printTransform( best_transform.transform4d() );
 
-//    /// Print info
-//    double total_time = pairs_dura + planes_dura + match_f_dura
-//            + points_planes_dura + points_dura + icp_dura + pnp_dura;
-//    cout << GREEN << "Transformation total time: " << total_time << endl;
-//    cout << "Time:"
-//         << " pairs: " << pairs_dura
-//         << ", planes: " << planes_dura
-//         << ", match_f: "<< match_f_dura
-//         << ", planes/points: " << points_planes_dura
-//         << ", points: " << points_dura
-//         << ", icp: " << icp_dura
-//         << ", pnp: " << pnp_dura
-//         << RESET << endl;
+    /// Print info
+    double total_time = planes_dura + points_planes_dura + points_dura + icp_dura + pnp_dura;
+    cout << GREEN << "Transformation total time: " << total_time << endl;
+    cout << "Time:"
+         << " planes: " << planes_dura
+         << ", planes/points: " << points_planes_dura
+         << ", points: " << points_dura
+         << ", icp: " << icp_dura
+         << ", pnp: " << pnp_dura
+         << RESET << endl;
 
     return false;
 }
@@ -1010,13 +979,13 @@ bool Tracking::solveRtPlanes( const std::vector<PlaneCoefficients> &last_planes,
 }
 
 
-Eigen::Matrix4f Tracking::solveRtPlanesPoints( std::vector<PlaneType> &last_planes,
-                                                     std::vector<PlaneType> &planes,
-                                                     std::vector<PlanePair> &pairs,
-                                                     std_vector_of_eigen_vector4f &last_feature_3d,
-                                                     std_vector_of_eigen_vector4f &feature_3d,
-                                                     std::vector<cv::DMatch> &matches,
-                                                     bool &valid )
+Eigen::Matrix4f Tracking::solveRtPlanesPoints( const std::vector<PlaneType> &last_planes,
+                                               const std::vector<PlaneType> &planes,
+                                               const std::vector<PlanePair> &pairs,
+                                               const std_vector_of_eigen_vector4f &last_feature_3d,
+                                               const std_vector_of_eigen_vector4f &feature_3d,
+                                               const std::vector<cv::DMatch> &matches,
+                                               bool &valid )
 {
     if( !pairs.size() || ! matches.size() || (pairs.size() + matches.size()) != 3)
     {
@@ -1108,11 +1077,11 @@ Eigen::Matrix4f Tracking::solveRtPlanesPoints( std::vector<PlaneType> &last_plan
 
 
 
-void Tracking::matchImageFeatures( Frame& source,
-                                         Frame& target,
-                                         vector< cv::DMatch > &goodMatches,
-                                         double good_match_threshold,
-                                         int min_match_size)
+void Tracking::matchImageFeatures( const Frame& source,
+                                   const Frame& target,
+                                   vector< cv::DMatch > &good_matches,
+                                   double good_match_threshold,
+                                   int min_match_size)
 {
     vector< cv::DMatch > matches;
 
@@ -1127,6 +1096,8 @@ void Tracking::matchImageFeatures( Frame& source,
         cv::DMatch match(i, result_index, hd /256.0 + (float)rand()/(1000.0*RAND_MAX));
         matches.push_back(match);
     }
+
+//    cout << GREEN << "Kp matches = " << matches.size() << RESET << endl;
 
     // Sort
     std::sort( matches.begin(), matches.end() );
@@ -1143,17 +1114,14 @@ void Tracking::matchImageFeatures( Frame& source,
             if( source.feature_locations_3d_[m.queryIdx](2) != 0
                     && target.feature_locations_3d_[m.trainIdx](2) != 0)
             {
-                goodMatches.push_back( m );
+                good_matches.push_back( m );
                 add ++;
             }
         }
     }
     else
     {
-        double minDis = -1.0;
-
-        if( matches.size() >= ransac_sample_size_ )
-            minDis = matches[0].distance;
+        const double minDis = matches[0].distance;
 
         BOOST_FOREACH(const cv::DMatch& m, matches)
         {
@@ -1163,13 +1131,13 @@ void Tracking::matchImageFeatures( Frame& source,
             if( source.feature_locations_3d_[m.queryIdx](2) != 0
                     && target.feature_locations_3d_[m.trainIdx](2) != 0)
             {
-                goodMatches.push_back( m );
+                good_matches.push_back( m );
             }
         }
 
     }
 
-//    cout << "good matches: " << goodMatches.size() << endl;
+//    cout << "good matches: " << good_matches.size() << endl;
 }
 
 // from: https://github.com/felixendres/rgbdslam_v2/src/node.cpp
@@ -1376,7 +1344,7 @@ void Tracking::trackingReconfigCallback(plane_slam::TrackingConfig &config, uint
     pnp_repreject_error_ = config.pnp_repreject_error;
     //
 
-    cout << GREEN <<"Common Segment Config." << RESET << endl;
+    cout << GREEN <<"Tracking Config." << RESET << endl;
 }
 
 } // end of namespace plane_slam
