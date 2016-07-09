@@ -21,7 +21,7 @@ public:
 
     void spinOnce( int time = 1);
 
-    void displayFrame(const Frame &frame, int viewport);
+    void displayFrame(const Frame &frame, const std::string &prefix, int viewport);
 
 
     void displayMatched3DKeypoint( std_vector_of_eigen_vector4f &query,

@@ -35,8 +35,10 @@ KinectListener::KinectListener() :
     viewer_ = new Viewer(nh_);
     tracker_ = new Tracking(nh_);
 
-    true_path_publisher_ = nh_.advertise<nav_msgs::Path>("true_path", 10);
+    // Path
     odometry_path_publisher_ = nh_.advertise<nav_msgs::Path>("odometry_path", 10);
+    true_path_publisher_ = nh_.advertise<nav_msgs::Path>("true_path", 10);
+    // Pose and Map
     pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("estimate_pose", 10);
     planar_map_publisher_ = nh_.advertise<sensor_msgs::PointCloud2>("planar_map", 10);
 
@@ -87,7 +89,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
 
     // Get odom pose
     tf::Transform odom_pose;
-    if( !getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
+    if( getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
     {
         // Relative transform
         tf::Transform rel_tf = last_odom_pose.inverse() * odom_pose;
@@ -128,7 +130,8 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
                                          const sensor_msgs::ImageConstPtr &depth_img_msg,
                                          CameraParameters & camera)
 {
-    static Frame *last_frame;
+    static Frame last_frame;
+    static bool last_frame_valid = false;
     static int skip = 0;
     static tf::Transform last_tf;
 
@@ -153,7 +156,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     double total_dura;
 
     // Frame
-    Frame *frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_);
+    Frame frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_);
     //
     frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
@@ -161,9 +164,9 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     // Tracking
     RESULT_OF_MOTION motion;
     motion.valid = false;
-    if( last_frame )
+    if( last_frame_valid )
     {
-        tracker_->track( *last_frame, *frame, motion );
+        tracker_->track( last_frame, frame, motion );
 
         // print motion
         if( motion.valid )
@@ -188,13 +191,17 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     step_time = ros::Time::now();
 
     // Publish visual odometry path
-    if( !last_frame )
+    if( !last_frame_valid )
     {
         if( true_poses_.size() > 0)
         {
             odometry_poses_.clear();
             odometry_poses_.push_back( true_poses_[true_poses_.size()-1]);
             last_tf = geometryPoseToTf( odometry_poses_[0] );
+        }
+        else
+        {
+            return;
         }
     }
     else if( motion.valid )
@@ -213,7 +220,9 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
 
     // Display frame
     viewer_->removeAll();
-    viewer_->displayFrame( *frame, viewer_->vp1() );
+    if( last_frame_valid )
+        viewer_->displayFrame( last_frame, "last_frame", viewer_->vp1() );
+    viewer_->displayFrame( frame, "frame", viewer_->vp2() );
     viewer_->spinOnce();
     //
     display_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
@@ -230,6 +239,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
          << RESET << endl;
 
     last_frame = frame;
+    last_frame_valid = true;
 }
 
 void KinectListener::processFrame( Frame &frame, const tf::Transform &odom_pose )

@@ -61,29 +61,31 @@ void Viewer::spinOnce( int time )
     map_viewer_->spinOnce( time );
 }
 
-void Viewer::displayFrame(const Frame &frame, int viewport )
+void Viewer::displayFrame(const Frame &frame, const std::string &prefix, int viewport )
 {
+    pcl_viewer_->addText(prefix, 100, 3, prefix+"_text", viewport);
+
     // Input cloud
     if( display_input_cloud_ )
     {
-        pcl_viewer_->addPointCloud( frame.cloud_, "rgba_cloud", viewport );
+        pcl_viewer_->addPointCloud( frame.cloud_, prefix+"_"+"rgba_cloud", viewport );
         pcl_viewer_->setPointCloudRenderingProperties ( pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "rgba_cloud", viewport );
     }
 
-    // Keypoint on image
-    if( show_keypoint_ )
-    {
-        displayKeypoint( frame.visual_image_, frame.feature_locations_2d_ );
-    }
+//    // Keypoint on image
+//    if( show_keypoint_ )
+//    {
+//        displayKeypoint( frame.visual_image_, frame.feature_locations_2d_ );
+//    }
 
     // 3d keypoint in viewer
     if( display_feature_cloud_ )
     {
-        display3DKeypoint( frame.feature_locations_3d_, "3d_keypoint", viewport );
+        display3DKeypoint( frame.feature_locations_3d_, prefix+"_"+"3d_keypoint", viewport );
     }
 
     // planes
-    displayPlanes( frame.cloud_downsampled_, frame.segment_planes_, "planes", viewport );
+    displayPlanes( frame.cloud_downsampled_, frame.segment_planes_, prefix+"_"+"planes", viewport );
 }
 
 void Viewer::displayMatched3DKeypoint( std_vector_of_eigen_vector4f &query,

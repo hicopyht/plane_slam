@@ -3,6 +3,14 @@
 namespace plane_slam
 {
 
+Frame::Frame()
+    : camera_params_(),
+      cloud_downsampled_( new PointCloudType ),
+      feature_cloud_( new PointCloudXYZ )
+{
+
+}
+
 Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camera_params,
               ORBextractor* orb_extractor, LineBasedPlaneSegmentor* plane_segmentor)
     : camera_params_(),
