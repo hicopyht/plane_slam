@@ -68,6 +68,35 @@ protected:
 
     bool doMapping( const Frame &frame );
 
+    std::vector<OrientedPlane3> getPredictedObservation( const std::vector<OrientedPlane3> &landmarks,
+                                                         const Pose3 &pose );
+
+    void matchPlanes( const std::vector<OrientedPlane3> &predicted_observations,
+                      const std::vector<PlaneType> &landmarks,
+                      const std::vector<OrientedPlane3> &observations,
+                      const std::vector<PlaneType> &observed_planes,
+                      const Pose3 pose,
+                      std::vector<PlanePair> &pairs);
+
+    bool checkOverlap( const PointCloudTypePtr &landmark_cloud,
+                       const OrientedPlane3 &landmark,
+                       const PointCloudTypePtr &observation,
+                       const Pose3 &pose);
+
+    bool checkLandmarksOverlap( const PlaneType &lm1, const PlaneType &lm2);
+
+    void mergeLandmarkInlier( PlaneType &from, PlaneType &to);
+
+    bool refinePlanarMap();
+
+    void updateSlamResult( std::vector<Pose3> &poses, std::vector<OrientedPlane3> &planes );
+
+    void updateLandmarks( std::vector<PlaneType> &landmarks,
+                          const std::vector<PlaneType> &observations,
+                          const std::vector<PlanePair> &pairs,
+                          const Pose3 &estimated_pose,
+                          const std::vector<OrientedPlane3> &estimated_planes);
+
     void voxelGridFilter(  const PointCloudTypePtr &cloud,
                            PointCloudTypePtr &cloud_filtered,
                            float leaf_size = 0.02f);
