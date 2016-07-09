@@ -12,7 +12,6 @@ KinectListener::KinectListener() :
     nh_.setCallbackQueue(&my_callback_queue_);
 
     // reconfigure
-
     plane_slam_config_callback_ = boost::bind(&KinectListener::planeSlamReconfigCallback, this, _1, _2);
     plane_slam_config_server_.setCallback(plane_slam_config_callback_);
 
@@ -152,10 +151,10 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
 
     const ros::Time start_time = ros::Time::now();
     ros::Time step_time = start_time;
-    double frame_dura, track_dura, display_dura;
+    double frame_dura, track_dura, map_dura, display_dura;
     double total_dura;
 
-    // Frame
+    // Compute Frame
     Frame frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_);
     //
     frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
@@ -164,12 +163,12 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     // Tracking
     RESULT_OF_MOTION motion;
     motion.valid = false;
-    if( last_frame_valid )
+    if( last_frame_valid )  // Do tracking
     {
         tracker_->track( last_frame, frame, motion );
 
         // print motion
-        if( motion.valid )
+        if( motion.valid )  // success, print tracking result
         {
             gtsam::Rot3 rot3( motion.rotation );
             cout << MAGENTA << " estimated motion, rmse = " << motion.rmse << endl;
@@ -179,8 +178,12 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
             cout << "  - T:      " << motion.translation[0]
                  << ", " << motion.translation[1]
                  << ", " << motion.translation[2] << RESET << endl;
+
+            // estimated pose
+            frame.pose_ = last_frame.pose_ * motionToPose3( motion );
+            frame.valid = true;
         }
-        else
+        else    // failed
         {
             cout << RED << "failed to estimated motion." << RESET << endl;
         }
@@ -191,20 +194,34 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     step_time = ros::Time::now();
 
     // Publish visual odometry path
-    if( !last_frame_valid )
+    if( !last_frame_valid ) // First frame
     {
-        if( true_poses_.size() > 0)
+        // first frame
+        if( !true_poses_.size() )   // No true pose, set first frame pose to identity.
+        {
+            frame.pose_ = gtsam::Pose3::identity();
+            frame.valid = true;
+        }
+        else    // Valid true pose, set first frame pose to it.
+        {
+            frame.pose_ = geometryPoseToPose3( true_poses_[true_poses_.size()-1] );
+            frame.valid = true;
+        }
+
+        if( true_poses_.size() > 0) // First odometry pose to true pose.
         {
             odometry_poses_.clear();
             odometry_poses_.push_back( true_poses_[true_poses_.size()-1]);
             last_tf = geometryPoseToTf( odometry_poses_[0] );
         }
-        else
+        else    // First odometry pose to identity.
         {
-            return;
+            odometry_poses_.clear();
+            odometry_poses_.push_back( pose3ToGeometryPose( gtsam::Pose3::identity() ) );
+            last_tf = geometryPoseToTf( tfToGeometryPose( tf::Transform::getIdentity() ) );
         }
     }
-    else if( motion.valid )
+    else if( motion.valid ) // not first frame, motion is valid, calculate & publish odometry pose.
     {
         tf::Transform rel_tf = motionToTf( motion );
         rel_tf.setOrigin( tf::Vector3( motion.translation[0], motion.translation[1], motion.translation[2]) );
@@ -213,10 +230,18 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
         publishOdometryPath();
         last_tf = new_tf;
     }
-    else
+    else    // Not first frame, motion is invalid, return.
     {
         return;
     }
+
+    // Mapping
+    if( frame.valid )
+    {
+
+    }
+    map_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
 
     // Display frame
     viewer_->removeAll();
@@ -235,6 +260,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     cout << "Time:"
          << " frame: " << frame_dura
          << ", tracking: " << track_dura
+         << ", mapping: " << map_dura
          << ", display: " << display_dura
          << RESET << endl;
 
@@ -677,7 +703,6 @@ void KinectListener::processFrame( Frame &frame, const tf::Transform &odom_pose 
 //    last_odom_pose = odom_pose3; // store odom pose
 }
 
-
 void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &config, uint32_t level)
 {
     do_visual_odometry_ = config.do_visual_odometry;
@@ -687,16 +712,9 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     base_frame_ = config.base_frame;
     odom_frame_ = config.odom_frame;
     skip_message_ = config.skip_message;
-    use_keyframe_ = config.use_keyframe;
-    keyframe_linear_threshold_ = config.keyframe_linear_threshold;
-    keyframe_angular_threshold_ = config.keyframe_angular_threshold * DEG_TO_RAD;
     //
-    display_path_ = config.display_path;
-    display_odom_path_ = config.display_odom_path;
-
-    cout << GREEN <<"Common Slam Config." << RESET << endl;
+    cout << GREEN <<"PlaneSlam Config." << RESET << endl;
 }
-
 
 void KinectListener::publishPose( gtsam::Pose3 &pose)
 {

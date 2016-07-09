@@ -3,6 +3,9 @@
 
 #include "utils.h"
 
+namespace plane_slam
+{
+
 class ITree
 {
 public:
@@ -77,5 +80,7 @@ public:
 private:
 
 };
+
+} // end of namespace plane_slam
 
 #endif // ITREE_H

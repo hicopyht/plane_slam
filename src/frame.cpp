@@ -4,7 +4,8 @@ namespace plane_slam
 {
 
 Frame::Frame()
-    : camera_params_(),
+    : valid(false),
+      camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ )
 {
@@ -13,7 +14,8 @@ Frame::Frame()
 
 Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camera_params,
               ORBextractor* orb_extractor, LineBasedPlaneSegmentor* plane_segmentor)
-    : camera_params_(),
+    : valid(false),
+      camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
       orb_extractor_(orb_extractor),
@@ -36,7 +38,8 @@ Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camer
 
 Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
               ORBextractor* orb_extractor, LineBasedPlaneSegmentor* plane_segmentor)
-    : camera_params_(),
+    : valid(false),
+      camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
       orb_extractor_(orb_extractor),

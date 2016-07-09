@@ -51,6 +51,8 @@ private:
     LineBasedPlaneSegmentor *plane_segmentor_;
 
 public:
+    // Valid
+    bool valid;
     // Robot Pose
     gtsam::Pose3 pose_;
     // Sensor data

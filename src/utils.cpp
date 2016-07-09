@@ -527,6 +527,11 @@ geometry_msgs::PoseStamped pose3ToGeometryPose( const gtsam::Pose3 &pose3 )
     return pose;
 }
 
+gtsam::Pose3 geometryPoseToPose3( const geometry_msgs::PoseStamped &pose )
+{
+    return tfToPose3( geometryPoseToTf( pose ) );
+}
+
 geometry_msgs::PoseStamped tfToGeometryPose( const tf::Transform &trans )
 {
     geometry_msgs::PoseStamped pose;
@@ -566,6 +571,11 @@ tf::Transform motionToTf( const RESULT_OF_MOTION &motion )
     trans.setBasis( matrixEigen2TF(motion.rotation) );
 
     return trans;
+}
+
+gtsam::Pose3 motionToPose3( RESULT_OF_MOTION &motion)
+{
+    return gtsam::Pose3( motion.transform4d() );
 }
 
 static inline int hamming_distance_orb32x8_popcountll(const uint64_t* v1, const uint64_t* v2) {

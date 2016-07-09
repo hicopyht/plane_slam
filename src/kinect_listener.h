@@ -29,6 +29,7 @@
 #include "frame.h"
 #include "viewer.h"
 #include "tracking.h"
+#include "mapping.h"
 
 using namespace std;
 
@@ -100,7 +101,6 @@ private:
     //
     dynamic_reconfigure::Server<plane_slam::PlaneSlamConfig> plane_slam_config_server_;
     dynamic_reconfigure::Server<plane_slam::PlaneSlamConfig>::CallbackType plane_slam_config_callback_;
-
     // subscribers
     int subscriber_queue_size_;
     std::string topic_image_visual_;
@@ -136,11 +136,6 @@ private:
     string base_frame_;
     string odom_frame_;
     int skip_message_;
-    bool use_keyframe_;
-    double keyframe_linear_threshold_;
-    double keyframe_angular_threshold_;
-    bool display_path_;
-    bool display_odom_path_;
 
     //
     // Plane segment based line segment

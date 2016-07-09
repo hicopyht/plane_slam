@@ -80,6 +80,7 @@ find_package(TBB)
 ## Generate dynamic reconfigure parameters in the 'cfg' folder
 generate_dynamic_reconfigure_options(
   cfg/PlaneSlam.cfg
+  cfg/Mapping.cfg
   cfg/LineBasedSegment.cfg
   cfg/Viewer.cfg
   cfg/Tracking.cfg
@@ -121,12 +122,13 @@ include_directories(
 #Declare a C++ library
 add_library( ${PROJECT_NAME}
     src/kinect_listener.cpp
-    src/tracking.cpp
     src/viewer.cpp
+    src/mapping.cpp
+    src/tracking.cpp
+    src/frame.cpp
     src/line_based_plane_segmentor.cpp
     src/orb_extractor.cpp
     src/utils.cpp
-    src/frame.cpp
     src/itree.cpp
 )
 

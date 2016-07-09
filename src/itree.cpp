@@ -1,5 +1,8 @@
 #include "itree.h"
 
+namespace plane_slam
+{
+
 ITree::ITree()
 {
 
@@ -223,4 +226,4 @@ bool ITree::checkPointCorrespondences( const std::vector<PointT> &froms,
     return true;
 }
 
-
+} // end of namespace plane_slam
