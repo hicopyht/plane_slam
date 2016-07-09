@@ -61,13 +61,13 @@ public:
                              const sensor_msgs::ImageConstPtr &depth_img_msg,
                              CameraParameters &camera);
 
-    void processFrame( Frame &frame, const tf::Transform &odom_pose = tf::Transform::getIdentity() );
-
-    inline void setCameraParameters( const PlaneFromLineSegment::CAMERA_PARAMETERS & camera )
+    inline void setCameraParameters( const CameraParameters & camera )
     {
         camera_parameters_ = camera;
     }
 
+    void cvtCameraParameter( const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
+                             CameraParameters &camera);
 
 protected:
     void noCloudCallback (const sensor_msgs::ImageConstPtr& visual_img_msg,
@@ -80,18 +80,16 @@ protected:
 
     void planeSlamReconfigCallback( plane_slam::PlaneSlamConfig &config, uint32_t level);
 
-    void publishPose( gtsam::Pose3 &pose);
-
-    void publishPlanarMap( const std::vector<PlaneType> &landmarks);
-
-    void getCameraParameter( const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
-                             CameraParameters &camera);
-
+private:
     bool getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time &time = ros::Time(0) );
 
-    void publishOdometryPath();
+    void publishTruePose();
 
     void publishTruePath();
+
+    void publishOdometryPose();
+
+    void publishOdometryPath();
 
 private:
     ros::NodeHandle nh_;
@@ -116,10 +114,10 @@ private:
     message_filters::Synchronizer<CloudSyncPolicy>* cloud_sync_;
     message_filters::Synchronizer<NoCloudSyncPolicy>* no_cloud_sync_;
     //
+    ros::Publisher true_pose_publisher_;
     ros::Publisher true_path_publisher_;
+    ros::Publisher odometry_pose_publisher_;
     ros::Publisher odometry_path_publisher_;
-    ros::Publisher pose_publisher_;
-    ros::Publisher planar_map_publisher_;
     tf::TransformListener tf_listener_;
 
     //
@@ -127,14 +125,16 @@ private:
     LineBasedPlaneSegmentor* plane_segmentor_;
     Viewer *viewer_;
     Tracking *tracker_;
+    Mapping *mapping_;
 
-    // Plane slam
+    // Plane slam common parameters
     bool do_visual_odometry_;
     bool do_mapping_;
     bool do_slam_;
     string map_frame_;
     string base_frame_;
     string odom_frame_;
+    bool identity_init_pose_;
     int skip_message_;
 
     //

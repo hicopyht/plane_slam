@@ -23,6 +23,7 @@
 #include <gtsam/nonlinear/ISAM2.h>
 
 //
+#include <pcl_conversions/pcl_conversions.h>
 #include <pcl/filters/passthrough.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/project_inliers.h>
@@ -47,15 +48,29 @@ public:
 
     bool mapping( const Frame &frame );
 
+    void publishOptimizedPose();
+
+    void publishOptimizedPath();
+
+    void publishMapCloud();
+
     // Get optimized pose
     const gtsam::Pose3 &getOptimizedPose() { return last_estimated_pose_; }
     // Get landmarks
     const std::vector<PlaneType> &getLandmark() { return landmarks_; }
+    // Set map frame
+    inline void setMapFrame( const std::string &frame_id ) { map_frame_ = frame_id; }
+    // Query map frame
+    std::string getMapFrame() const { return map_frame_; }
 
 protected:
     bool addFirstFrame( const Frame &frame );
 
     bool doMapping( const Frame &frame );
+
+    void voxelGridFilter(  const PointCloudTypePtr &cloud,
+                           PointCloudTypePtr &cloud_filtered,
+                           float leaf_size = 0.02f);
 
     void mappingReconfigCallback( plane_slam::MappingConfig &config, uint32_t level);
 
@@ -65,7 +80,9 @@ private:
     dynamic_reconfigure::Server<plane_slam::MappingConfig> mapping_config_server_;
     dynamic_reconfigure::Server<plane_slam::MappingConfig>::CallbackType mapping_config_callback_;
     //
+    ros::Publisher optimized_pose_publisher_;
     ros::Publisher optimized_path_publisher_;
+    ros::Publisher map_cloud_publisher_;
     ros::Publisher marker_publisher_;
 
     // ISAM2
@@ -76,6 +93,7 @@ private:
     Values initial_estimate_; // initial guess
 
     //
+    std::string map_frame_;
     Pose3 last_estimated_pose_;
     std::vector<Pose3> estimated_poses_;
     std::vector<OrientedPlane3> estimated_planes_;

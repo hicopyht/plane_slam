@@ -174,9 +174,10 @@ void Viewer::display3DKeypoint( const std_vector_of_eigen_vector4f &feature_loca
 
 void Viewer::displayMapLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix )
 {
-
     if( display_landmarks_ )
     {
+        map_viewer_->addText(prefix, 300, 3, prefix+"_text");
+
         int invalid_count = 0;
         for(int i = 0; i < landmarks.size(); i++)
         {

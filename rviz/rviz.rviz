@@ -6,6 +6,8 @@ Panels:
       Expanded:
         - /Global Options1
         - /TF1/Frames1
+        - /OdometryPose1/Status1
+        - /TruePose1/Status1
       Splitter Ratio: 0.736677
     Tree Height: 463
   - Class: rviz/Selection
@@ -112,44 +114,44 @@ Visualization Manager:
       Axes Radius: 0.1
       Class: rviz/Pose
       Color: 255; 25; 0
-      Enabled: false
-      Head Length: 0.2
+      Enabled: true
+      Head Length: 0.3
       Head Radius: 0.1
-      Name: EstimatedPose
-      Shaft Length: 0.4
-      Shaft Radius: 0.04
+      Name: OdometryPose
+      Shaft Length: 1
+      Shaft Radius: 0.05
       Shape: Arrow
-      Topic: /estimate_pose
+      Topic: /odometry_pose
       Unreliable: false
-      Value: false
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 255; 0; 0
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.03
+      Name: OdometryPath
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Topic: /odometry_path
+      Unreliable: false
+      Value: true
     - Alpha: 1
       Axes Length: 1
       Axes Radius: 0.1
       Class: rviz/Pose
       Color: 255; 25; 0
-      Enabled: false
+      Enabled: true
       Head Length: 0.3
       Head Radius: 0.1
       Name: TruePose
       Shaft Length: 1
       Shaft Radius: 0.05
       Shape: Arrow
-      Topic: ""
-      Unreliable: false
-      Value: false
-    - Alpha: 1
-      Buffer Length: 1
-      Class: rviz/Path
-      Color: 0; 0; 255
-      Enabled: true
-      Line Style: Lines
-      Line Width: 0.03
-      Name: EstimatedPath
-      Offset:
-        X: 0
-        Y: 0
-        Z: 0
-      Topic: /camera_path
+      Topic: /true_pose
       Unreliable: false
       Value: true
     - Alpha: 1
@@ -165,6 +167,36 @@ Visualization Manager:
         Y: 0
         Z: 0
       Topic: /true_path
+      Unreliable: false
+      Value: true
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.1
+      Class: rviz/Pose
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0.2
+      Head Radius: 0.1
+      Name: OptimizedPose
+      Shaft Length: 0.4
+      Shaft Radius: 0.04
+      Shape: Arrow
+      Topic: /optimized_pose
+      Unreliable: false
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 0; 0; 255
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.03
+      Name: OptimizedPath
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Topic: /optimized_path
       Unreliable: false
       Value: true
     - Alpha: 1
@@ -190,9 +222,9 @@ Visualization Manager:
       Queue Size: 10
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.01
+      Size (m): 0.02
       Style: Flat Squares
-      Topic: /planar_map
+      Topic: /map_cloud
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
@@ -221,22 +253,22 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/XYOrbit
-      Distance: 3.35537
+      Distance: 6.55155
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.06
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -1.08229
-        Y: 0.454895
-        Z: 1.43051e-06
+        X: -0.183656
+        Y: 0.412463
+        Z: 4.76836e-07
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 1.0254
+      Pitch: 0.5254
       Target Frame: <Fixed Frame>
       Value: XYOrbit (rviz)
-      Yaw: 6.2586
+      Yaw: 5.44359
     Saved: ~
 Window Geometry:
   Displays:
