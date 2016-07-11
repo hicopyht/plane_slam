@@ -46,19 +46,39 @@ Viewer::Viewer( ros::NodeHandle &nh)
 
 }
 
-void Viewer::removeAll()
+void Viewer::removeFrames()
 {
-    // Clear Display
     pcl_viewer_->removeAllPointClouds();
     pcl_viewer_->removeAllShapes();
+}
+
+void Viewer::removeMap()
+{
     map_viewer_->removeAllPointClouds();
     map_viewer_->removeAllShapes();
 }
 
-void Viewer::spinOnce( int time )
+void Viewer::removeAll()
+{
+    // Clear Display
+    removeFrames();
+    removeMap();
+}
+
+void Viewer::spinFramesOnce( int time )
 {
     pcl_viewer_->spinOnce( time );
+}
+
+void Viewer::spinMapOnce( int time )
+{
     map_viewer_->spinOnce( time );
+}
+
+void Viewer::spinOnce( int time )
+{
+    spinMapOnce( time );
+    spinFramesOnce( time );
 }
 
 void Viewer::displayFrame(const Frame &frame, const std::string &prefix, int viewport )
@@ -589,7 +609,7 @@ void Viewer::viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t 
     display_landmark_boundary_ = config.display_landmark_boundary;
     display_landmark_hull_ = config.display_landmark_hull;
 
-    cout << GREEN <<"Viewer Config." << RESET << endl;
+    cout << GREEN <<" Viewer Config." << RESET << endl;
 }
 
 bool Viewer::autoSpinMapViewerCallback(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res)

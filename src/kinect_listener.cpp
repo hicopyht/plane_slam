@@ -27,7 +27,7 @@ KinectListener::KinectListener() :
     plane_segmentor_ = new LineBasedPlaneSegmentor(nh_);
     viewer_ = new Viewer(nh_);
     tracker_ = new Tracking(nh_);
-    gt_mapping_ = new GTMapping(nh_);
+    gt_mapping_ = new GTMapping(nh_, viewer_);
 
     // reconfigure
     plane_slam_config_callback_ = boost::bind(&KinectListener::planeSlamReconfigCallback, this, _1, _2);
@@ -104,6 +104,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
         // Relative transform
         tf::Transform rel_tf = last_odom_pose.inverse() * odom_pose;
         gtsam::Pose3 real_r_pose = tfToPose3( rel_tf );
+        cout << RESET << "----------------------------------------------------------------------" << endl;
         cout << CYAN << " true motion: " << endl;
         cout << "  - R(rpy): " << real_r_pose.rotation().roll()
              << ", " << real_r_pose.rotation().pitch()
@@ -146,6 +147,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     static int skip = 0;
     static tf::Transform last_tf;
 
+    cout << RESET << "----------------------------------------------------------------------" << endl;
     cout << BOLDMAGENTA << "no cloud msg: " << depth_img_msg->header.seq << RESET << endl;
 
     skip = (skip + 1) % skip_message_;
@@ -261,25 +263,21 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     map_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
 
-    // Landmark for visualization
-    std::vector<PlaneType> landmarks = gt_mapping_->getLandmark();
-    gt_mapping_->publishOptimizedPose();
-    gt_mapping_->publishOptimizedPath();
-    gt_mapping_->publishMapCloud();
+    // Map for visualization
+    gt_mapping_->updateMapViewer();
 
-    // Display frame, landmarks
-    viewer_->removeAll();
+    // Display frame
+    viewer_->removeFrames();
     if( last_frame_valid )
         viewer_->displayFrame( last_frame, "last_frame", viewer_->vp1() );
     viewer_->displayFrame( frame, "frame", viewer_->vp2() );
-    viewer_->displayMapLandmarks( landmarks, "Map" );
-    viewer_->spinOnce();
+    viewer_->spinFramesOnce();
     //
     display_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
 
     //
-    total_dura = (start_time - step_time).toSec() * 1000.0f;
+    total_dura = (step_time - start_time).toSec() * 1000.0f;
     // Print time
     cout << GREEN << "Processing total time: " << total_dura << endl;
     cout << "Time:"
@@ -292,25 +290,6 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     last_frame = frame;
     last_frame_valid = true;
 }
-
-void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &config, uint32_t level)
-{
-    do_visual_odometry_ = config.do_visual_odometry;
-    do_mapping_ = config.do_mapping;
-    do_slam_ = config.do_slam;
-    map_frame_ = config.map_frame;
-    base_frame_ = config.base_frame;
-    odom_frame_ = config.odom_frame;
-    skip_message_ = config.skip_message;
-    set_init_pose_ = config.set_init_pose_ || set_init_pose_;
-
-    // Set map frame for mapping
-    if( gt_mapping_ )
-        gt_mapping_->setMapFrame( map_frame_ );
-    //
-    cout << GREEN <<"PlaneSlam Config." << RESET << endl;
-}
-
 
 void KinectListener::cvtCameraParameter( const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
                                          CameraParameters &camera)
@@ -331,15 +310,15 @@ void KinectListener::cvtCameraParameter( const sensor_msgs::CameraInfoConstPtr &
     camera.height = cam_info_msg->height;
 
 
-//    // TUM3
-//    camera.cx = 320.1;
-//    camera.cy = 247.6;
-//    camera.fx = 535.4;
-//    camera.fy = 539.2;
-//    //
-//    camera.scale = 1.0;
-//    camera.width = 640;
-//    camera.height = 480;
+    // TUM3
+    camera.cx = 320.1;
+    camera.cy = 247.6;
+    camera.fx = 535.4;
+    camera.fy = 539.2;
+    //
+    camera.scale = 1.0;
+    camera.width = 640;
+    camera.height = 480;
 
 }
 
@@ -375,7 +354,7 @@ void KinectListener::publishTruePath()
     path.header.stamp = ros::Time::now();
     path.poses = true_poses_;
     true_path_publisher_.publish( path );
-    cout << GREEN << "Publish true path, p = " << true_poses_.size() << RESET << endl;
+    cout << GREEN << " Publish true path, p = " << true_poses_.size() << RESET << endl;
 }
 
 void KinectListener::publishOdometryPose()
@@ -393,7 +372,25 @@ void KinectListener::publishOdometryPath()
     path.header.stamp = ros::Time::now();
     path.poses = odometry_poses_;
     odometry_path_publisher_.publish( path );
-    cout << GREEN << "Publish odometry path, p = " << odometry_poses_.size() << RESET << endl;
+    cout << GREEN << " Publish odometry path, p = " << odometry_poses_.size() << RESET << endl;
+}
+
+void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &config, uint32_t level)
+{
+    do_visual_odometry_ = config.do_visual_odometry;
+    do_mapping_ = config.do_mapping;
+    do_slam_ = config.do_slam;
+    map_frame_ = config.map_frame;
+    base_frame_ = config.base_frame;
+    odom_frame_ = config.odom_frame;
+    skip_message_ = config.skip_message;
+    set_init_pose_ = config.set_init_pose_ || set_init_pose_;
+
+    // Set map frame for mapping
+    if( gt_mapping_ )
+        gt_mapping_->setMapFrame( map_frame_ );
+    //
+    cout << GREEN <<" PlaneSlam Config." << RESET << endl;
 }
 
 

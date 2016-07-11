@@ -3,8 +3,9 @@
 namespace plane_slam
 {
 
-GTMapping::GTMapping(ros::NodeHandle &nh)
+GTMapping::GTMapping(ros::NodeHandle &nh, Viewer * viewer)
     : nh_(nh)
+    , viewer_(viewer)
     , map_frame_("/world")
     , mapping_config_server_( ros::NodeHandle( nh_, "Mapping" ) )
     , isam2_parameters_()
@@ -42,29 +43,38 @@ GTMapping::GTMapping(ros::NodeHandle &nh)
 
     //
     optimize_graph_service_server_ = nh_.advertiseService("optimize_graph", &GTMapping::optimizeGraphCallback, this );
+    save_graph_service_server_ = nh_.advertiseService("save_graph", &GTMapping::saveGraphCallback, this );
+
 }
 
 
 bool GTMapping::mapping( const Frame &frame )
 {
+    bool success;
     if( !landmarks_.size() )    // first frame, add prior
     {
-        return addFirstFrame( frame );
+        success = addFirstFrame( frame );
     }
     else    // do mapping
     {
         if( use_keyframe_ )
         {
             if( isKeyFrame( frame ))
-                return doMapping( frame );
+                success = doMapping( frame );   // do mapping
             else
-                return false;
+                success = false;
         }
         else
         {
-            return doMapping( frame );
+            success = doMapping( frame );   // do mapping
         }
     }
+
+    // Map visualization
+    if( success )
+        updateMapViewer();
+
+    return success;
 }
 
 bool GTMapping::doMapping( const Frame &frame )
@@ -107,8 +117,8 @@ bool GTMapping::doMapping( const Frame &frame )
 
     // Add odometry factors
     Vector odom_sigmas(6);
-    odom_sigmas << rel_pose.translation().vector()*0.1, rel_pose.rotation().rpy() * 0.1;
-//    odom_sigmas << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1;
+//    odom_sigmas << rel_pose.translation().vector()*0.1, rel_pose.rotation().rpy() * 0.1;
+    odom_sigmas << 0.05, 0.05, 0.05, 0.05, 0.05, 0.05;
     noiseModel::Diagonal::shared_ptr odometry_noise =
             noiseModel::Diagonal::Sigmas( odom_sigmas );
 //    cout << GREEN << "odom noise dim: " << odometry_noise->dim() << RESET << endl;
@@ -153,7 +163,6 @@ bool GTMapping::doMapping( const Frame &frame )
     }
 
     // Update graph
-    cout << "update " << endl;
     isam2_->update(graph_, initial_estimate_);
     isam2_->update(); // call additionally
 
@@ -161,7 +170,6 @@ bool GTMapping::doMapping( const Frame &frame )
     updateSlamResult( estimated_poses_, estimated_planes_ );
 
     // Update pose
-    cout << pose_count_ << " get current est " << endl;
     Pose3 current_estimate = estimated_poses_[estimated_poses_.size() - 1];
 
     // Update landmarks
@@ -210,8 +218,10 @@ bool GTMapping::addFirstFrame( const Frame &frame )
     Key x0 = Symbol('x', 0);
     Vector pose_sigmas(6);
 //    pose_sigmas << init_pose.translation().vector()*0.2, init_pose.rotation().rpy() * 0.2;
-    pose_sigmas << 0.2, 0.2, 0.2, 0.2, 0.2, 0.2;
+    pose_sigmas << 0.01, 0.01, 0.01, 0.01, 0.01, 0.01;
     noiseModel::Diagonal::shared_ptr poseNoise = noiseModel::Diagonal::Sigmas( pose_sigmas ); // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
+//    noiseModel::Diagonal::shared_ptr poseNoise = //
+//        noiseModel::Diagonal::Variances((Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
     graph_.push_back( PriorFactor<Pose3>( x0, init_pose, poseNoise ) );
 
     // Add an initial guess for the current pose
@@ -220,12 +230,12 @@ bool GTMapping::addFirstFrame( const Frame &frame )
     estimated_poses_.push_back( init_pose );
     pose_count_++;
 
-//    // Add a prior landmark
-//    Key l0 = Symbol('l', 0);
-//    OrientedPlane3 lm0(planes[0].coefficients);
-//    OrientedPlane3 glm0 = lm0.transform(init_pose.inverse());
-//    noiseModel::Diagonal::shared_ptr lm_noise = noiseModel::Diagonal::Sigmas( (Vector(2) << planes[0].sigmas[0], planes[0].sigmas[1]).finished() );
-//    graph_.push_back( OrientedPlane3DirectionPrior( l0, glm0.planeCoefficients(), lm_noise) );
+    // Add a prior landmark
+    Key l0 = Symbol('l', 0);
+    OrientedPlane3 lm0(planes[0].coefficients);
+    OrientedPlane3 glm0 = lm0.transform(init_pose.inverse());
+    noiseModel::Diagonal::shared_ptr lm_noise = noiseModel::Diagonal::Sigmas( (Vector(2) << planes[0].sigmas[0], planes[0].sigmas[1]).finished() );
+    graph_.push_back( OrientedPlane3DirectionPrior( l0, glm0.planeCoefficients(), lm_noise) );
 
     landmark_max_count_ = 0;
     for(int i = 0; i < planes.size(); i++)
@@ -279,8 +289,10 @@ bool GTMapping::addFirstFrame( const Frame &frame )
 //    initial_estimate_.clear();
 //    //
 
-    cout << GREEN << "Register first frame in the map." << endl;
-    initial_estimate_.print(" - Init pose: ");
+    cout << GREEN << " Register first frame in the map." << endl;
+//    initial_estimate_.print(" - Init pose: ");
+    cout << " - Initial pose: " << endl;
+    printTransform( init_pose.matrix() );
     cout << RESET << endl;
 
     return true;
@@ -469,8 +481,8 @@ void GTMapping::mergeLandmarkInlier( PlaneType &from, PlaneType &to)
 // return true if being refined.
 bool GTMapping::refinePlanarMap()
 {
-    cout << RED << ", lm size: " << landmarks_.size()
-         << ", pl size: " << estimated_planes_.size() << endl;
+//    cout << RED << ", lm size: " << landmarks_.size()
+//         << ", pl size: " << estimated_planes_.size() << endl;
 
     // find co-planar landmark pair
     bool find_coplanar = false;
@@ -696,6 +708,7 @@ void GTMapping::optimizeGraph( int n )
         isam2_->update();
         n--;
     }
+//    isam2_->print( "Map Graph");
 }
 
 void GTMapping::publishOptimizedPose()
@@ -717,7 +730,7 @@ void GTMapping::publishOptimizedPath()
         path.poses.push_back( pose3ToGeometryPose( estimated_poses_[i] ) );
     }
     optimized_path_publisher_.publish( path );
-    cout << GREEN << "Publisher optimized path, p = " << estimated_poses_.size() << RESET << endl;
+    cout << GREEN << " Publisher optimized path, p = " << estimated_poses_.size() << RESET << endl;
 }
 
 void GTMapping::publishMapCloud()
@@ -739,6 +752,20 @@ void GTMapping::publishMapCloud()
     cloud2.is_dense = false;
 
     map_cloud_publisher_.publish( cloud2 );
+
+    cout << GREEN << " Publisher map as sensor_msgs/PointCloud2." << RESET << endl;
+}
+
+void GTMapping::updateMapViewer()
+{
+    // Pose, Path, MapCloud
+    publishOptimizedPose();
+    publishOptimizedPath();
+    publishMapCloud();
+    // Map in pcl visualization
+    viewer_->removeMap();
+    viewer_->displayMapLandmarks( landmarks_, "Map" );
+    viewer_->spinMapOnce();
 }
 
 void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, uint32_t level)
@@ -761,7 +788,7 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     //
     publish_optimized_path_ = config.publish_optimized_path;
 
-    cout << GREEN <<"Mapping Config." << RESET << endl;
+    cout << GREEN <<" Mapping Config." << RESET << endl;
 }
 
 bool GTMapping::optimizeGraphCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
@@ -769,14 +796,36 @@ bool GTMapping::optimizeGraphCallback(std_srvs::Trigger::Request &req, std_srvs:
     if( isam2_->empty() )
     {
         res.success = false;
-        res.message = "Failed, graph is empty.";
+        res.message = " Failed, graph is empty.";
     }
     else
     {
-        optimizeGraph();
+        optimizeGraph();    // graph optimizing
+        updateMapViewer();  // update map visualization
         res.success = true;
-        res.message = "Optimize graph for 10 times.";
+        res.message = " Optimize graph for 10 times, and update map viewer.";
     }
+
+    cout << GREEN << res.message << RESET << endl;
+    return true;
+}
+
+bool GTMapping::saveGraphCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
+{
+    if( isam2_->empty() )
+    {
+        res.success = false;
+        res.message = " Failed, graph is empty.";
+    }
+    else
+    {
+        std::string filename = "map_"+timeToStr()+".dot";
+        isam2_->saveGraph( filename );
+        res.success = true;
+        res.message = " Save isam2 graph: " + filename + ".";
+    }
+
+    cout << GREEN << res.message << RESET << endl;
     return true;
 }
 

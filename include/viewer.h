@@ -17,9 +17,16 @@ class Viewer
 public:
     Viewer( ros::NodeHandle &nh );
 
+    // clear
+    void removeFrames();
+    void removeMap();
     void removeAll();
 
+    // spin viewer
+    void spinFramesOnce( int time = 1);
+    void spinMapOnce( int time = 1);
     void spinOnce( int time = 1);
+
 
     void displayFrame(const Frame &frame, const std::string &prefix, int viewport);
 

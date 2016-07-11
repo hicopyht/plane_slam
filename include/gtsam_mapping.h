@@ -35,6 +35,7 @@
 //
 #include "utils.h"
 #include "frame.h"
+#include "viewer.h"
 
 using namespace std;
 using namespace gtsam;
@@ -45,7 +46,7 @@ namespace plane_slam
 class GTMapping
 {
 public:
-    GTMapping( ros::NodeHandle &nh );
+    GTMapping( ros::NodeHandle &nh, Viewer* viewer );
 
     bool mapping( const Frame &frame );
 
@@ -56,6 +57,8 @@ public:
     void publishOptimizedPath();
 
     void publishMapCloud();
+
+    void updateMapViewer();
 
     // Get optimized pose
     const gtsam::Pose3 &getOptimizedPose() { return last_estimated_pose_; }
@@ -110,10 +113,15 @@ protected:
 
     bool optimizeGraphCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
 
+    bool saveGraphCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
+
 private:
+    //
+    Viewer *viewer_;
     //
     ros::NodeHandle nh_;
     ros::ServiceServer optimize_graph_service_server_;
+    ros::ServiceServer save_graph_service_server_;
     dynamic_reconfigure::Server<plane_slam::GTMappingConfig> mapping_config_server_;
     dynamic_reconfigure::Server<plane_slam::GTMappingConfig>::CallbackType mapping_config_callback_;
     //

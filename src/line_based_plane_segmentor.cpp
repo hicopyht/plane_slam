@@ -51,9 +51,9 @@ void LineBasedPlaneSegmentor::operator()(PointCloudTypePtr &input, std::vector<P
         plane.coefficients[1] = normal.coefficients[1];
         plane.coefficients[2] = normal.coefficients[2];
         plane.coefficients[3] = normal.coefficients[3];
-        plane.sigmas[0] = 0.1;
-        plane.sigmas[1] = 0.1;
-        plane.sigmas[2] = 0.1;
+        plane.sigmas[0] = 0.05;
+        plane.sigmas[1] = 0.05;
+        plane.sigmas[2] = 0.05;
         plane.inlier = normal.inliers;
         plane.boundary_inlier = normal.boundary_inlier;
         plane.hull_inlier = normal.hull_inlier;
@@ -141,7 +141,7 @@ void LineBasedPlaneSegmentor::lineBasedSegmentReconfigCallback( plane_slam::Line
     extract_boundary_ = config.extract_boundary;
     //
 
-    cout << GREEN <<"Line Based Segment Config." << RESET << endl;
+    cout << GREEN <<" Line Based Segment Config." << RESET << endl;
 
     is_update_line_based_parameters_ = true;
 }

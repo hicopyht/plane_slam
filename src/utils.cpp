@@ -601,6 +601,18 @@ int bruteForceSearchORB(const uint64_t* v, const uint64_t* search_array, const u
     return min_distance;
 }
 
+std::string timeToStr()
+{
+    std::stringstream msg;
+    const boost::posix_time::ptime now=
+        boost::posix_time::second_clock::local_time();
+    boost::posix_time::time_facet *const f=
+        new boost::posix_time::time_facet("%Y-%m-%d-%H-%M-%S");
+    msg.imbue(std::locale(msg.getloc(),f));
+    msg << now;
+    return msg.str();
+}
+
 //// Test solveRelativeTransform()
 //    // Match features
 //    vector<cv::DMatch> good_matches;

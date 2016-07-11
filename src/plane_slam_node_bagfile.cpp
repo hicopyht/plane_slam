@@ -63,18 +63,6 @@ char readCharFromStdin() {
 
 using namespace std;
 
-std::string timeToStr()
-{
-    std::stringstream msg;
-    const boost::posix_time::ptime now=
-        boost::posix_time::second_clock::local_time();
-    boost::posix_time::time_facet *const f=
-        new boost::posix_time::time_facet("%Y-%m-%d-%H-%M-%S");
-    msg.imbue(std::locale(msg.getloc(),f));
-    msg << now;
-    return msg.str();
-}
-
 void saveBagFile( const std::string &file_name, rosbag::View &view )
 {
     cout << BLUE << "Save bagfile: " << file_name << RESET << endl;
@@ -119,18 +107,18 @@ int main(int argc, char** argv)
     bool is_paused = false;
     bool save_bagfile = false;
     if( argc >= 4 )
-        skip_time = atof(argv[3]);
+        skip_time = atof(argv[3]);  // skip time
     if( argc >= 5 )
-        duration = atof(argv[4]);
+        duration = atof(argv[4]);   // play duration
     if( argc >= 6 )
     {
         std::string bool_str = argv[5];
-        is_paused = !bool_str.compare("true");
+        is_paused = !bool_str.compare("true");  // paused mode ?
     }
     if( argc >= 7 )
     {
         std::string bool_str = argv[6];
-        save_bagfile = !bool_str.compare("true");
+        save_bagfile = !bool_str.compare("true");   // save bagfile ?
     }
 
 
@@ -152,6 +140,8 @@ int main(int argc, char** argv)
     camera.scale = fsp["camera.scale"];
     camera.width = fsp["camera.width"];
     camera.height = fsp["camera.height"];
+    std::string depth_topic = fsp["depth_topic"];
+    std::string rgb_topic = fsp["rgb_topic"];
     //
     cout << GREEN << " Load camera parameters: " << endl;
     cout << "***************************************" << endl;
@@ -172,10 +162,10 @@ int main(int argc, char** argv)
     cout << GREEN << " Open bag file: " << filename << RESET << endl;
 
     // depth image topic to load
-    std::string depth_topic = "/camera/depth_registered/image";
-    std::string rgb_topic = "/camera/rgb/image_color";
-//    std::string depth_topic = "/camera/depth/image";
-//    std::string rgb_topic = "/camera/rgb/image_color";
+    if( depth_topic.empty() )
+        depth_topic = "/camera/depth/image";
+    if( rgb_topic.empty() )
+        rgb_topic = "/camera/rgb/image_color";
     std::vector<std::string> topics;
     topics.push_back( depth_topic );
     topics.push_back( rgb_topic );
@@ -222,7 +212,16 @@ int main(int argc, char** argv)
 
 
     plane_slam::KinectListener kl;
-    kl.setCameraParameters( camera );   // set camera parameter
+    // set camera parameter
+    kl.setCameraParameters( camera );
+    // Set initial pose
+//    tf::Transform init_pose = tf::Transform::getIdentity();
+    // TUM3, rgbd near structure texture, skip = 8.0s, msg = 10600
+    // -T(xyz) = -1.29492, 1.24776, 0.902971
+    // -R(rpy): -2.07778, -0.0293992, 1.99638
+    tf::Transform init_pose( tf::createQuaternionFromRPY(-2.07778, -0.0293992, 1.99638),
+                             tf::Vector3(-1.29492, 1.24776, 0.902971) );
+    kl.setInitPose( init_pose );
 
     // Setup terminal
     setupTerminal();

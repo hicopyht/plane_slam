@@ -291,6 +291,8 @@ gtsam::Pose3 motionToPose3( RESULT_OF_MOTION &motion);
 int bruteForceSearchORB(const uint64_t* v, const uint64_t* search_array, const unsigned int& size, int& result_index);
 
 
+std::string timeToStr();
+
 //the following are UBUNTU/LINUX ONLY terminal color
 #define RESET "\033[0m"
 #define BLACK "\033[30m" /* Black */
