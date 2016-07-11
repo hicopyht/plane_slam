@@ -594,11 +594,11 @@ void Viewer::viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t 
 
 bool Viewer::autoSpinMapViewerCallback(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res)
 {
+    bool added = false;
     auto_spin_map_viewer_ = true;
     ROS_INFO("Auto spin map viewer for 30 seconds.");
     double dura = 30.0;
     int sec = 0;
-    bool added = false;
     ros::Time time = ros::Time::now();
     ros::Time finish_time = time + ros::Duration(dura);
     ros::Rate loop_rate( 40 );

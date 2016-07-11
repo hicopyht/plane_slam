@@ -8,6 +8,7 @@
 #include <visualization_msgs/MarkerArray.h>
 #include <dynamic_reconfigure/server.h>
 #include <plane_slam/GTMappingConfig.h>
+#include <std_srvs/Trigger.h>
 //
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/geometry/OrientedPlane3.h>
@@ -47,6 +48,8 @@ public:
     GTMapping( ros::NodeHandle &nh );
 
     bool mapping( const Frame &frame );
+
+    void optimizeGraph( int n = 10 );
 
     void publishOptimizedPose();
 
@@ -105,9 +108,12 @@ protected:
 
     void gtMappingReconfigCallback( plane_slam::GTMappingConfig &config, uint32_t level);
 
+    bool optimizeGraphCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
+
 private:
     //
     ros::NodeHandle nh_;
+    ros::ServiceServer optimize_graph_service_server_;
     dynamic_reconfigure::Server<plane_slam::GTMappingConfig> mapping_config_server_;
     dynamic_reconfigure::Server<plane_slam::GTMappingConfig>::CallbackType mapping_config_callback_;
     //

@@ -12,6 +12,9 @@ GTMapping::GTMapping(ros::NodeHandle &nh)
     , initial_estimate_()
     , pose_count_( 0 )
     , landmark_max_count_( 0 )
+    , use_keyframe_( true )
+    , keyframe_linear_threshold_( 0.05f )
+    , keyframe_angular_threshold_( 5.0f )
     , plane_match_direction_threshold_( 10.0*DEG_TO_RAD )   // 10 degree
     , plane_match_distance_threshold_( 0.1 )    // 0.1meter
     , plane_match_check_overlap_( true )
@@ -36,6 +39,9 @@ GTMapping::GTMapping(ros::NodeHandle &nh)
     optimized_path_publisher_ = nh_.advertise<nav_msgs::Path>("optimized_path", 10);
     map_cloud_publisher_ = nh_.advertise<sensor_msgs::PointCloud2>("map_cloud", 10);
     marker_publisher_ = nh_.advertise<visualization_msgs::Marker>("visualization_marker", 10);
+
+    //
+    optimize_graph_service_server_ = nh_.advertiseService("optimize_graph", &GTMapping::optimizeGraphCallback, this );
 }
 
 
@@ -179,7 +185,6 @@ bool GTMapping::doMapping( const Frame &frame )
         }
     }
 
-
     last_estimated_pose_ = current_estimate;
     return true;
 }
@@ -215,12 +220,12 @@ bool GTMapping::addFirstFrame( const Frame &frame )
     estimated_poses_.push_back( init_pose );
     pose_count_++;
 
-    // Add a prior landmark
-    Key l0 = Symbol('l', 0);
-    OrientedPlane3 lm0(planes[0].coefficients);
-    OrientedPlane3 glm0 = lm0.transform(init_pose.inverse());
-    noiseModel::Diagonal::shared_ptr lm_noise = noiseModel::Diagonal::Sigmas( (Vector(2) << planes[0].sigmas[0], planes[0].sigmas[1]).finished() );
-    graph_.push_back( OrientedPlane3DirectionPrior( l0, glm0.planeCoefficients(), lm_noise) );
+//    // Add a prior landmark
+//    Key l0 = Symbol('l', 0);
+//    OrientedPlane3 lm0(planes[0].coefficients);
+//    OrientedPlane3 glm0 = lm0.transform(init_pose.inverse());
+//    noiseModel::Diagonal::shared_ptr lm_noise = noiseModel::Diagonal::Sigmas( (Vector(2) << planes[0].sigmas[0], planes[0].sigmas[1]).finished() );
+//    graph_.push_back( OrientedPlane3DirectionPrior( l0, glm0.planeCoefficients(), lm_noise) );
 
     landmark_max_count_ = 0;
     for(int i = 0; i < planes.size(); i++)
@@ -684,6 +689,15 @@ void GTMapping::voxelGridFilter( const PointCloudTypePtr &cloud,
     sor.filter ( *cloud_filtered );
 }
 
+void GTMapping::optimizeGraph( int n )
+{
+    while( n > 0 )
+    {
+        isam2_->update();
+        n--;
+    }
+}
+
 void GTMapping::publishOptimizedPose()
 {
     geometry_msgs::PoseStamped msg = pose3ToGeometryPose( last_estimated_pose_ );
@@ -748,6 +762,22 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     publish_optimized_path_ = config.publish_optimized_path;
 
     cout << GREEN <<"Mapping Config." << RESET << endl;
+}
+
+bool GTMapping::optimizeGraphCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
+{
+    if( isam2_->empty() )
+    {
+        res.success = false;
+        res.message = "Failed, graph is empty.";
+    }
+    else
+    {
+        optimizeGraph();
+        res.success = true;
+        res.message = "Optimize graph for 10 times.";
+    }
+    return true;
 }
 
 } // end of namespace plane_slam

@@ -8,9 +8,19 @@ KinectListener::KinectListener() :
   , plane_slam_config_server_( ros::NodeHandle( "PlaneSlam" ) )
   , tf_listener_( nh_, ros::Duration(10.0) )
   , camera_parameters_()
-  , identity_init_pose_(false)
+  , set_init_pose_( false )
 {
     nh_.setCallbackQueue(&my_callback_queue_);
+
+    // Set initial pose
+    double x, y, z, roll, pitch, yaw;
+    private_nh_.param<double>("init_pose_x", x, 0);
+    private_nh_.param<double>("init_pose_y", y, 0);
+    private_nh_.param<double>("init_pose_z", z, 0);
+    private_nh_.param<double>("init_pose_roll", roll, 0);
+    private_nh_.param<double>("init_pose_pitch", pitch, 0);
+    private_nh_.param<double>("init_pose_yaw", yaw, 0);
+    init_pose_ = tf::Transform( tf::createQuaternionFromRPY(roll, pitch, yaw), tf::Vector3(x, y, z) );
 
     //
     orb_extractor_ = new ORBextractor( 1000, 1.2, 8, 20, 7);
@@ -201,7 +211,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
         // first frame
         if( !true_poses_.size() )   // No true pose, set first frame pose to identity.
         {
-            frame.pose_ = gtsam::Pose3::identity();
+            frame.pose_ = tfToPose3( init_pose_ );
             frame.valid = true;
         }
         else    // Valid true pose, set first frame pose to it.
@@ -216,11 +226,11 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
             odometry_poses_.push_back( true_poses_[true_poses_.size()-1]);
             last_tf = geometryPoseToTf( odometry_poses_[0] );
         }
-        else if( identity_init_pose_ )    // First odometry pose to identity.
+        else if( set_init_pose_ )    // First odometry pose to identity.
         {
             odometry_poses_.clear();
-            odometry_poses_.push_back( pose3ToGeometryPose( gtsam::Pose3::identity() ) );
-            last_tf = geometryPoseToTf( tfToGeometryPose( tf::Transform::getIdentity() ) );
+            odometry_poses_.push_back( tfToGeometryPose( init_pose_ ) );
+            last_tf = geometryPoseToTf( odometry_poses_[0] );
         }
         else
         {
@@ -245,7 +255,8 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     // Mapping
     if( frame.valid )
     {
-        gt_mapping_->mapping( frame );
+        if( gt_mapping_->mapping( frame ) )
+            frame.pose_ = gt_mapping_->getOptimizedPose();  // optimized pose
     }
     map_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
@@ -291,7 +302,7 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     base_frame_ = config.base_frame;
     odom_frame_ = config.odom_frame;
     skip_message_ = config.skip_message;
-    identity_init_pose_ = config.identity_init_pose;
+    set_init_pose_ = config.set_init_pose_ || set_init_pose_;
 
     // Set map frame for mapping
     if( gt_mapping_ )

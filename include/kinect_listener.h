@@ -69,6 +69,8 @@ public:
     void cvtCameraParameter( const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
                              CameraParameters &camera);
 
+    inline void setInitPose( tf::Transform & init_tf ) { init_pose_ = init_tf; set_init_pose_ = true; }
+
 protected:
     void noCloudCallback (const sensor_msgs::ImageConstPtr& visual_img_msg,
                          const sensor_msgs::ImageConstPtr& depth_img_msg,
@@ -134,8 +136,9 @@ private:
     string map_frame_;
     string base_frame_;
     string odom_frame_;
-    bool identity_init_pose_;
+    bool set_init_pose_;
     int skip_message_;
+    tf::Transform init_pose_;
 
     //
     // Plane segment based line segment
