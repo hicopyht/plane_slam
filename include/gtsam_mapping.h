@@ -1,5 +1,5 @@
-#ifndef MAPPING_H
-#define MAPPING_H
+#ifndef GTSAM_MAPPING_H
+#define GTSAM_MAPPING_H
 
 #include <ros/ros.h>
 #include <tf/transform_listener.h>
@@ -7,7 +7,7 @@
 #include <nav_msgs/Path.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <dynamic_reconfigure/server.h>
-#include <plane_slam/MappingConfig.h>
+#include <plane_slam/GTMappingConfig.h>
 //
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/geometry/OrientedPlane3.h>
@@ -41,10 +41,10 @@ using namespace gtsam;
 namespace plane_slam
 {
 
-class Mapping
+class GTMapping
 {
 public:
-    Mapping( ros::NodeHandle &nh );
+    GTMapping( ros::NodeHandle &nh );
 
     bool mapping( const Frame &frame );
 
@@ -67,6 +67,8 @@ protected:
     bool addFirstFrame( const Frame &frame );
 
     bool doMapping( const Frame &frame );
+
+    bool isKeyFrame( const Frame &frame );
 
     std::vector<OrientedPlane3> getPredictedObservation( const std::vector<OrientedPlane3> &landmarks,
                                                          const Pose3 &pose );
@@ -101,13 +103,13 @@ protected:
                            PointCloudTypePtr &cloud_filtered,
                            float leaf_size = 0.02f);
 
-    void mappingReconfigCallback( plane_slam::MappingConfig &config, uint32_t level);
+    void gtMappingReconfigCallback( plane_slam::GTMappingConfig &config, uint32_t level);
 
 private:
     //
     ros::NodeHandle nh_;
-    dynamic_reconfigure::Server<plane_slam::MappingConfig> mapping_config_server_;
-    dynamic_reconfigure::Server<plane_slam::MappingConfig>::CallbackType mapping_config_callback_;
+    dynamic_reconfigure::Server<plane_slam::GTMappingConfig> mapping_config_server_;
+    dynamic_reconfigure::Server<plane_slam::GTMappingConfig>::CallbackType mapping_config_callback_;
     //
     ros::Publisher optimized_pose_publisher_;
     ros::Publisher optimized_path_publisher_;

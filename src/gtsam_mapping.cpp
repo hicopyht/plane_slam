@@ -1,9 +1,9 @@
-#include "mapping.h"
+#include "gtsam_mapping.h"
 
 namespace plane_slam
 {
 
-Mapping::Mapping(ros::NodeHandle &nh)
+GTMapping::GTMapping(ros::NodeHandle &nh)
     : nh_(nh)
     , map_frame_("/world")
     , mapping_config_server_( ros::NodeHandle( nh_, "Mapping" ) )
@@ -21,7 +21,7 @@ Mapping::Mapping(ros::NodeHandle &nh)
     , rng_(12345)
 {
     // reconfigure
-    mapping_config_callback_ = boost::bind(&Mapping::mappingReconfigCallback, this, _1, _2);
+    mapping_config_callback_ = boost::bind(&GTMapping::gtMappingReconfigCallback, this, _1, _2);
     mapping_config_server_.setCallback(mapping_config_callback_);
 
     // ISAM2
@@ -39,19 +39,29 @@ Mapping::Mapping(ros::NodeHandle &nh)
 }
 
 
-bool Mapping::mapping( const Frame &frame )
+bool GTMapping::mapping( const Frame &frame )
 {
     if( !landmarks_.size() )    // first frame, add prior
     {
         return addFirstFrame( frame );
     }
-    else    // do mappint
+    else    // do mapping
     {
-        return doMapping( frame );
+        if( use_keyframe_ )
+        {
+            if( isKeyFrame( frame ))
+                return doMapping( frame );
+            else
+                return false;
+        }
+        else
+        {
+            return doMapping( frame );
+        }
     }
 }
 
-bool Mapping::doMapping( const Frame &frame )
+bool GTMapping::doMapping( const Frame &frame )
 {
     if( !landmarks_.size() )
     {
@@ -174,7 +184,7 @@ bool Mapping::doMapping( const Frame &frame )
     return true;
 }
 
-bool Mapping::addFirstFrame( const Frame &frame )
+bool GTMapping::addFirstFrame( const Frame &frame )
 {
     if( frame.segment_planes_.size() == 0 )
         return false;
@@ -256,13 +266,13 @@ bool Mapping::addFirstFrame( const Frame &frame )
     }
 
     // Optimize factor graph
-    isam2_->update( graph_, initial_estimate_ );
+//    isam2_->update( graph_, initial_estimate_ );
     last_estimated_pose_ = init_pose;
 
-    // Clear the factor graph and values for the next iteration
-    graph_.resize(0);
-    initial_estimate_.clear();
-    //
+//    // Clear the factor graph and values for the next iteration
+//    graph_.resize(0);
+//    initial_estimate_.clear();
+//    //
 
     cout << GREEN << "Register first frame in the map." << endl;
     initial_estimate_.print(" - Init pose: ");
@@ -271,8 +281,20 @@ bool Mapping::addFirstFrame( const Frame &frame )
     return true;
 }
 
+bool GTMapping::isKeyFrame( const Frame &frame )
+{
+    gtsam::Pose3 rel_pose = last_estimated_pose_.inverse() * frame.pose_;
+    double linear_distance = rel_pose.translation().norm();
+    double angular_distance = rel_pose.rotation().ypr().sum();  // simple way
+
+    if( linear_distance > keyframe_linear_threshold_ || angular_distance > keyframe_angular_threshold_ )
+        return true;
+    else
+        return false;
+}
+
 // get predicted landmarks
-std::vector<OrientedPlane3> Mapping::getPredictedObservation( const std::vector<OrientedPlane3> &landmarks,
+std::vector<OrientedPlane3> GTMapping::getPredictedObservation( const std::vector<OrientedPlane3> &landmarks,
                                                               const Pose3 &pose )
 {
     std::vector<OrientedPlane3> predicted_observations;
@@ -284,7 +306,7 @@ std::vector<OrientedPlane3> Mapping::getPredictedObservation( const std::vector<
 }
 
 // simple euclidian distance
-void Mapping::matchPlanes( const std::vector<OrientedPlane3> &predicted_observations,
+void GTMapping::matchPlanes( const std::vector<OrientedPlane3> &predicted_observations,
                            const std::vector<PlaneType> &landmarks,
                            const std::vector<OrientedPlane3> &observations,
                            const std::vector<PlaneType> &observed_planes,
@@ -355,7 +377,7 @@ void Mapping::matchPlanes( const std::vector<OrientedPlane3> &predicted_observat
     }
 }
 
-bool Mapping::checkOverlap( const PointCloudTypePtr &landmark_cloud,
+bool GTMapping::checkOverlap( const PointCloudTypePtr &landmark_cloud,
                             const OrientedPlane3 &landmark,
                             const PointCloudTypePtr &observation,
                             const Pose3 &pose)
@@ -393,7 +415,7 @@ bool Mapping::checkOverlap( const PointCloudTypePtr &landmark_cloud,
 }
 
 // indices of lm1 must bigger than that of lm2
-bool Mapping::checkLandmarksOverlap( const PlaneType &lm1, const PlaneType &lm2)
+bool GTMapping::checkLandmarksOverlap( const PlaneType &lm1, const PlaneType &lm2)
 {
     // project lm2 inlier to lm1 plane
     PointCloudTypePtr cloud_projected( new PointCloudType );
@@ -431,7 +453,7 @@ bool Mapping::checkLandmarksOverlap( const PlaneType &lm1, const PlaneType &lm2)
 }
 
 // just do project and voxel filter
-void Mapping::mergeLandmarkInlier( PlaneType &from, PlaneType &to)
+void GTMapping::mergeLandmarkInlier( PlaneType &from, PlaneType &to)
 {
     PointCloudTypePtr cloud( new PointCloudType );
     projectPoints( *from.cloud, to.coefficients, *cloud);
@@ -440,7 +462,7 @@ void Mapping::mergeLandmarkInlier( PlaneType &from, PlaneType &to)
 }
 
 // return true if being refined.
-bool Mapping::refinePlanarMap()
+bool GTMapping::refinePlanarMap()
 {
     cout << RED << ", lm size: " << landmarks_.size()
          << ", pl size: " << estimated_planes_.size() << endl;
@@ -525,7 +547,7 @@ bool Mapping::refinePlanarMap()
     return find_coplanar;
 }
 
-void Mapping::updateSlamResult( std::vector<Pose3> &poses, std::vector<OrientedPlane3> &planes )
+void GTMapping::updateSlamResult( std::vector<Pose3> &poses, std::vector<OrientedPlane3> &planes )
 {
     // clear buffer
     poses.clear();
@@ -555,7 +577,7 @@ void Mapping::updateSlamResult( std::vector<Pose3> &poses, std::vector<OrientedP
     }
 }
 
-void Mapping::updateLandmarks( std::vector<PlaneType> &landmarks,
+void GTMapping::updateLandmarks( std::vector<PlaneType> &landmarks,
                                const std::vector<PlaneType> &observations,
                                const std::vector<PlanePair> &pairs,
                                const Pose3 &estimated_pose,
@@ -651,7 +673,7 @@ void Mapping::updateLandmarks( std::vector<PlaneType> &landmarks,
 
 }
 
-void Mapping::voxelGridFilter( const PointCloudTypePtr &cloud,
+void GTMapping::voxelGridFilter( const PointCloudTypePtr &cloud,
                                PointCloudTypePtr &cloud_filtered,
                                float leaf_size)
 {
@@ -662,7 +684,7 @@ void Mapping::voxelGridFilter( const PointCloudTypePtr &cloud,
     sor.filter ( *cloud_filtered );
 }
 
-void Mapping::publishOptimizedPose()
+void GTMapping::publishOptimizedPose()
 {
     geometry_msgs::PoseStamped msg = pose3ToGeometryPose( last_estimated_pose_ );
     msg.header.frame_id = map_frame_;
@@ -670,7 +692,7 @@ void Mapping::publishOptimizedPose()
     optimized_pose_publisher_.publish( msg );
 }
 
-void Mapping::publishOptimizedPath()
+void GTMapping::publishOptimizedPath()
 {
     // publish trajectory
     nav_msgs::Path path;
@@ -684,7 +706,7 @@ void Mapping::publishOptimizedPath()
     cout << GREEN << "Publisher optimized path, p = " << estimated_poses_.size() << RESET << endl;
 }
 
-void Mapping::publishMapCloud()
+void GTMapping::publishMapCloud()
 {
     PointCloudTypePtr cloud ( new PointCloudType );
 
@@ -705,14 +727,14 @@ void Mapping::publishMapCloud()
     map_cloud_publisher_.publish( cloud2 );
 }
 
-void Mapping::mappingReconfigCallback(plane_slam::MappingConfig &config, uint32_t level)
+void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, uint32_t level)
 {
     //
     use_keyframe_ = config.use_keyframe;
     keyframe_linear_threshold_ = config.keyframe_linear_threshold;
     keyframe_angular_threshold_ = config.keyframe_angular_threshold * DEG_TO_RAD;
     //
-    plane_match_direction_threshold_ = config.plane_match_direction_threshold;
+    plane_match_direction_threshold_ = config.plane_match_direction_threshold * DEG_TO_RAD;
     plane_match_distance_threshold_ = config.plane_match_distance_threshold;
     plane_match_check_overlap_ = config.plane_match_check_overlap;
     plane_match_overlap_alpha_ = config.plane_match_overlap_alpha;
@@ -720,7 +742,7 @@ void Mapping::mappingReconfigCallback(plane_slam::MappingConfig &config, uint32_
     plane_hull_alpha_ = config.plane_hull_alpha;
     //
     refine_planar_map_ = config.refine_planar_map;
-    planar_merge_direction_threshold_ = config.planar_merge_direction_threshold;
+    planar_merge_direction_threshold_ = config.planar_merge_direction_threshold * DEG_TO_RAD;
     planar_merge_distance_threshold_ = config.planar_merge_distance_threshold;
     //
     publish_optimized_path_ = config.publish_optimized_path;

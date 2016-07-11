@@ -80,7 +80,7 @@ find_package(TBB)
 ## Generate dynamic reconfigure parameters in the 'cfg' folder
 generate_dynamic_reconfigure_options(
   cfg/PlaneSlam.cfg
-  cfg/Mapping.cfg
+  cfg/GTMapping.cfg
   cfg/LineBasedSegment.cfg
   cfg/Viewer.cfg
   cfg/Tracking.cfg
@@ -110,6 +110,8 @@ catkin_package(
 ## Your package locations should be listed before other locations
 # include_directories(include)
 include_directories(
+  ${PROJECT_SOURCE_DIR}
+  ${PROJECT_SOURCE_DIR}/include
   ${catkin_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIR}
@@ -123,7 +125,7 @@ include_directories(
 add_library( ${PROJECT_NAME}
     src/kinect_listener.cpp
     src/viewer.cpp
-    src/mapping.cpp
+    src/gtsam_mapping.cpp
     src/tracking.cpp
     src/frame.cpp
     src/line_based_plane_segmentor.cpp

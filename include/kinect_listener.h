@@ -29,7 +29,7 @@
 #include "frame.h"
 #include "viewer.h"
 #include "tracking.h"
-#include "mapping.h"
+#include "gtsam_mapping.h"
 
 using namespace std;
 
@@ -125,7 +125,7 @@ private:
     LineBasedPlaneSegmentor* plane_segmentor_;
     Viewer *viewer_;
     Tracking *tracker_;
-    Mapping *mapping_;
+    GTMapping *gt_mapping_;
 
     // Plane slam common parameters
     bool do_visual_odometry_;

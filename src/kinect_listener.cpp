@@ -17,7 +17,7 @@ KinectListener::KinectListener() :
     plane_segmentor_ = new LineBasedPlaneSegmentor(nh_);
     viewer_ = new Viewer(nh_);
     tracker_ = new Tracking(nh_);
-    mapping_ = new Mapping(nh_);
+    gt_mapping_ = new GTMapping(nh_);
 
     // reconfigure
     plane_slam_config_callback_ = boost::bind(&KinectListener::planeSlamReconfigCallback, this, _1, _2);
@@ -245,16 +245,16 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     // Mapping
     if( frame.valid )
     {
-        mapping_->mapping( frame );
+        gt_mapping_->mapping( frame );
     }
     map_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
 
     // Landmark for visualization
-    std::vector<PlaneType> landmarks = mapping_->getLandmark();
-    mapping_->publishOptimizedPose();
-    mapping_->publishOptimizedPath();
-    mapping_->publishMapCloud();
+    std::vector<PlaneType> landmarks = gt_mapping_->getLandmark();
+    gt_mapping_->publishOptimizedPose();
+    gt_mapping_->publishOptimizedPath();
+    gt_mapping_->publishMapCloud();
 
     // Display frame, landmarks
     viewer_->removeAll();
@@ -294,8 +294,8 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     identity_init_pose_ = config.identity_init_pose;
 
     // Set map frame for mapping
-    if( mapping_ )
-        mapping_->setMapFrame( map_frame_ );
+    if( gt_mapping_ )
+        gt_mapping_->setMapFrame( map_frame_ );
     //
     cout << GREEN <<"PlaneSlam Config." << RESET << endl;
 }
