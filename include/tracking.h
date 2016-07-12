@@ -10,6 +10,7 @@
 #include "frame.h"
 #include "utils.h"
 #include "itree.h"
+#include "viewer.h"
 
 namespace plane_slam
 {
@@ -17,7 +18,7 @@ namespace plane_slam
 class Tracking
 {
 public:
-    Tracking(ros::NodeHandle &nh);
+    Tracking(ros::NodeHandle &nh, Viewer * viewer );
 
     bool track( const Frame &source, const Frame &target, RESULT_OF_MOTION &motion,
                 const Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4) );
@@ -156,6 +157,9 @@ protected:
     void trackingReconfigCallback(plane_slam::TrackingConfig &config, uint32_t level);
 
 private:
+    //
+    Viewer * viewer_;
+    //
     ros::NodeHandle nh_;
     dynamic_reconfigure::Server<plane_slam::TrackingConfig> tracking_config_server_;
     dynamic_reconfigure::Server<plane_slam::TrackingConfig>::CallbackType tracking_config_callback_;

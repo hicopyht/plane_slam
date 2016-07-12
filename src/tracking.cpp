@@ -3,8 +3,9 @@
 namespace plane_slam
 {
 
-Tracking::Tracking( ros::NodeHandle &nh )
+Tracking::Tracking( ros::NodeHandle &nh, Viewer * viewer )
     : nh_(nh),
+      viewer_(viewer),
       tracking_config_server_( ros::NodeHandle(nh_, "Tracking") )
 {
     tracking_config_callback_ = boost::bind(&Tracking::trackingReconfigCallback, this, _1, _2);
@@ -15,7 +16,7 @@ bool Tracking::track(const Frame &source, const Frame &target,
                      RESULT_OF_MOTION &motion, const Eigen::Matrix4d estimated_transform)
 {
     ros::Time start_time = ros::Time::now();
-    double pairs_dura, match_f_dura, m_e_dura;
+    double pairs_dura, match_f_dura, m_e_dura, display_dura;
 
     // Find plane correspondences
     const std::vector<PlaneType> &planes = target.segment_planes_;
@@ -51,12 +52,21 @@ bool Tracking::track(const Frame &source, const Frame &target,
     m_e_dura = (ros::Time::now() - start_time).toSec() * 1000;
     start_time = ros::Time::now();
 
-    double total_time = pairs_dura + match_f_dura + m_e_dura;
+    // Display
+    viewer_->displayKeypointMatches( source.visual_image_, source.feature_locations_2d_,
+                                     target.visual_image_, target.feature_locations_2d_,
+                                     good_matches );
+
+    display_dura = (ros::Time::now() - start_time).toSec() * 1000;
+    start_time = ros::Time::now();
+
+    double total_time = pairs_dura + match_f_dura + m_e_dura + display_dura;
     cout << GREEN << " Tracking total time: " << total_time << endl;
     cout << " - Time:"
          << " pairing: " << pairs_dura
          << ", kp_matching: " << match_f_dura
          << ", motion_estimate: " << m_e_dura
+         << ", matches display: " << display_dura
          << RESET << endl;
 
     return valid;

@@ -5,7 +5,7 @@
 #include <pcl/visualization/pcl_visualizer.h>
 #include <dynamic_reconfigure/server.h>
 #include <plane_slam/ViewerConfig.h>
-#include <std_srvs/SetBool.h>
+#include <std_srvs/Trigger.h>
 #include "utils.h"
 #include "frame.h"
 
@@ -31,16 +31,20 @@ public:
     void displayFrame(const Frame &frame, const std::string &prefix, int viewport);
 
 
-    void displayMatched3DKeypoint( std_vector_of_eigen_vector4f &query,
-                                   std_vector_of_eigen_vector4f &train,
-                                   std::vector<cv::DMatch> &matches,
+    void displayMatched3DKeypoint( const std_vector_of_eigen_vector4f &query,
+                                   const std_vector_of_eigen_vector4f &train,
+                                   const std::vector<cv::DMatch> &matches,
                                    int viewport_query,
                                    int viewport_train,
                                    const std::string &id = "matched_features" );
 
-    void displayKeypoint( const cv::Mat &visual, const std::vector<cv::KeyPoint> &keypoints );
-
     void display3DKeypoint( const std_vector_of_eigen_vector4f &feature_location_3d, const std::string &id, int viewport );
+
+    void displayKeypointMatches( const cv::Mat &img1, const std::vector<cv::KeyPoint> &keypoints1,
+                                 const cv::Mat &img2, const std::vector<cv::KeyPoint> &keypoints2,
+                                 const std::vector<cv::DMatch> &matches );
+
+    void displayKeypoint( const cv::Mat &visual, const std::vector<cv::KeyPoint> &keypoints );
 
     void displayMapLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix = "landmark" );
 
@@ -67,7 +71,7 @@ public:
 protected:
     void viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t level);
 
-    bool autoSpinMapViewerCallback( std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res);
+    bool autoSpinMapViewerCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
 
 private:
     ros::NodeHandle nh_;
@@ -86,6 +90,7 @@ private:
     bool auto_spin_map_viewer_;
 
     // parameter frame
+    bool display_frame_;
     bool display_input_cloud_;
     bool display_line_cloud_;
     bool display_normal_;
@@ -100,6 +105,7 @@ private:
     bool display_feature_cloud_;
     bool show_keypoint_;
     bool show_keypoint_matches_;
+    bool display_3d_keypoint_matches_;
     // parameter for landmark
     bool display_landmarks_;
     bool display_landmark_inlier_;

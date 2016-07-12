@@ -85,7 +85,7 @@ protected:
 
     void planeSlamReconfigCallback( plane_slam::PlaneSlamConfig &config, uint32_t level);
 
-    bool saveAllPathCallback(  std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res  );
+    bool savePathLandmarksCallback(  std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res  );
 
 private:
     bool getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time &time = ros::Time(0) );
@@ -127,7 +127,7 @@ private:
     ros::Publisher true_path_publisher_;
     ros::Publisher odometry_pose_publisher_;
     ros::Publisher odometry_path_publisher_;
-    ros::ServiceServer save_all_path_service_server_;
+    ros::ServiceServer save_path_landmarks_service_server_;
 
     //
     ORBextractor* orb_extractor_;

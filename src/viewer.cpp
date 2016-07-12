@@ -83,6 +83,9 @@ void Viewer::spinOnce( int time )
 
 void Viewer::displayFrame(const Frame &frame, const std::string &prefix, int viewport )
 {
+    if( !display_frame_ )
+        return;
+
     pcl_viewer_->addText(prefix, 100, 3, prefix+"_text", viewport);
 
     // Input cloud
@@ -91,12 +94,6 @@ void Viewer::displayFrame(const Frame &frame, const std::string &prefix, int vie
         pcl_viewer_->addPointCloud( frame.cloud_, prefix+"_"+"rgba_cloud", viewport );
         pcl_viewer_->setPointCloudRenderingProperties ( pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "rgba_cloud", viewport );
     }
-
-//    // Keypoint on image
-//    if( show_keypoint_ )
-//    {
-//        displayKeypoint( frame.visual_image_, frame.feature_locations_2d_ );
-//    }
 
     // 3d keypoint in viewer
     if( display_feature_cloud_ )
@@ -108,13 +105,16 @@ void Viewer::displayFrame(const Frame &frame, const std::string &prefix, int vie
     displayPlanes( frame.cloud_downsampled_, frame.segment_planes_, prefix+"_"+"planes", viewport );
 }
 
-void Viewer::displayMatched3DKeypoint( std_vector_of_eigen_vector4f &query,
-                                       std_vector_of_eigen_vector4f &train,
-                                       std::vector<cv::DMatch> &matches,
+void Viewer::displayMatched3DKeypoint( const std_vector_of_eigen_vector4f &query,
+                                       const std_vector_of_eigen_vector4f &train,
+                                       const std::vector<cv::DMatch> &matches,
                                        int viewport_query,
                                        int viewport_train,
                                        const std::string &id )
 {
+    if( !display_3d_keypoint_matches_ )
+        return;
+
     PointCloudXYZPtr query_cloud( new PointCloudXYZ ), train_cloud( new PointCloudXYZ );
     query_cloud->is_dense = false;
     query_cloud->points.resize( matches.size() );
@@ -153,17 +153,8 @@ void Viewer::displayMatched3DKeypoint( std_vector_of_eigen_vector4f &query,
     pcl_viewer_->addPointCloud( train_cloud, train_color, id+"_train", viewport_train );
     pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_train", viewport_query );
 
-}
-
-void Viewer::displayKeypoint( const cv::Mat &visual, const std::vector<cv::KeyPoint> &keypoints )
-{
-    if( !show_keypoint_ )
-        return;
-
-    cv::Mat image;
-    cv::drawKeypoints( visual, keypoints, image, cv::Scalar::all(-1), cv::DrawMatchesFlags::DEFAULT );
-    cv::imshow( KeypointWindow, image );
-    cv::waitKey(1);
+//    // spin
+//    pcl_viewer_->spinOnce();
 }
 
 void Viewer::display3DKeypoint( const std_vector_of_eigen_vector4f &feature_location_3d, const std::string &id, int viewport )
@@ -191,6 +182,34 @@ void Viewer::display3DKeypoint( const std_vector_of_eigen_vector4f &feature_loca
     pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_3Dfeatures", viewport );
 
 }
+
+void Viewer::displayKeypointMatches( const cv::Mat &img1, const std::vector<cv::KeyPoint> &keypoints1,
+                                     const cv::Mat &img2, const std::vector<cv::KeyPoint> &keypoints2,
+                                     const std::vector<cv::DMatch> &matches )
+{
+    if( !show_keypoint_matches_)
+        return;
+
+    cv::Mat image;
+    cv::drawMatches( img1, keypoints1, img2, keypoints2,
+               matches, image, cv::Scalar::all(-1), cv::Scalar::all(-1),
+               std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
+
+    imshow( MatchesWindow, image );
+    cv::waitKey(1);
+}
+
+void Viewer::displayKeypoint( const cv::Mat &visual, const std::vector<cv::KeyPoint> &keypoints )
+{
+    if( !show_keypoint_ )
+        return;
+
+    cv::Mat image;
+    cv::drawKeypoints( visual, keypoints, image, cv::Scalar::all(-1), cv::DrawMatchesFlags::DEFAULT );
+    cv::imshow( KeypointWindow, image );
+    cv::waitKey(1);
+}
+
 
 void Viewer::displayMapLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix )
 {
@@ -586,6 +605,7 @@ void Viewer::pclViewerPlane( const PointCloudTypePtr &input, const PlaneType &pl
 void Viewer::viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t level)
 {
     // parameter frame
+    display_frame_ = config.display_frame;
     display_input_cloud_ = config.display_input_cloud;
     display_line_cloud_ = config.display_line_cloud;
     display_normal_ = config.display_normal;
@@ -601,6 +621,7 @@ void Viewer::viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t 
     //
     show_keypoint_ = config.show_keypoint;
     show_keypoint_matches_ = config.show_keypoint_matches;
+    display_3d_keypoint_matches_ = config.display_3d_keypoint_matches;
     // parameter for landmark
     display_landmarks_ = config.display_landmarks;
     display_landmark_inlier_ = config.display_landmark_inlier;
@@ -612,7 +633,7 @@ void Viewer::viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t 
     cout << GREEN <<" Viewer Config." << RESET << endl;
 }
 
-bool Viewer::autoSpinMapViewerCallback(std_srvs::SetBool::Request &req, std_srvs::SetBool::Response &res)
+bool Viewer::autoSpinMapViewerCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res )
 {
     bool added = false;
     auto_spin_map_viewer_ = true;
@@ -660,6 +681,7 @@ bool Viewer::autoSpinMapViewerCallback(std_srvs::SetBool::Request &req, std_srvs
     map_viewer_->spinOnce( 20 );
     ROS_INFO("Stop spinning.");
     res.success = true;
+    res.message = "Done spinning map viewer for 30 seconds.";
     return true;
 }
 

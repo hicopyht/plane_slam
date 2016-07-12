@@ -26,7 +26,7 @@ KinectListener::KinectListener() :
     orb_extractor_ = new ORBextractor( 1000, 1.2, 8, 20, 7);
     plane_segmentor_ = new LineBasedPlaneSegmentor(nh_);
     viewer_ = new Viewer(nh_);
-    tracker_ = new Tracking(nh_);
+    tracker_ = new Tracking(nh_, viewer_ );
     gt_mapping_ = new GTMapping(nh_, viewer_);
 
     // reconfigure
@@ -51,7 +51,7 @@ KinectListener::KinectListener() :
     true_path_publisher_ = nh_.advertise<nav_msgs::Path>("true_path", 10);
     odometry_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("odometry_pose", 10);
     odometry_path_publisher_ = nh_.advertise<nav_msgs::Path>("odometry_path", 10);
-    save_all_path_service_server_ = nh_.advertiseService("save_all_path", &KinectListener::saveAllPathCallback, this );
+    save_path_landmarks_service_server_ = nh_.advertiseService("save_path_landmarks", &KinectListener::savePathLandmarksCallback, this );
 
     // config subscribers
     if( !topic_point_cloud_.empty() && !topic_image_visual_.empty() && !topic_camera_info_.empty() ) // pointcloud2
@@ -395,12 +395,24 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     cout << GREEN <<" PlaneSlam Config." << RESET << endl;
 }
 
-bool KinectListener::saveAllPathCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res )
+bool KinectListener::savePathLandmarksCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res )
 {
-    std::string filename = "all_path_" + timeToStr() + ".txt";
+    std::string filename = "landmarks_path_" + timeToStr() + ".txt";
     FILE* yaml = std::fopen( filename.c_str(), "w" );
-    fprintf( yaml, "#path file: %s\n", filename.c_str() );
+    fprintf( yaml, "#landmarks and path file: %s\n", filename.c_str() );
+    fprintf( yaml, "#landmarks format: ax+by+cz+d = 0, (n,d), (a,b,c,d)\n");
     fprintf( yaml, "#pose format: T(xyz) Q(xyzw)\n\n" );
+
+    // Save Landmarks
+    std::vector<PlaneType> landmarks = gt_mapping_->getLandmark();
+    fprintf( yaml, "#landmarks, size %d\n", landmarks.size() );
+    for( int i = 0; i < landmarks.size(); i++)
+    {
+        PlaneType &lm = landmarks[i];
+        fprintf( yaml, "%f %f %f %f\n", lm.coefficients[0], lm.coefficients[1],
+                lm.coefficients[2], lm.coefficients[3] );
+    }
+    fprintf( yaml, "\n\n");
 
     // Save Optimized Path
     std::vector<gtsam::Pose3> optimized_poses = gt_mapping_->getOptimizedPath();
@@ -438,7 +450,7 @@ bool KinectListener::saveAllPathCallback( std_srvs::Trigger::Request &req, std_s
     fclose(yaml);
 
     res.success = true;
-    res.message = " Save path file: " + filename + ".";
+    res.message = " Save landmarks and path file: " + filename + ".";
     cout << GREEN << res.message << RESET << endl;
     return true;
 }
