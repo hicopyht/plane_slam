@@ -36,7 +36,7 @@ KinectListener::KinectListener() :
 //    private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
 //    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/camera/rgb/image_color");
 //    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth_registered/image");
-//    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/rgb/camera_info");
+//    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/depth/camera_info");
 //    private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
 
     private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
@@ -98,6 +98,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
 {
     static tf::Transform last_odom_pose = tf::Transform::getIdentity();
 
+    cout << RESET << "----------------------------------------------------------------------" << endl;
     // Get odom pose
     tf::Transform odom_pose;
     if( getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
@@ -105,7 +106,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
         // Relative transform
         tf::Transform rel_tf = last_odom_pose.inverse() * odom_pose;
         gtsam::Pose3 real_r_pose = tfToPose3( rel_tf );
-        cout << RESET << "----------------------------------------------------------------------" << endl;
+
         cout << CYAN << " true motion: " << endl;
         cout << "  - R(rpy): " << real_r_pose.rotation().roll()
              << ", " << real_r_pose.rotation().pitch()
@@ -333,6 +334,7 @@ bool KinectListener::getOdomPose( tf::Transform &odom_pose, const std::string &c
     }catch (tf::TransformException &ex)
     {
         ROS_WARN("%s",ex.what());
+        odom_pose.setIdentity();
         return false;
     }
     odom_pose.setOrigin( trans.getOrigin() );
@@ -397,7 +399,7 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
 
 bool KinectListener::savePathLandmarksCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res )
 {
-    std::string filename = "landmarks_path_" + timeToStr() + ".txt";
+    std::string filename = "/home/lizhi/bags/result/landmarks_path_" + timeToStr() + ".txt";
     FILE* yaml = std::fopen( filename.c_str(), "w" );
     fprintf( yaml, "#landmarks and path file: %s\n", filename.c_str() );
     fprintf( yaml, "#landmarks format: ax+by+cz+d = 0, (n,d), (a,b,c,d)\n");

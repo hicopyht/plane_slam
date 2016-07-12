@@ -248,6 +248,11 @@ bool GTMapping::addFirstFrame( const Frame &frame )
         const PlaneType &plane = planes[i];
         Key ln = Symbol('l', i);
 
+        cout << YELLOW << " lm" << i << " coefficents: " << plane.coefficients[0]
+             << ", " << plane.coefficients[1] << ", " << plane.coefficients[2]
+             << ", " << plane.coefficients[3] << ", centroid: " << plane.centroid.x
+             << ", " << plane.centroid.y << ", " << plane.centroid.z << RESET << endl;
+
         // Add observation factor
         noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( plane.sigmas );
         graph_.push_back( OrientedPlane3Factor(plane.coefficients, obs_noise, x0, ln) );
@@ -284,27 +289,6 @@ bool GTMapping::addFirstFrame( const Frame &frame )
         //
         landmark_max_count_ ++;
     }
-
-    // Add BetweenFactor<OrientedPlane3>
-//    for( int i = 0; i < planes.size()-1; i++)
-//    {
-//        Key lmi = Symbol('l', i);
-//        OrientedPlane3 pli( planes[i].coefficients );
-//        for( int j = i+1; j < planes.size(); j++ )
-//        {
-//            Key lmj = Symbol('l', j);
-//            OrientedPlane3 plj( planes[j].coefficients );
-//            // check between angle
-//            double angular = acos( pli.normal().dot( plj.normal() ) );
-//            if( angular >= M_PI_4 && angular <= M_PI_4*3)
-//            {
-//                gtsam::Vector3 diff = pli.errorVector( plj );
-//                noiseModel::Diagonal::shared_ptr noise = noiseModel::Diagonal::Sigmas(
-//                        (Vector(3) << 0.02, 0.02, 0.02).finished() );
-//                graph_.push_back( BetweenFactor<OrientedPlane3>( lmi, lmj, diff, noise) );
-//            }
-//        }
-//    }
 
     // Optimize factor graph
 //    isam2_->update( graph_, initial_estimate_ );
@@ -874,7 +858,7 @@ bool GTMapping::saveGraphCallback(std_srvs::Trigger::Request &req, std_srvs::Tri
     }
     else
     {
-        std::string filename = "map_"+timeToStr()+".dot";
+        std::string filename = "/home/lizhi/bags/result/map_"+timeToStr()+".dot";
         isam2_->saveGraph( filename );
         res.success = true;
         res.message = " Save isam2 graph: " + filename + ".";
@@ -903,7 +887,7 @@ bool GTMapping::saveMapPCDCallback(std_srvs::Trigger::Request &req, std_srvs::Tr
             setPointCloudColor( *(lm.cloud), lm.color );
             *cloud += *(lm.cloud);
         }
-        std::string filename = "map_"+timeToStr()+".pcd";
+        std::string filename = "/home/lizhi/bags/result/map_"+timeToStr()+".pcd";
         pcl::io::savePCDFileASCII ( filename, *cloud);
         //
         res.success = true;

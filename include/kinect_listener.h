@@ -72,7 +72,7 @@ public:
     void cvtCameraParameter( const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
                              CameraParameters &camera);
 
-    inline void setInitPose( tf::Transform & init_tf ) { init_pose_ = init_tf; set_init_pose_ = true; }
+    inline void setInitPose( tf::Transform init_tf ) { init_pose_ = init_tf; set_init_pose_ = true; }
 
 protected:
     void noCloudCallback (const sensor_msgs::ImageConstPtr& visual_img_msg,

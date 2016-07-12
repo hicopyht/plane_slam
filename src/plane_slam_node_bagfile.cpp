@@ -7,6 +7,8 @@
 #include <signal.h>
 #include <termios.h>
 
+#include <Eigen/Geometry>
+
 
 // Terminal
 bool    terminal_modified_;
@@ -142,6 +144,12 @@ int main(int argc, char** argv)
     camera.height = fsp["camera.height"];
     std::string depth_topic = fsp["depth_topic"];
     std::string rgb_topic = fsp["rgb_topic"];
+    float init_pose_x = fsp["initPose.x"];
+    float init_pose_y = fsp["initPose.y"];
+    float init_pose_z = fsp["initPose.z"];
+    float init_pose_roll = fsp["initPose.roll"];
+    float init_pose_pitch = fsp["initPose.pitch"];
+    float init_pose_yaw = fsp["initPose.yaw"];
     //
     cout << GREEN << " Load camera parameters: " << endl;
     cout << "***************************************" << endl;
@@ -219,8 +227,18 @@ int main(int argc, char** argv)
     // TUM3, rgbd near structure texture, skip = 8.0s, msg = 10600
     // -T(xyz) = -1.29492, 1.24776, 0.902971
     // -R(rpy): -2.07778, -0.0293992, 1.99638
-    tf::Transform init_pose( tf::createQuaternionFromRPY(-2.07778, -0.0293992, 1.99638),
-                             tf::Vector3(-1.29492, 1.24776, 0.902971) );
+//    tf::Transform init_pose( tf::createQuaternionFromRPY(-2.07778, -0.0293992, 1.99638),
+//                             tf::Vector3(-1.29492, 1.24776, 0.902971) );
+
+    // building a floor 2 stair 1, -s 1.0
+    // Init pose:
+    // - R(rpy): -2.38612, 0.26805, -1.43302
+    // - T:      0.436192, -0.192014, 1.1524
+//    tf::Transform init_pose( tf::createQuaternionFromRPY(-2.38612, 0.26805, -1.43302),
+//                                 tf::Vector3(0.436192, -0.192014, 1.1524) );
+
+    tf::Transform init_pose( tf::createQuaternionFromRPY( init_pose_roll, init_pose_pitch, init_pose_yaw ),
+                             tf::Vector3( init_pose_x, init_pose_y, init_pose_z ) );
     kl.setInitPose( init_pose );
 
     // Setup terminal
@@ -343,5 +361,21 @@ int main(int argc, char** argv)
     ros::spin();
 }
 
-
+/// Get pose from two vector
+//    // lm0 coefficents: 0.939228, -0.115946, -0.32312, 0.620913, centroid: -0.314183, 0.00216019, 1.00759
+//    // lm1 coefficents: -0.264852, -0.661149, -0.701951, 1.1524, centroid: 0.256239, 0.353235, 1.21232
+//    Eigen::Vector3d ny(-0.939228, 0.115946, 0.32312), nz(-0.264852, -0.661149, -0.701951);
+//    Eigen::Vector3d nx = ny.cross( nz );
+//    nx.normalized(); ny.normalized(); nz.normalized();
+//    Eigen::Matrix3d m33;
+//    m33.col(0) = nx;
+//    m33.col(1) = ny;
+//    m33.col(2) = nz;
+//    tf::Transform init_pose;
+//    init_pose.setBasis( matrixEigen2TF(m33) );
+//    init_pose.setOrigin( tf::Vector3( 0.256239, 0.353235, 1.21232 ) );
+//    init_pose = init_pose * tf::Transform(tf::Quaternion::getIdentity(), tf::Vector3(-1.0, 0, 0));
+//    init_pose = init_pose.inverse();
+//    gtsam::Pose3 pose3 = tfToPose3( init_pose );
+//    printPose3( pose3, "Init pose", CYAN );
 

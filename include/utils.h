@@ -260,6 +260,8 @@ inline double depth_covariance(double depth)
 void printTransform( const Eigen::Matrix4d &transform);
 void printTransform( const Eigen::Matrix4f &transform);
 
+void printPose3( const gtsam::Pose3 &pose3, const std::string name = "Pose3", const std::string color = "\033[0m" );
+
 
 double errorFunction2(const Eigen::Vector4f& x1,
                       const Eigen::Vector4f& x2,

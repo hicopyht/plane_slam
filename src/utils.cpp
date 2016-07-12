@@ -384,6 +384,17 @@ void printTransform( const Eigen::Matrix4f &transform)
     printTransform(tr);
 }
 
+void printPose3( const gtsam::Pose3 &pose3, const std::string name, const std::string color )
+{
+    cout << color << name << ": " << endl;
+    cout << "  - R(rpy): " << pose3.rotation().roll()
+         << ", " << pose3.rotation().pitch()
+         << ", " << pose3.rotation().yaw() << endl;
+    cout << "  - T:      " << pose3.translation().x()
+         << ", " << pose3.translation().y()
+         << ", " << pose3.translation().z() << RESET << endl;
+}
+
 // https://github.com/felixendres/rgbdslam_v2
 double errorFunction2(const Eigen::Vector4f& x1,
                       const Eigen::Vector4f& x2,
