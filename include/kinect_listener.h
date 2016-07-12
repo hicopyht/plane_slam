@@ -16,6 +16,7 @@
 #include <tf/transform_listener.h>
 #include <tf_conversions/tf_eigen.h>
 #include <nav_msgs/Path.h>
+#include <std_srvs/Trigger.h>
 //
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
@@ -30,6 +31,8 @@
 #include "viewer.h"
 #include "tracking.h"
 #include "gtsam_mapping.h"
+//
+#include <yaml-cpp/yaml.h>
 
 using namespace std;
 
@@ -82,6 +85,8 @@ protected:
 
     void planeSlamReconfigCallback( plane_slam::PlaneSlamConfig &config, uint32_t level);
 
+    bool saveAllPathCallback(  std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res  );
+
 private:
     bool getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time &time = ros::Time(0) );
 
@@ -98,6 +103,8 @@ private:
     ros::NodeHandle private_nh_;
     ros::CallbackQueue my_callback_queue_;
     ros::AsyncSpinner* async_spinner_;
+    //
+    tf::TransformListener tf_listener_;
     //
     dynamic_reconfigure::Server<plane_slam::PlaneSlamConfig> plane_slam_config_server_;
     dynamic_reconfigure::Server<plane_slam::PlaneSlamConfig>::CallbackType plane_slam_config_callback_;
@@ -120,7 +127,7 @@ private:
     ros::Publisher true_path_publisher_;
     ros::Publisher odometry_pose_publisher_;
     ros::Publisher odometry_path_publisher_;
-    tf::TransformListener tf_listener_;
+    ros::ServiceServer save_all_path_service_server_;
 
     //
     ORBextractor* orb_extractor_;

@@ -51,6 +51,7 @@ KinectListener::KinectListener() :
     true_path_publisher_ = nh_.advertise<nav_msgs::Path>("true_path", 10);
     odometry_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("odometry_pose", 10);
     odometry_path_publisher_ = nh_.advertise<nav_msgs::Path>("odometry_path", 10);
+    save_all_path_service_server_ = nh_.advertiseService("save_all_path", &KinectListener::saveAllPathCallback, this );
 
     // config subscribers
     if( !topic_point_cloud_.empty() && !topic_image_visual_.empty() && !topic_camera_info_.empty() ) // pointcloud2
@@ -311,6 +312,7 @@ void KinectListener::cvtCameraParameter( const sensor_msgs::CameraInfoConstPtr &
 
 
     // TUM3
+    cout << YELLOW << " Use TUM3 camera parameters." << RESET << endl;
     camera.cx = 320.1;
     camera.cy = 247.6;
     camera.fx = 535.4;
@@ -393,5 +395,52 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     cout << GREEN <<" PlaneSlam Config." << RESET << endl;
 }
 
+bool KinectListener::saveAllPathCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res )
+{
+    std::string filename = "all_path_" + timeToStr() + ".txt";
+    FILE* yaml = std::fopen( filename.c_str(), "w" );
+    fprintf( yaml, "#path file: %s\n", filename.c_str() );
+    fprintf( yaml, "#pose format: T(xyz) Q(xyzw)\n\n" );
+
+    // Save Optimized Path
+    std::vector<gtsam::Pose3> optimized_poses = gt_mapping_->getOptimizedPath();
+    fprintf( yaml, "#optimized path, size %d\n", optimized_poses.size() );
+    for( int i = 0; i < optimized_poses.size(); i++)
+    {
+        gtsam::Pose3 &pose = optimized_poses[i];
+        fprintf( yaml, "%f %f %f %f %f %f %f\n", pose.translation().x(), pose.translation().y(), pose.translation().z(),
+                 pose.rotation().toQuaternion().x(), pose.rotation().toQuaternion().y(), pose.rotation().toQuaternion().z(),
+                 pose.rotation().toQuaternion().w());
+    }
+    fprintf( yaml, "\n\n");
+
+    // Save True Path
+    fprintf( yaml, "#true path, size %d\n", true_poses_.size() );
+    for( int i = 0; i < true_poses_.size(); i++)
+    {
+        geometry_msgs::PoseStamped &pose = true_poses_[i];
+        fprintf( yaml, "%f %f %f %f %f %f %f\n", pose.pose.position.x, pose.pose.position.y, pose.pose.position.z,
+                 pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w );
+    }
+    fprintf( yaml, "\n\n");
+
+    // Save Odometry Path
+    fprintf( yaml, "#odometry path, size %d\n", odometry_poses_.size() );
+    for( int i = 0; i < odometry_poses_.size(); i++)
+    {
+        geometry_msgs::PoseStamped &pose = odometry_poses_[i];
+        fprintf( yaml, "%f %f %f %f %f %f %f\n", pose.pose.position.x, pose.pose.position.y, pose.pose.position.z,
+                 pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w );
+    }
+    fprintf( yaml, "\n\n");
+
+    // close
+    fclose(yaml);
+
+    res.success = true;
+    res.message = " Save path file: " + filename + ".";
+    cout << GREEN << res.message << RESET << endl;
+    return true;
+}
 
 } // end of namespace plane_slam

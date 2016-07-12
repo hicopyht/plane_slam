@@ -184,6 +184,8 @@ Eigen::Matrix3d matrixTF2Eigen(const tf::Matrix3x3 &t);
 void matrixEigen2TF( const Eigen::Matrix3d &e, tf::Matrix3x3 &t);
 tf::Matrix3x3 matrixEigen2TF(const Eigen::Matrix3d &m33);
 
+void setPointCloudColor( PointCloudType &cloud, RGBValue &color );
+
 template <typename PointT>
 PointT transformPoint (const PointT &point,
                      const Eigen::Matrix4d &transform);

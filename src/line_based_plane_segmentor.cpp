@@ -51,9 +51,9 @@ void LineBasedPlaneSegmentor::operator()(PointCloudTypePtr &input, std::vector<P
         plane.coefficients[1] = normal.coefficients[1];
         plane.coefficients[2] = normal.coefficients[2];
         plane.coefficients[3] = normal.coefficients[3];
-        plane.sigmas[0] = 0.05;
-        plane.sigmas[1] = 0.05;
-        plane.sigmas[2] = 0.05;
+        plane.sigmas[0] = 0.01;
+        plane.sigmas[1] = 0.01;
+        plane.sigmas[2] = 0.01;
         plane.inlier = normal.inliers;
         plane.boundary_inlier = normal.boundary_inlier;
         plane.hull_inlier = normal.hull_inlier;

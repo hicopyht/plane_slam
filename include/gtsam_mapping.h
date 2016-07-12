@@ -24,9 +24,11 @@
 #include <gtsam/nonlinear/ISAM2.h>
 
 //
+#include <pcl/io/pcd_io.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/filters/passthrough.h>
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/radius_outlier_removal.h>
 #include <pcl/filters/project_inliers.h>
 #include <pcl/surface/concave_hull.h>
 #include <pcl/kdtree/kdtree_flann.h>
@@ -62,6 +64,8 @@ public:
 
     // Get optimized pose
     const gtsam::Pose3 &getOptimizedPose() { return last_estimated_pose_; }
+    // Get optimized path
+    const std::vector<gtsam::Pose3> &getOptimizedPath() { return estimated_poses_; }
     // Get landmarks
     const std::vector<PlaneType> &getLandmark() { return landmarks_; }
     // Set map frame
@@ -97,6 +101,8 @@ protected:
 
     bool refinePlanarMap();
 
+    bool removeBadInlier();
+
     void updateSlamResult( std::vector<Pose3> &poses, std::vector<OrientedPlane3> &planes );
 
     void updateLandmarks( std::vector<PlaneType> &landmarks,
@@ -115,6 +121,10 @@ protected:
 
     bool saveGraphCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
 
+    bool saveMapPCDCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
+
+    bool removeBadInlierCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
+
 private:
     //
     Viewer *viewer_;
@@ -122,6 +132,8 @@ private:
     ros::NodeHandle nh_;
     ros::ServiceServer optimize_graph_service_server_;
     ros::ServiceServer save_graph_service_server_;
+    ros::ServiceServer save_map_service_server_;
+    ros::ServiceServer remove_bad_inlier_service_server_;
     dynamic_reconfigure::Server<plane_slam::GTMappingConfig> mapping_config_server_;
     dynamic_reconfigure::Server<plane_slam::GTMappingConfig>::CallbackType mapping_config_callback_;
     //
@@ -151,6 +163,9 @@ private:
     bool use_keyframe_;
     double keyframe_linear_threshold_;
     double keyframe_angular_threshold_;
+    // ISMA2
+    double isam2_relinearize_threshold_;
+    int isam2_relinearize_skip_;
     //
     double plane_match_direction_threshold_;
     double plane_match_distance_threshold_;
@@ -162,6 +177,7 @@ private:
     bool refine_planar_map_;
     double planar_merge_direction_threshold_;
     double planar_merge_distance_threshold_;
+    double planar_bad_inlier_alpha_;
     //
     bool publish_optimized_path_;
 };

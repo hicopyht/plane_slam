@@ -16,6 +16,8 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer * viewer)
     , use_keyframe_( true )
     , keyframe_linear_threshold_( 0.05f )
     , keyframe_angular_threshold_( 5.0f )
+    , isam2_relinearize_threshold_( 0.05f )
+    , isam2_relinearize_skip_( 1 )
     , plane_match_direction_threshold_( 10.0*DEG_TO_RAD )   // 10 degree
     , plane_match_distance_threshold_( 0.1 )    // 0.1meter
     , plane_match_check_overlap_( true )
@@ -28,13 +30,6 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer * viewer)
     mapping_config_callback_ = boost::bind(&GTMapping::gtMappingReconfigCallback, this, _1, _2);
     mapping_config_server_.setCallback(mapping_config_callback_);
 
-    // ISAM2
-    isam2_parameters_.relinearizeThreshold = 0.1;
-    isam2_parameters_.relinearizeSkip = 1;
-    isam2_parameters_.factorization = ISAM2Params::Factorization::QR;
-    isam2_parameters_.print( "ISAM2 parameters:" );
-    isam2_ = new ISAM2( isam2_parameters_ );
-
     // Pose and Map
     optimized_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("optimized_pose", 10);
     optimized_path_publisher_ = nh_.advertise<nav_msgs::Path>("optimized_path", 10);
@@ -44,6 +39,15 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer * viewer)
     //
     optimize_graph_service_server_ = nh_.advertiseService("optimize_graph", &GTMapping::optimizeGraphCallback, this );
     save_graph_service_server_ = nh_.advertiseService("save_graph", &GTMapping::saveGraphCallback, this );
+    save_map_service_server_ = nh_.advertiseService("save_map_pcd", &GTMapping::saveMapPCDCallback, this );
+    remove_bad_inlier_service_server_ = nh_.advertiseService("remove_bad_inlier", &GTMapping::removeBadInlierCallback, this );
+
+    // ISAM2
+    isam2_parameters_.relinearizeThreshold = isam2_relinearize_threshold_; // 0.1
+    isam2_parameters_.relinearizeSkip = isam2_relinearize_skip_; // 1
+    isam2_parameters_.factorization = ISAM2Params::Factorization::QR;
+    isam2_parameters_.print( "ISAM2 parameters:" );
+    isam2_ = new ISAM2( isam2_parameters_ );
 
 }
 
@@ -218,7 +222,7 @@ bool GTMapping::addFirstFrame( const Frame &frame )
     Key x0 = Symbol('x', 0);
     Vector pose_sigmas(6);
 //    pose_sigmas << init_pose.translation().vector()*0.2, init_pose.rotation().rpy() * 0.2;
-    pose_sigmas << 0.01, 0.01, 0.01, 0.01, 0.01, 0.01;
+    pose_sigmas << 0.001, 0.001, 0.001, 0.0001, 0.001, 0.001;
     noiseModel::Diagonal::shared_ptr poseNoise = noiseModel::Diagonal::Sigmas( pose_sigmas ); // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
 //    noiseModel::Diagonal::shared_ptr poseNoise = //
 //        noiseModel::Diagonal::Variances((Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
@@ -237,6 +241,7 @@ bool GTMapping::addFirstFrame( const Frame &frame )
     noiseModel::Diagonal::shared_ptr lm_noise = noiseModel::Diagonal::Sigmas( (Vector(2) << planes[0].sigmas[0], planes[0].sigmas[1]).finished() );
     graph_.push_back( OrientedPlane3DirectionPrior( l0, glm0.planeCoefficients(), lm_noise) );
 
+    // Add new landmark
     landmark_max_count_ = 0;
     for(int i = 0; i < planes.size(); i++)
     {
@@ -279,6 +284,27 @@ bool GTMapping::addFirstFrame( const Frame &frame )
         //
         landmark_max_count_ ++;
     }
+
+    // Add BetweenFactor<OrientedPlane3>
+//    for( int i = 0; i < planes.size()-1; i++)
+//    {
+//        Key lmi = Symbol('l', i);
+//        OrientedPlane3 pli( planes[i].coefficients );
+//        for( int j = i+1; j < planes.size(); j++ )
+//        {
+//            Key lmj = Symbol('l', j);
+//            OrientedPlane3 plj( planes[j].coefficients );
+//            // check between angle
+//            double angular = acos( pli.normal().dot( plj.normal() ) );
+//            if( angular >= M_PI_4 && angular <= M_PI_4*3)
+//            {
+//                gtsam::Vector3 diff = pli.errorVector( plj );
+//                noiseModel::Diagonal::shared_ptr noise = noiseModel::Diagonal::Sigmas(
+//                        (Vector(3) << 0.02, 0.02, 0.02).finished() );
+//                graph_.push_back( BetweenFactor<OrientedPlane3>( lmi, lmj, diff, noise) );
+//            }
+//        }
+//    }
 
     // Optimize factor graph
 //    isam2_->update( graph_, initial_estimate_ );
@@ -564,6 +590,31 @@ bool GTMapping::refinePlanarMap()
     return find_coplanar;
 }
 
+bool GTMapping::removeBadInlier()
+{
+    float radius = 0.1;
+    int min_neighbors = M_PI * radius *radius
+            / (plane_inlier_leaf_size_ * plane_inlier_leaf_size_) *  planar_bad_inlier_alpha_;
+    cout << GREEN << " Remove bad inlier, radius = " << radius
+         << ", minimum neighbours = " << min_neighbors << RESET << endl;
+    for( int i = 0; i < landmarks_.size(); i++)
+    {
+        PlaneType &lm = landmarks_[i];
+        if( !lm.valid )
+            continue;
+        // build the filter
+        pcl::RadiusOutlierRemoval<PointType> ror;
+        ror.setInputCloud( lm.cloud );
+        ror.setRadiusSearch( radius );
+        ror.setMinNeighborsInRadius ( min_neighbors );
+        // apply filter
+        PointCloudTypePtr cloud_filtered( new PointCloudType );
+        ror.filter( *cloud_filtered );
+        // swap
+        lm.cloud->swap( *cloud_filtered );
+    }
+}
+
 void GTMapping::updateSlamResult( std::vector<Pose3> &poses, std::vector<OrientedPlane3> &planes )
 {
     // clear buffer
@@ -775,6 +826,9 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     keyframe_linear_threshold_ = config.keyframe_linear_threshold;
     keyframe_angular_threshold_ = config.keyframe_angular_threshold * DEG_TO_RAD;
     //
+    isam2_relinearize_threshold_ = config.isam2_relinearize_threshold;
+    isam2_relinearize_skip_ = config.isam2_relinearize_skip;
+    //
     plane_match_direction_threshold_ = config.plane_match_direction_threshold * DEG_TO_RAD;
     plane_match_distance_threshold_ = config.plane_match_distance_threshold;
     plane_match_check_overlap_ = config.plane_match_check_overlap;
@@ -785,6 +839,7 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     refine_planar_map_ = config.refine_planar_map;
     planar_merge_direction_threshold_ = config.planar_merge_direction_threshold * DEG_TO_RAD;
     planar_merge_distance_threshold_ = config.planar_merge_distance_threshold;
+    planar_bad_inlier_alpha_ = config.planar_bad_inlier_alpha;
     //
     publish_optimized_path_ = config.publish_optimized_path;
 
@@ -823,6 +878,56 @@ bool GTMapping::saveGraphCallback(std_srvs::Trigger::Request &req, std_srvs::Tri
         isam2_->saveGraph( filename );
         res.success = true;
         res.message = " Save isam2 graph: " + filename + ".";
+    }
+
+    cout << GREEN << res.message << RESET << endl;
+    return true;
+}
+
+bool GTMapping::saveMapPCDCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
+{
+    if( !landmarks_.size() )
+    {
+        res.success = false;
+        res.message = " Failed, map is empty.";
+    }
+    else
+    {
+        PointCloudTypePtr cloud ( new PointCloudType );
+        for( int i = 0; i < landmarks_.size(); i++)
+        {
+            PlaneType &lm = landmarks_[i];
+            if( !lm.valid )
+                continue;
+            // Add color
+            setPointCloudColor( *(lm.cloud), lm.color );
+            *cloud += *(lm.cloud);
+        }
+        std::string filename = "map_"+timeToStr()+".pcd";
+        pcl::io::savePCDFileASCII ( filename, *cloud);
+        //
+        res.success = true;
+        res.message = " Save map: " + filename + ".";
+    }
+
+    cout << GREEN << res.message << RESET << endl;
+    return true;
+}
+
+bool GTMapping::removeBadInlierCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
+{
+    if( !landmarks_.size() )
+    {
+        res.success = false;
+        res.message = " Failed, map is empty.";
+    }
+    else
+    {
+        removeBadInlier();  // remove bad inlier in landmarks
+        updateMapViewer();  // update map visualization
+        //
+        res.success = true;
+        res.message = " Remove landmark bad inlier.";
     }
 
     cout << GREEN << res.message << RESET << endl;

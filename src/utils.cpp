@@ -48,6 +48,14 @@ tf::Matrix3x3 matrixEigen2TF(const Eigen::Matrix3d &m33)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
+void setPointCloudColor( PointCloudType &cloud, RGBValue &color )
+{
+    for( PointCloudType::iterator it = cloud.begin(); it != cloud.end(); it++)
+    {
+        (*it).rgb = color.float_value;
+    }
+}
+
 template <typename PointT>
 PointT transformPoint (const PointT &point,
                      const Eigen::Matrix4d &transform)
