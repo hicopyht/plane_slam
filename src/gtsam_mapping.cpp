@@ -7,7 +7,7 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer * viewer)
     : nh_(nh)
     , viewer_(viewer)
     , map_frame_("/world")
-    , mapping_config_server_( ros::NodeHandle( nh_, "Mapping" ) )
+    , mapping_config_server_( ros::NodeHandle( nh_, "GTMapping" ) )
     , isam2_parameters_()
     , graph_()
     , initial_estimate_()
@@ -78,7 +78,7 @@ bool GTMapping::mapping( const Frame &frame )
     if( success )
         updateMapViewer();
 
-    cout << GREEN << " Mapping, success = " << (success?"true":"false") << "." << RESET << endl;
+    cout << GREEN << " GTMapping, success = " << (success?"true":"false") << "." << RESET << endl;
 
     return success;
 }
@@ -859,7 +859,7 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     //
     publish_optimized_path_ = config.publish_optimized_path;
 
-    cout << GREEN <<" Mapping Config." << RESET << endl;
+    cout << GREEN <<" GTSAM Mapping Config." << RESET << endl;
 }
 
 bool GTMapping::optimizeGraphCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)

@@ -12,6 +12,7 @@
 #include <std_srvs/Trigger.h>
 //
 #include "g2o/core/sparse_optimizer.h"
+#include "g2o/solvers/csparse/linear_solver_csparse.h"
 #include "g2o/solvers/pcg/linear_solver_pcg.h"
 #include "g2o/core/block_solver.h"
 #include "g2o/core/linear_solver.h"
@@ -48,16 +49,21 @@ public:
 
     void updateMapViewer();
 
-//    // Get optimized pose
-//    const gtsam::Pose3 &getOptimizedPose() { return last_estimated_pose_; }
-//    // Get optimized path
-//    const std::vector<gtsam::Pose3> &getOptimizedPath() { return estimated_poses_; }
-//    // Get landmarks
-//    const std::vector<PlaneType> &getLandmark() { return landmarks_; }
-//    // Set map frame
-//    inline void setMapFrame( const std::string &frame_id ) { map_frame_ = frame_id; }
-//    // Query map frame
-//    std::string getMapFrame() const { return map_frame_; }
+    // Save map to PCD file
+    void saveMapPCD( const std::string &filename = "plane_slam_map.pcd");
+    // Save graph
+    inline void saveGraphDot( const std::string &filename = "plane_slam_graph.dot" ){
+        isam2_->saveGraph( filename );
+    }
+    // Get optimized pose
+    const tf::Transform &getOptimizedPoseTF() { return last_estimated_pose_tf_; }
+    // Get optimized path
+    std::vector<geometry_msgs::PoseStamped> getOptimizedPath();
+    // Get landmarks
+    const std::vector<PlaneType> &getLandmark() { return landmarks_; }
+    // Set map frame
+    inline void setMapFrame( const std::string &frame_id ) { map_frame_ = frame_id; }
+    std::string getMapFrame() const { return map_frame_; }
 
 protected:
     bool addFirstFrame( const Frame &frame );
@@ -93,9 +99,25 @@ private:
     ros::Publisher map_cloud_publisher_;
     ros::Publisher marker_publisher_;
 
+    //
+    SparseOptimizer* global_optimizer_;
+    OptimizationAlgorithm* solver_;
+
+    //
+    g2o::VertexSE3* last_estimated_pose_;
     tf::Transform last_estimated_pose_tf_;
+    std::vector<g2o::VertexSE3*> estimated_poses_;
+    std::vector<g2o::VertexPlane*> estimated_planes_;
+    std::vector<PlaneType> landmarks_;
+    int pose_count_;
+    int landmark_max_count_;
+    cv::RNG rng_;
 
-
+    //
+    std::string map_frame_;
+    //
+    bool list_solvers_;
+    std::string str_solver_;
     // Parameters
     bool use_keyframe_;
     double keyframe_linear_threshold_;

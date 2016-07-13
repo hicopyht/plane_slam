@@ -85,12 +85,26 @@ void transformTFToMatrix4d(const tf::Transform &t, Eigen::Matrix4d &e)
 
 }
 
+Eigen::Matrix4d transformTFToMatrix4d(const tf::Transform &t)
+{
+    Eigen::Matrix4d e;
+    transformTFToMatrix4d(t, e);
+    return e;
+}
+
 void transformMatrix4dToTF(const Eigen::Matrix4d &e, tf::Transform &t)
 {
     t.setOrigin(tf::Vector3( e(0,3), e(1,3), e(2,3)));
     t.setBasis(tf::Matrix3x3( e(0,0), e(0,1), e(0,2),
                               e(1,0), e(1,1), e(1,2),
                               e(2,0), e(2,1), e(2,2)));
+}
+
+tf::Transform transformMatrix4dToTF(const Eigen::Matrix4d &e)
+{
+    tf::Transform t;
+    transformMatrix4dToTF(e, t);
+    return t;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
