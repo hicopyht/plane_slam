@@ -62,15 +62,20 @@ public:
 
     void updateMapViewer();
 
+    // Save map to PCD file
+    void saveMapPCD( const std::string &filename = "plane_slam_map.pcd");
+    // Save graph
+    inline void saveGraphDot( const std::string &filename = "plane_slam_graph.dot" ){
+        isam2_->saveGraph( filename );
+    }
     // Get optimized pose
-    const gtsam::Pose3 &getOptimizedPose() { return last_estimated_pose_; }
+    const tf::Transform &getOptimizedPoseTF() { return last_estimated_pose_tf_; }
     // Get optimized path
-    const std::vector<gtsam::Pose3> &getOptimizedPath() { return estimated_poses_; }
+    std::vector<geometry_msgs::PoseStamped> getOptimizedPath();
     // Get landmarks
     const std::vector<PlaneType> &getLandmark() { return landmarks_; }
     // Set map frame
     inline void setMapFrame( const std::string &frame_id ) { map_frame_ = frame_id; }
-    // Query map frame
     std::string getMapFrame() const { return map_frame_; }
 
 protected:
@@ -152,6 +157,7 @@ private:
     //
     std::string map_frame_;
     Pose3 last_estimated_pose_;
+    tf::Transform last_estimated_pose_tf_;
     std::vector<Pose3> estimated_poses_;
     std::vector<OrientedPlane3> estimated_planes_;
     std::vector<PlaneType> landmarks_;

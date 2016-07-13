@@ -7,6 +7,19 @@ bool isValidPoint(const PointType &p)
     return ( prttcp_->isValid(p) );
 }
 
+void calAngleAndDistance( const Eigen::Isometry3d& t, double& rad, double& dist )
+{
+    rad = acos((t.rotation().trace() -1)/2 );
+    dist = t.translation().norm();
+}
+
+void calAngleAndDistance(const tf::Transform &trans, double& rad, double& dist )
+{
+    Eigen::Isometry3d t;
+    transformTFToMatrix4d( trans, t.matrix() );
+    calAngleAndDistance( t, rad, dist);
+}
+
 void matrixTF2Eigen(const tf::Matrix3x3 &t, Eigen::Matrix3d &e)
 {
     e.matrix()(0,0) = t[0][0];
@@ -45,6 +58,39 @@ tf::Matrix3x3 matrixEigen2TF(const Eigen::Matrix3d &m33)
     tf::Matrix3x3 t;
     matrixEigen2TF( m33 , t );
     return t;
+}
+
+
+void transformTFToMatrix4d(const tf::Transform &t, Eigen::Matrix4d &e)
+{
+    // Translation
+    e(0,3) = t.getOrigin().x();
+    e(1,3) = t.getOrigin().y();
+    e(2,3) = t.getOrigin().z();
+    // Rotation matrix
+    e(0,0) = t.getBasis()[0][0];
+    e(0,1) = t.getBasis()[0][1];
+    e(0,2) = t.getBasis()[0][2];
+    e(1,0) = t.getBasis()[1][0];
+    e(1,1) = t.getBasis()[1][1];
+    e(1,2) = t.getBasis()[1][2];
+    e(2,0) = t.getBasis()[2][0];
+    e(2,1) = t.getBasis()[2][1];
+    e(2,2) = t.getBasis()[2][2];
+    // Identity
+    e(3,0) = 0;
+    e(3,1) = 0;
+    e(3,2) = 0;
+    e(3,3) = 1;
+
+}
+
+void transformMatrix4dToTF(const Eigen::Matrix4d &e, tf::Transform &t)
+{
+    t.setOrigin(tf::Vector3( e(0,3), e(1,3), e(2,3)));
+    t.setBasis(tf::Matrix3x3( e(0,0), e(0,1), e(0,2),
+                              e(1,0), e(1,1), e(1,2),
+                              e(2,0), e(2,1), e(2,2)));
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////

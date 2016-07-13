@@ -52,6 +52,7 @@ KinectListener::KinectListener() :
     odometry_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("odometry_pose", 10);
     odometry_path_publisher_ = nh_.advertise<nav_msgs::Path>("odometry_path", 10);
     save_path_landmarks_service_server_ = nh_.advertiseService("save_path_landmarks", &KinectListener::savePathLandmarksCallback, this );
+    save_slam_result_all_ = nh_.advertiseService("save_slam_result_all", &KinectListener::saveSlamResultCallback, this );
 
     // config subscribers
     if( !topic_point_cloud_.empty() && !topic_image_visual_.empty() && !topic_camera_info_.empty() ) // pointcloud2
@@ -172,6 +173,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
 
     // Compute Frame
     Frame frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_);
+    frame.stamp_ = visual_img_msg->header.stamp;
     //
     frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
@@ -196,8 +198,8 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
                  << ", " << motion.translation[2] << RESET << endl;
 
             // estimated pose
-            frame.pose_ = last_frame.pose_ * motionToPose3( motion );
-            frame.valid = true;
+            frame.pose_ = last_frame.pose_ * motionToTf( motion );
+            frame.valid_ = true;
         }
         else    // failed
         {
@@ -215,13 +217,13 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
         // first frame
         if( !true_poses_.size() )   // No true pose, set first frame pose to identity.
         {
-            frame.pose_ = tfToPose3( init_pose_ );
-            frame.valid = true;
+            frame.pose_ = init_pose_;
+            frame.valid_ = true;
         }
         else    // Valid true pose, set first frame pose to it.
         {
-            frame.pose_ = geometryPoseToPose3( true_poses_[true_poses_.size()-1] );
-            frame.valid = true;
+            frame.pose_ = geometryPoseToTf( true_poses_[true_poses_.size()-1] );
+            frame.valid_ = true;
         }
 
         if( true_poses_.size() > 0) // First odometry pose to true pose.
@@ -257,10 +259,10 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     }
 
     // Mapping
-    if( frame.valid )
+    if( frame.valid_ )
     {
         if( gt_mapping_->mapping( frame ) )
-            frame.pose_ = gt_mapping_->getOptimizedPose();  // optimized pose
+            frame.pose_ = gt_mapping_->getOptimizedPoseTF();  // optimized pose
     }
     map_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
@@ -291,6 +293,63 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
 
     last_frame = frame;
     last_frame_valid = true;
+}
+
+
+void KinectListener::savePathAndLandmarks( const std::string &filename )
+{
+    FILE* yaml = std::fopen( filename.c_str(), "w" );
+    fprintf( yaml, "#landmarks and path file: %s\n", filename.c_str() );
+    fprintf( yaml, "#landmarks format: ax+by+cz+d = 0, (n,d), (a,b,c,d)\n");
+    fprintf( yaml, "#pose format: T(xyz) Q(xyzw)\n\n" );
+
+    // Save Landmarks
+    std::vector<PlaneType> landmarks = gt_mapping_->getLandmark();
+    fprintf( yaml, "#landmarks, size %d\n", landmarks.size() );
+    for( int i = 0; i < landmarks.size(); i++)
+    {
+        PlaneType &lm = landmarks[i];
+        if( !lm.valid )
+            continue;
+        fprintf( yaml, "%f %f %f %f\n", lm.coefficients[0], lm.coefficients[1],
+                lm.coefficients[2], lm.coefficients[3] );
+    }
+    fprintf( yaml, "\n\n");
+
+    // Save Optimized Path
+    std::vector<geometry_msgs::PoseStamped> optimized_poses = gt_mapping_->getOptimizedPath();
+    fprintf( yaml, "#optimized path, size %d\n", optimized_poses.size() );
+    for( int i = 0; i < optimized_poses.size(); i++)
+    {
+        geometry_msgs::PoseStamped &pose = optimized_poses[i];
+        fprintf( yaml, "%f %f %f %f %f %f %f\n", pose.pose.position.x, pose.pose.position.y, pose.pose.position.z,
+                 pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w );
+
+    }
+    fprintf( yaml, "\n\n");
+
+    // Save True Path
+    fprintf( yaml, "#true path, size %d\n", true_poses_.size() );
+    for( int i = 0; i < true_poses_.size(); i++)
+    {
+        geometry_msgs::PoseStamped &pose = true_poses_[i];
+        fprintf( yaml, "%f %f %f %f %f %f %f\n", pose.pose.position.x, pose.pose.position.y, pose.pose.position.z,
+                 pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w );
+    }
+    fprintf( yaml, "\n\n");
+
+    // Save Odometry Path
+    fprintf( yaml, "#odometry path, size %d\n", odometry_poses_.size() );
+    for( int i = 0; i < odometry_poses_.size(); i++)
+    {
+        geometry_msgs::PoseStamped &pose = odometry_poses_[i];
+        fprintf( yaml, "%f %f %f %f %f %f %f\n", pose.pose.position.x, pose.pose.position.y, pose.pose.position.z,
+                 pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w );
+    }
+    fprintf( yaml, "\n\n");
+
+    // close
+    fclose(yaml);
 }
 
 void KinectListener::cvtCameraParameter( const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
@@ -399,60 +458,24 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
 
 bool KinectListener::savePathLandmarksCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res )
 {
-    std::string filename = "/home/lizhi/bags/result/landmarks_path_" + timeToStr() + ".txt";
-    FILE* yaml = std::fopen( filename.c_str(), "w" );
-    fprintf( yaml, "#landmarks and path file: %s\n", filename.c_str() );
-    fprintf( yaml, "#landmarks format: ax+by+cz+d = 0, (n,d), (a,b,c,d)\n");
-    fprintf( yaml, "#pose format: T(xyz) Q(xyzw)\n\n" );
-
-    // Save Landmarks
-    std::vector<PlaneType> landmarks = gt_mapping_->getLandmark();
-    fprintf( yaml, "#landmarks, size %d\n", landmarks.size() );
-    for( int i = 0; i < landmarks.size(); i++)
-    {
-        PlaneType &lm = landmarks[i];
-        fprintf( yaml, "%f %f %f %f\n", lm.coefficients[0], lm.coefficients[1],
-                lm.coefficients[2], lm.coefficients[3] );
-    }
-    fprintf( yaml, "\n\n");
-
-    // Save Optimized Path
-    std::vector<gtsam::Pose3> optimized_poses = gt_mapping_->getOptimizedPath();
-    fprintf( yaml, "#optimized path, size %d\n", optimized_poses.size() );
-    for( int i = 0; i < optimized_poses.size(); i++)
-    {
-        gtsam::Pose3 &pose = optimized_poses[i];
-        fprintf( yaml, "%f %f %f %f %f %f %f\n", pose.translation().x(), pose.translation().y(), pose.translation().z(),
-                 pose.rotation().toQuaternion().x(), pose.rotation().toQuaternion().y(), pose.rotation().toQuaternion().z(),
-                 pose.rotation().toQuaternion().w());
-    }
-    fprintf( yaml, "\n\n");
-
-    // Save True Path
-    fprintf( yaml, "#true path, size %d\n", true_poses_.size() );
-    for( int i = 0; i < true_poses_.size(); i++)
-    {
-        geometry_msgs::PoseStamped &pose = true_poses_[i];
-        fprintf( yaml, "%f %f %f %f %f %f %f\n", pose.pose.position.x, pose.pose.position.y, pose.pose.position.z,
-                 pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w );
-    }
-    fprintf( yaml, "\n\n");
-
-    // Save Odometry Path
-    fprintf( yaml, "#odometry path, size %d\n", odometry_poses_.size() );
-    for( int i = 0; i < odometry_poses_.size(); i++)
-    {
-        geometry_msgs::PoseStamped &pose = odometry_poses_[i];
-        fprintf( yaml, "%f %f %f %f %f %f %f\n", pose.pose.position.x, pose.pose.position.y, pose.pose.position.z,
-                 pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w );
-    }
-    fprintf( yaml, "\n\n");
-
-    // close
-    fclose(yaml);
-
+    std::string filename = "/home/lizhi/bags/result/" + timeToStr() + "_landmarks_path.txt";
+    savePathAndLandmarks( filename );
     res.success = true;
     res.message = " Save landmarks and path file: " + filename + ".";
+    cout << GREEN << res.message << RESET << endl;
+    return true;
+}
+
+bool KinectListener::saveSlamResultCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
+{
+    std::string time_str = timeToStr(); // appended time string
+    std::string dir = "/home/lizhi/bags/result";    // directory
+    //
+    savePathAndLandmarks( dir+"/"+time_str+"_landmarks_path.txt");  // save path and landmarks
+    gt_mapping_->saveMapPCD( dir+"/"+time_str+"_map.pcd");      // save map
+    gt_mapping_->saveGraphDot( dir+"/"+time_str+"_graph.dot");  // save grapy
+    res.success = true;
+    res.message = " Save slam result(landmarks&path, map, graph) to directory " + dir + ".";
     cout << GREEN << res.message << RESET << endl;
     return true;
 }

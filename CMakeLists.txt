@@ -80,6 +80,7 @@ find_package(TBB)
 ## Generate dynamic reconfigure parameters in the 'cfg' folder
 generate_dynamic_reconfigure_options(
   cfg/PlaneSlam.cfg
+  cfg/G2OMapping.cfg
   cfg/GTMapping.cfg
   cfg/LineBasedSegment.cfg
   cfg/Viewer.cfg

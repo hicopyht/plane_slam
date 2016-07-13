@@ -78,6 +78,8 @@ bool GTMapping::mapping( const Frame &frame )
     if( success )
         updateMapViewer();
 
+    cout << GREEN << " Mapping, success = " << (success?"true":"false") << "." << RESET << endl;
+
     return success;
 }
 
@@ -90,7 +92,7 @@ bool GTMapping::doMapping( const Frame &frame )
     }
 
     const std::vector<PlaneType> &planes = frame.segment_planes_;
-    const gtsam::Pose3 new_pose = frame.pose_;
+    const gtsam::Pose3 new_pose = tfToPose3( frame.pose_ );
     const gtsam::Pose3 rel_pose = last_estimated_pose_.inverse() * new_pose;
 
     // Convert observations to OrientedPlane3
@@ -197,7 +199,9 @@ bool GTMapping::doMapping( const Frame &frame )
         }
     }
 
+    // update estimated pose
     last_estimated_pose_ = current_estimate;
+    last_estimated_pose_tf_ = pose3ToTF( last_estimated_pose_ );
     return true;
 }
 
@@ -207,7 +211,7 @@ bool GTMapping::addFirstFrame( const Frame &frame )
         return false;
 
     const std::vector<PlaneType> &planes = frame.segment_planes_;
-    const gtsam::Pose3 &init_pose = frame.pose_;
+    const gtsam::Pose3 init_pose = tfToPose3( frame.pose_ );
 
     // clear
     pose_count_ = 0;
@@ -293,6 +297,7 @@ bool GTMapping::addFirstFrame( const Frame &frame )
     // Optimize factor graph
 //    isam2_->update( graph_, initial_estimate_ );
     last_estimated_pose_ = init_pose;
+    last_estimated_pose_tf_ = pose3ToTF( last_estimated_pose_ );
 
 //    // Clear the factor graph and values for the next iteration
 //    graph_.resize(0);
@@ -310,11 +315,11 @@ bool GTMapping::addFirstFrame( const Frame &frame )
 
 bool GTMapping::isKeyFrame( const Frame &frame )
 {
-    gtsam::Pose3 rel_pose = last_estimated_pose_.inverse() * frame.pose_;
-    double linear_distance = rel_pose.translation().norm();
-    double angular_distance = rel_pose.rotation().ypr().sum();  // simple way
+    tf::Transform rel_tf = last_estimated_pose_tf_.inverse() * frame.pose_;
+    double rad, distance;
+    calAngleAndDistance( rel_tf, rad, distance );
 
-    if( linear_distance > keyframe_linear_threshold_ || angular_distance > keyframe_angular_threshold_ )
+    if( distance > keyframe_linear_threshold_ || rad > keyframe_angular_threshold_ )
         return true;
     else
         return false;
@@ -803,6 +808,33 @@ void GTMapping::updateMapViewer()
     viewer_->spinMapOnce();
 }
 
+void GTMapping::saveMapPCD( const std::string &filename )
+{
+    PointCloudTypePtr cloud ( new PointCloudType );
+    for( int i = 0; i < landmarks_.size(); i++)
+    {
+        PlaneType &lm = landmarks_[i];
+        if( !lm.valid )
+            continue;
+        // Add color
+        setPointCloudColor( *(lm.cloud), lm.color );
+        *cloud += *(lm.cloud);
+    }
+
+    pcl::io::savePCDFileASCII ( filename, *cloud);
+}
+
+std::vector<geometry_msgs::PoseStamped> GTMapping::getOptimizedPath()
+{
+    std::vector<geometry_msgs::PoseStamped> poses;
+    for( int i = 0; i < estimated_poses_.size(); i++)
+    {
+        poses.push_back( pose3ToGeometryPose( estimated_poses_[i] ) );
+    }
+    return poses;
+}
+
+
 void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, uint32_t level)
 {
     //
@@ -858,10 +890,10 @@ bool GTMapping::saveGraphCallback(std_srvs::Trigger::Request &req, std_srvs::Tri
     }
     else
     {
-        std::string filename = "/home/lizhi/bags/result/map_"+timeToStr()+".dot";
-        isam2_->saveGraph( filename );
+        std::string filename = "/home/lizhi/bags/result/"+timeToStr()+"_graph.dot";
+        saveGraphDot( filename );
         res.success = true;
-        res.message = " Save isam2 graph: " + filename + ".";
+        res.message = " Save isam2 graph as dot file: " + filename + ".";
     }
 
     cout << GREEN << res.message << RESET << endl;
@@ -877,21 +909,10 @@ bool GTMapping::saveMapPCDCallback(std_srvs::Trigger::Request &req, std_srvs::Tr
     }
     else
     {
-        PointCloudTypePtr cloud ( new PointCloudType );
-        for( int i = 0; i < landmarks_.size(); i++)
-        {
-            PlaneType &lm = landmarks_[i];
-            if( !lm.valid )
-                continue;
-            // Add color
-            setPointCloudColor( *(lm.cloud), lm.color );
-            *cloud += *(lm.cloud);
-        }
-        std::string filename = "/home/lizhi/bags/result/map_"+timeToStr()+".pcd";
-        pcl::io::savePCDFileASCII ( filename, *cloud);
-        //
+        std::string filename = "/home/lizhi/bags/result/" + timeToStr() + "_map.pcd";
+        saveMapPCD( filename );
         res.success = true;
-        res.message = " Save map: " + filename + ".";
+        res.message = " Save map as pcd file: " + filename + ".";
     }
 
     cout << GREEN << res.message << RESET << endl;

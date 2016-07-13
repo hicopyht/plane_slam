@@ -64,13 +64,12 @@ public:
                              const sensor_msgs::ImageConstPtr &depth_img_msg,
                              CameraParameters &camera);
 
-    inline void setCameraParameters( const CameraParameters & camera )
-    {
-        camera_parameters_ = camera;
-    }
+    void savePathAndLandmarks( const std::string &filename = "plane_slam_path_landmarks.txt" );
 
     void cvtCameraParameter( const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
                              CameraParameters &camera);
+
+    inline void setCameraParameters( const CameraParameters & camera ) { camera_parameters_ = camera; }
 
     inline void setInitPose( tf::Transform init_tf ) { init_pose_ = init_tf; set_init_pose_ = true; }
 
@@ -85,7 +84,9 @@ protected:
 
     void planeSlamReconfigCallback( plane_slam::PlaneSlamConfig &config, uint32_t level);
 
-    bool savePathLandmarksCallback(  std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res  );
+    bool savePathLandmarksCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
+
+    bool saveSlamResultCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
 
 private:
     bool getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time &time = ros::Time(0) );
@@ -128,6 +129,7 @@ private:
     ros::Publisher odometry_pose_publisher_;
     ros::Publisher odometry_path_publisher_;
     ros::ServiceServer save_path_landmarks_service_server_;
+    ros::ServiceServer save_slam_result_all_;
 
     //
     ORBextractor* orb_extractor_;
@@ -147,10 +149,9 @@ private:
     int skip_message_;
     tf::Transform init_pose_;
 
-    //
-    // Plane segment based line segment
+    // Camera Parameters
     CameraParameters camera_parameters_;
-    //
+    // Path
     std::vector<geometry_msgs::PoseStamped> true_poses_;
     std::vector<geometry_msgs::PoseStamped> odometry_poses_;
 };

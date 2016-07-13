@@ -179,11 +179,19 @@ struct RESULT_OF_MOTION
     }
 };
 
+void calAngleAndDistance(const Eigen::Isometry3d& t, double& rad, double& dist);
+void calAngleAndDistance( const tf::Transform &trans, double& rad, double& dist );
+//
 void matrixTF2Eigen(const tf::Matrix3x3 &t, Eigen::Matrix3d &e);
 Eigen::Matrix3d matrixTF2Eigen(const tf::Matrix3x3 &t);
 void matrixEigen2TF( const Eigen::Matrix3d &e, tf::Matrix3x3 &t);
 tf::Matrix3x3 matrixEigen2TF(const Eigen::Matrix3d &m33);
 
+//
+void transformTFToMatrix4d(const tf::Transform &t, Eigen::Matrix4d &e);
+void transformMatrix4dToTF(const Eigen::Matrix4d &e, tf::Transform &t);
+
+//
 void setPointCloudColor( PointCloudType &cloud, RGBValue &color );
 
 template <typename PointT>

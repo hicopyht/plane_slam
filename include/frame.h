@@ -2,6 +2,7 @@
 #define FRAME_H
 
 #include <ros/ros.h>
+#include <geometry_msgs/PointStamped.h>
 #include <opencv2/core/core.hpp>
 #include <pcl/pcl_base.h>
 #include <gtsam/geometry/Pose3.h>
@@ -52,9 +53,11 @@ private:
 
 public:
     // Valid
-    bool valid;
+    bool valid_;
+    // Time Stamp
+    ros::Time stamp_;
     // Robot Pose
-    gtsam::Pose3 pose_;
+    tf::Transform pose_;
     // Sensor data
     cv::Mat visual_image_;  // visual image
     cv::Mat gray_image_;    // gray image
