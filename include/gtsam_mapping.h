@@ -151,8 +151,11 @@ private:
     ISAM2Params isam2_parameters_;
     ISAM2* isam2_;
     // Create a Factor Graph and Values to hold the new data
-    NonlinearFactorGraph graph_; // factor graph
+    NonlinearFactorGraph factor_graph_; // factor graph
     Values initial_estimate_; // initial guess
+
+    //
+//    std::map<int, Frame*> ;
 
     //
     std::string map_frame_;

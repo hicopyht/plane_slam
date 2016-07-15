@@ -9,7 +9,7 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer * viewer)
     , map_frame_("/world")
     , mapping_config_server_( ros::NodeHandle( nh_, "GTMapping" ) )
     , isam2_parameters_()
-    , graph_()
+    , factor_graph_()
     , initial_estimate_()
     , pose_count_( 0 )
     , landmark_max_count_( 0 )
@@ -130,7 +130,7 @@ bool GTMapping::doMapping( const Frame &frame )
 //    cout << GREEN << "odom noise dim: " << odometry_noise->dim() << RESET << endl;
     Key pose_key = Symbol('x', pose_count_);
     Key last_key = Symbol('x', pose_count_-1);
-    graph_.push_back(BetweenFactor<Pose3>(last_key, pose_key, rel_pose, odometry_noise));
+    factor_graph_.push_back(BetweenFactor<Pose3>(last_key, pose_key, rel_pose, odometry_noise));
     // Add pose guess
     initial_estimate_.insert<Pose3>( pose_key, new_pose );
     pose_count_ ++;
@@ -144,7 +144,7 @@ bool GTMapping::doMapping( const Frame &frame )
         unpairs[pair.iobs] = 0;
         Key ln =  Symbol( 'l', pair.ilm);
         noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( obs.sigmas );
-        graph_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
+        factor_graph_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
     }
 
     // Add new landmark for unpaired observation
@@ -156,7 +156,7 @@ bool GTMapping::doMapping( const Frame &frame )
             const PlaneType &obs = planes[i];
             Key ln = Symbol('l', landmark_max_count_);
             noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( obs.sigmas );
-            graph_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
+            factor_graph_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
 
             // Add initial guess
             OrientedPlane3 lmn( obs.coefficients );
@@ -169,7 +169,7 @@ bool GTMapping::doMapping( const Frame &frame )
     }
 
     // Update graph
-    isam2_->update(graph_, initial_estimate_);
+    isam2_->update(factor_graph_, initial_estimate_);
     isam2_->update(); // call additionally
 
     // Update estimated poses and planes
@@ -185,7 +185,7 @@ bool GTMapping::doMapping( const Frame &frame )
          << " ms " << RESET << endl;
 
     // Clear the factor graph and values for the next iteration
-    graph_.resize(0);
+    factor_graph_.resize(0);
     initial_estimate_.clear();
 
     // Refine map
@@ -230,7 +230,7 @@ bool GTMapping::addFirstFrame( const Frame &frame )
     noiseModel::Diagonal::shared_ptr poseNoise = noiseModel::Diagonal::Sigmas( pose_sigmas ); // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
 //    noiseModel::Diagonal::shared_ptr poseNoise = //
 //        noiseModel::Diagonal::Variances((Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
-    graph_.push_back( PriorFactor<Pose3>( x0, init_pose, poseNoise ) );
+    factor_graph_.push_back( PriorFactor<Pose3>( x0, init_pose, poseNoise ) );
 
     // Add an initial guess for the current pose
     initial_estimate_.insert<Pose3>( x0, init_pose );
@@ -243,7 +243,7 @@ bool GTMapping::addFirstFrame( const Frame &frame )
     OrientedPlane3 lm0(planes[0].coefficients);
     OrientedPlane3 glm0 = lm0.transform(init_pose.inverse());
     noiseModel::Diagonal::shared_ptr lm_noise = noiseModel::Diagonal::Sigmas( (Vector(2) << planes[0].sigmas[0], planes[0].sigmas[1]).finished() );
-    graph_.push_back( OrientedPlane3DirectionPrior( l0, glm0.planeCoefficients(), lm_noise) );
+    factor_graph_.push_back( OrientedPlane3DirectionPrior( l0, glm0.planeCoefficients(), lm_noise) );
 
     // Add new landmark
     landmark_max_count_ = 0;
@@ -259,7 +259,7 @@ bool GTMapping::addFirstFrame( const Frame &frame )
 
         // Add observation factor
         noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( plane.sigmas );
-        graph_.push_back( OrientedPlane3Factor(plane.coefficients, obs_noise, x0, ln) );
+        factor_graph_.push_back( OrientedPlane3Factor(plane.coefficients, obs_noise, x0, ln) );
 
         // Add initial guesses to all observed landmarks
 //        cout << "Key: " << ln << endl;
