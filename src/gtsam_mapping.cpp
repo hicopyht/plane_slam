@@ -25,6 +25,8 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer * viewer)
     , plane_inlier_leaf_size_( 0.05f )  // 0.05meter
     , plane_hull_alpha_( 0.5 )
     , rng_(12345)
+    , next_plane_id_( 0 )
+    , next_frame_id_( 0 )
 {
     // reconfigure
     mapping_config_callback_ = boost::bind(&GTMapping::gtMappingReconfigCallback, this, _1, _2);
@@ -42,35 +44,30 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer * viewer)
     save_map_service_server_ = nh_.advertiseService("save_map_pcd", &GTMapping::saveMapPCDCallback, this );
     remove_bad_inlier_service_server_ = nh_.advertiseService("remove_bad_inlier", &GTMapping::removeBadInlierCallback, this );
 
-    // ISAM2
-    isam2_parameters_.relinearizeThreshold = isam2_relinearize_threshold_; // 0.1
-    isam2_parameters_.relinearizeSkip = isam2_relinearize_skip_; // 1
-    isam2_parameters_.factorization = ISAM2Params::Factorization::QR;
-    isam2_parameters_.print( "ISAM2 parameters:" );
-    isam2_ = new ISAM2( isam2_parameters_ );
-
+    // reset
+    reset();
 }
 
 
-bool GTMapping::mapping( const Frame &frame )
+bool GTMapping::mapping( Frame *frame )
 {
     bool success;
     if( !landmarks_.size() )    // first frame, add prior
     {
-        success = addFirstFrame( frame );
+        success = addFirstFrame( *frame );
     }
     else    // do mapping
     {
         if( use_keyframe_ )
         {
-            if( isKeyFrame( frame ))
-                success = doMapping( frame );   // do mapping
+            if( isKeyFrame( *frame ))
+                success = doMapping( *frame );   // do mapping
             else
                 success = false;
         }
         else
         {
-            success = doMapping( frame );   // do mapping
+            success = doMapping( *frame );   // do mapping
         }
     }
 
@@ -203,6 +200,95 @@ bool GTMapping::doMapping( const Frame &frame )
     last_estimated_pose_ = current_estimate;
     last_estimated_pose_tf_ = pose3ToTF( last_estimated_pose_ );
     return true;
+}
+
+bool GTMapping::firstFrame( Frame *frame )
+{
+    // check number of planes
+    if( frame->segment_planes_.size() == 0 )
+        return false;
+
+    std::vector<PlaneType> &planes = frame->segment_planes_;
+    gtsam::Pose3 init_pose = tfToPose3( frame->pose_ );
+
+    // set ids
+    frame->setId( next_frame_id_ );
+    next_frame_id_++;
+    for( int i = 0; i < planes.size(); i++)
+    {
+        planes[i].setId( next_plane_id_ );
+        landmark_ids_.insert( next_plane_id_ );   // add landmark id to set
+        landmarks_related_frames_list_[next_plane_id_] = std::set(); // add empty set
+        landmarks_related_frames_list_[next_plane_id_].insert( frame->id() ); // related frame
+        //
+        next_plane_id_ ++;
+    }
+    frames_list_[frame->id()] = frame;  // add frame to list
+    key_frame_ids_.insert( frame->id() ); // add key frame id to set
+
+
+    // Add a prior factor
+    Key x0 = Symbol('x', frame->id());
+    Vector pose_sigmas(6);
+//    pose_sigmas << init_pose.translation().vector()*0.2, init_pose.rotation().rpy() * 0.2;
+    pose_sigmas << 0.001, 0.001, 0.001, 0.0001, 0.001, 0.001;
+    noiseModel::Diagonal::shared_ptr poseNoise = noiseModel::Diagonal::Sigmas( pose_sigmas ); // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
+//    noiseModel::Diagonal::shared_ptr poseNoise = //
+//        noiseModel::Diagonal::Variances((Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
+    factor_graph_.push_back( PriorFactor<Pose3>( x0, init_pose, poseNoise ) );
+
+    // Add an initial guess for the current pose
+    initial_estimate_.insert<Pose3>( x0, init_pose );
+
+    // Add a prior landmark
+    Key l0 = Symbol('l', planes[0].id() );
+    OrientedPlane3 lm0(planes[0].coefficients);
+    OrientedPlane3 glm0 = lm0.transform(init_pose.inverse());
+    noiseModel::Diagonal::shared_ptr lm_noise = noiseModel::Diagonal::Sigmas( (Vector(2) << planes[0].sigmas[0], planes[0].sigmas[1]).finished() );
+    factor_graph_.push_back( OrientedPlane3DirectionPrior( l0, glm0.planeCoefficients(), lm_noise) );
+
+    // Add new landmark
+    landmark_max_count_ = 0;
+    for(int i = 0; i < planes.size(); i++)
+    {
+        PlaneType &plane = planes[i];
+        Key ln = Symbol('l', plane.id() );
+
+        cout << YELLOW << " lm" << i << " coefficents: " << plane.coefficients[0]
+             << ", " << plane.coefficients[1] << ", " << plane.coefficients[2]
+             << ", " << plane.coefficients[3] << ", centroid: " << plane.centroid.x
+             << ", " << plane.centroid.y << ", " << plane.centroid.z << RESET << endl;
+
+        // Add observation factor
+        noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( plane.sigmas );
+        factor_graph_.push_back( OrientedPlane3Factor(plane.coefficients, obs_noise, x0, ln) );
+
+        // Add initial guesses to all observed landmarks
+//        cout << "Key: " << ln << endl;
+        OrientedPlane3 lmn( plane.coefficients );
+        OrientedPlane3 glmn = lmn.transform( init_pose.inverse() );
+        initial_estimate_.insert<OrientedPlane3>( ln,  glmn );
+    }
+
+    // Optimize factor graph
+//    isam2_->update( graph_, initial_estimate_ );
+    last_estimated_pose_ = init_pose;
+    last_estimated_pose_tf_ = pose3ToTF( last_estimated_pose_ );
+
+//    // Clear the factor graph and values for the next iteration
+//    graph_.resize(0);
+//    initial_estimate_.clear();
+//    //
+
+    cout << GREEN << " Register first frame in the map." << endl;
+//    initial_estimate_.print(" - Init pose: ");
+    cout << " - Initial pose: " << endl;
+    printTransform( init_pose.matrix() );
+    cout << RESET << endl;
+
+    return true;
+
+
 }
 
 bool GTMapping::addFirstFrame( const Frame &frame )
@@ -806,6 +892,41 @@ void GTMapping::updateMapViewer()
     viewer_->removeMap();
     viewer_->displayMapLandmarks( landmarks_, "Map" );
     viewer_->spinMapOnce();
+}
+
+void GTMapping::reset()
+{
+    // Delete old
+    if( isam2_ )
+        delete isam2_;
+
+    // Construct new
+    isam2_parameters_.relinearizeThreshold = isam2_relinearize_threshold_; // 0.1
+    isam2_parameters_.relinearizeSkip = isam2_relinearize_skip_; // 1
+    isam2_parameters_.factorization = ISAM2Params::Factorization::QR;
+    isam2_parameters_.print( "ISAM2 parameters:" );
+    isam2_ = new ISAM2( isam2_parameters_ );
+
+    // clear
+    pose_count_ = 0;
+    landmark_max_count_ = 0;
+    initial_estimate_.clear();
+    estimated_poses_.clear();
+    landmarks_.clear();
+    estimated_planes_.clear();
+
+    //
+    next_plane_id_ = 0;
+    next_frame_id_ = 0;
+    for( std::map<int, Frame*>::iterator it = frames_list_.begin(); it != frames_list_.end(); it++)
+    {
+        delete it->second();
+    }
+    frames_list_.clear();
+    landmark_ids_.clear();
+    key_frame_ids_.clear();
+    landmarks_related_frames_list_.clear();
+
 }
 
 void GTMapping::saveMapPCD( const std::string &filename )

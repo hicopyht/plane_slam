@@ -50,7 +50,7 @@ class GTMapping
 public:
     GTMapping( ros::NodeHandle &nh, Viewer* viewer );
 
-    bool mapping( const Frame &frame );
+    bool mapping( Frame *frame );
 
     void optimizeGraph( int n = 10 );
 
@@ -61,6 +61,8 @@ public:
     void publishMapCloud();
 
     void updateMapViewer();
+
+    void reset();
 
     // Save map to PCD file
     void saveMapPCD( const std::string &filename = "plane_slam_map.pcd");
@@ -79,6 +81,8 @@ public:
     std::string getMapFrame() const { return map_frame_; }
 
 protected:
+    bool firstFrame( Frame *frame );
+
     bool addFirstFrame( const Frame &frame );
 
     bool doMapping( const Frame &frame );
@@ -155,7 +159,12 @@ private:
     Values initial_estimate_; // initial guess
 
     //
-//    std::map<int, Frame*> ;
+    int next_plane_id_; // set identical id to plane
+    int next_frame_id_; // set identical id to frame
+    std::map<int, Frame*> frames_list_;      // frames list
+    std::set<int> landmark_ids_;  // ids of landmarks
+    std::set<int> key_frame_ids_;  // ids of key frames
+    std::map<int, std::set<int> > landmarks_related_frames_list_;// <lm, set<frames>>
 
     //
     std::string map_frame_;

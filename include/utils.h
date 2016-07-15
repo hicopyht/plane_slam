@@ -83,6 +83,7 @@ typedef union
   */
 struct PlaneType
 {
+    int id;
     PointType centroid;
     Eigen::Vector4d coefficients;
     Eigen::Vector3d sigmas;
@@ -114,6 +115,9 @@ struct PlaneType
       , mask()
       , valid(is_valid)
     {   color.Blue = 255; color.Green = 255; color.Red = 255; color.Alpha = 255;}
+
+    void setId( int _id ) { id = _id; }
+    int &id() { return id;}
 };
 
 struct PlanePair

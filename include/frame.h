@@ -26,6 +26,8 @@ public:
 
     void extractORB();
     void segmentPlane();
+    inline void setId( int id ) { id_ = id; }
+    int &id() {return id_;}
 
     enum { VGA = 0, QVGA = 1, QQVGA = 2};
     //
@@ -54,6 +56,8 @@ private:
 public:
     // Valid
     bool valid_;
+    // Id
+    int id_;
     // Time Stamp
     ros::Time stamp_;
     // Robot Pose
