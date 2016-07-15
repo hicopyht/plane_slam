@@ -54,8 +54,11 @@ private:
     LineBasedPlaneSegmentor *plane_segmentor_;
 
 public:
+    // Key frame
+    bool key_frame_;
     // Valid
-    bool valid_;
+    bool valid_;    // for first frame, valid is under the condition that the number of planes is not zero,
+                    // for other frame, valid is under the condition that relative motion respect to previous frame is valid.
     // Id
     int id_;
     // Time Stamp

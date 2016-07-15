@@ -106,6 +106,7 @@ void LineBasedPlaneSegmentor::updateLineBasedPlaneSegmentParameters()
 void LineBasedPlaneSegmentor::lineBasedSegmentReconfigCallback( plane_slam::LineBasedSegmentConfig &config, uint32_t level)
 {
     //
+    //
     use_horizontal_line_ = config.use_horizontal_line;
     use_verticle_line_ = config.use_verticle_line;
     y_skip_ = config.y_skip;

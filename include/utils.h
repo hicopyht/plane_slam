@@ -83,7 +83,7 @@ typedef union
   */
 struct PlaneType
 {
-    int id;
+    int landmark_id;
     PointType centroid;
     Eigen::Vector4d coefficients;
     Eigen::Vector3d sigmas;
@@ -94,6 +94,7 @@ struct PlaneType
     PointCloudTypePtr cloud;
     PointCloudTypePtr cloud_boundary;
     PointCloudTypePtr cloud_hull;
+    PointCloudTypePtr cloud_voxel;
     RGBValue color;
     bool valid;
     //
@@ -105,6 +106,7 @@ struct PlaneType
     PlaneType() : cloud( new PointCloudType)
       , cloud_boundary( new PointCloudType)
       , cloud_hull( new PointCloudType)
+      , cloud_voxel( new PointCloudType)
       , mask()
       , valid(true)
     {   color.Blue = 255; color.Green = 255; color.Red = 255; color.Alpha = 255;}
@@ -112,12 +114,13 @@ struct PlaneType
     PlaneType( bool is_valid ) : cloud( new PointCloudType)
       , cloud_boundary( new PointCloudType)
       , cloud_hull( new PointCloudType)
+      , cloud_voxel( new PointCloudType)
       , mask()
       , valid(is_valid)
     {   color.Blue = 255; color.Green = 255; color.Red = 255; color.Alpha = 255;}
 
-    void setId( int _id ) { id = _id; }
-    int &id() { return id;}
+    void setId( int _id ) { landmark_id = _id; }
+    int &id() { return landmark_id;}
 };
 
 struct PlanePair
@@ -200,6 +203,15 @@ tf::Transform transformMatrix4dToTF(const Eigen::Matrix4d &e);
 //
 void setPointCloudColor( PointCloudType &cloud, RGBValue &color );
 
+void voxelGridFilter( const PointCloudTypePtr &cloud,
+                      PointCloudTypePtr &cloud_filtered,
+                      float leaf_size = 0.02f);
+
+void voxelGridFilter( const PointCloudTypePtr &cloud,
+                      const std::vector<int> &inlier,
+                      PointCloudTypePtr &cloud_filtered,
+                      float leaf_size = 0.02f);
+
 template <typename PointT>
 PointT transformPoint (const PointT &point,
                      const Eigen::Matrix4d &transform);
@@ -207,6 +219,7 @@ PointT transformPoint (const PointT &point,
 template <typename PointT>
 PointT transformPoint (const PointT &point,
                      const Eigen::Matrix4f &transform);
+
 
 void transformPointCloud (const PointCloudType &cloud_in,
                           PointCloudType &cloud_out,
@@ -216,6 +229,14 @@ void transformPointCloud (const PointCloudType &cloud_in,
                           PointCloudType &cloud_out,
                           const Eigen::Matrix4d &transform,
                           const RGBValue &color);
+
+PointCloudType transformPointCloud(const PointCloudType &cloud_in,
+                                   const Matrix4d &transform);
+
+PointCloudType transformPointCloud (const PointCloudType &cloud_in,
+                          const Eigen::Matrix4d &transform,
+                          const RGBValue &color);
+
 
 void transformPlane( const Eigen::Vector4d &input,
                      const Eigen::Matrix4d &transform,

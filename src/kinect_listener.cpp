@@ -145,7 +145,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
                                          const sensor_msgs::ImageConstPtr &depth_img_msg,
                                          CameraParameters & camera)
 {
-    static Frame last_frame;
+    static Frame *last_frame;
     static bool last_frame_valid = false;
     static int skip = 0;
     static tf::Transform last_tf;
@@ -172,8 +172,9 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     double total_dura;
 
     // Compute Frame
-    Frame frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_);
-    frame.stamp_ = visual_img_msg->header.stamp;
+    Frame *frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_);
+    frame->stamp_ = visual_img_msg->header.stamp;
+    frame->valid_ = false;
     //
     frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
@@ -183,7 +184,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     motion.valid = false;
     if( last_frame_valid )  // Do tracking
     {
-        tracker_->track( last_frame, frame, motion );
+        tracker_->track( *last_frame, *frame, motion );
 
         // print motion
         if( motion.valid )  // success, print tracking result
@@ -198,13 +199,19 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
                  << ", " << motion.translation[2] << RESET << endl;
 
             // estimated pose
-            frame.pose_ = last_frame.pose_ * motionToTf( motion );
-            frame.valid_ = true;
+            frame->pose_ = last_frame->pose_ * motionToTf( motion );
+            frame->valid_ = true;
         }
         else    // failed
         {
+            frame->valid_ = false;
             cout << RED << "failed to estimated motion." << RESET << endl;
         }
+    }
+    else
+    {
+        if( frame->segment_planes_.size() > 0)
+            frame->valid_ = true;   // first frame, set valid, add to mapper as first frame
     }
 
     //
@@ -212,18 +219,18 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     step_time = ros::Time::now();
 
     // Publish visual odometry path
-    if( !last_frame_valid && frame.segment_planes_.size() > 0 ) // First frame
+    if( !last_frame_valid && frame->valid_ ) // First frame, valid, set initial pose
     {
         // first frame
         if( !true_poses_.size() )   // No true pose, set first frame pose to identity.
         {
-            frame.pose_ = init_pose_;
-            frame.valid_ = true;
+            frame->pose_ = init_pose_;
+            frame->valid_ = true;
         }
         else    // Valid true pose, set first frame pose to it.
         {
-            frame.pose_ = geometryPoseToTf( true_poses_[true_poses_.size()-1] );
-            frame.valid_ = true;
+            frame->pose_ = geometryPoseToTf( true_poses_[true_poses_.size()-1] );
+            frame->valid_ = true;
         }
 
         if( true_poses_.size() > 0) // First odometry pose to true pose.
@@ -253,16 +260,15 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
         publishOdometryPath();
         last_tf = new_tf;
     }
-    else    // Not first frame, motion is invalid, return.
-    {
-        return;
-    }
+//    else    // Not first frame, motion is invalid, return.
+//    {
+//        return;
+//    }
 
     // Mapping
-    if( frame.valid_ )
+    if( frame->valid_ )
     {
-        if( gt_mapping_->mapping( frame ) )
-            frame.pose_ = gt_mapping_->getOptimizedPoseTF();  // optimized pose
+        frame->key_frame_ = gt_mapping_->mapping( frame );
     }
     map_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
@@ -273,8 +279,9 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     // Display frame
     viewer_->removeFrames();
     if( last_frame_valid )
-        viewer_->displayFrame( last_frame, "last_frame", viewer_->vp1() );
-    viewer_->displayFrame( frame, "frame", viewer_->vp2() );
+        viewer_->displayFrame( *last_frame, "last_frame", viewer_->vp1() );
+    if( frame->valid_ )
+        viewer_->displayFrame( *frame, "frame", viewer_->vp2() );
     viewer_->spinFramesOnce();
     //
     display_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
@@ -291,8 +298,19 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
          << ", display: " << display_dura
          << RESET << endl;
 
-    last_frame = frame;
-    last_frame_valid = true;
+    if( frame->valid_ )
+    {
+        if( !last_frame_valid )
+        {
+            last_frame_valid = true;
+        }
+        else if( !last_frame->key_frame_ )
+        {
+            delete last_frame;  // not keyframe, delete data
+        }
+
+        last_frame = frame;
+    }
 }
 
 

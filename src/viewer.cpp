@@ -210,6 +210,38 @@ void Viewer::displayKeypoint( const cv::Mat &visual, const std::vector<cv::KeyPo
     cv::waitKey(1);
 }
 
+void Viewer::displayMapLandmarks( std::map<int, PlaneType*> &landmarks, const std::string &prefix )
+{
+    if( display_landmarks_ )
+    {
+        map_viewer_->addText(prefix, 300, 3, prefix+"_text");
+
+        int invalid_count = 0;
+
+        for( std::map<int, PlaneType*>::iterator it = landmarks.begin();
+             it != landmarks.end(); it++)
+        {
+            const int id = it->first;
+            PlaneType *lm = it->second;
+            const PlaneType &plane = *lm;
+
+            pcl::ModelCoefficients coeff;
+            coeff.values.resize( 4 );
+            coeff.values[0] = plane.coefficients[0];
+            coeff.values[1] = plane.coefficients[1];
+            coeff.values[2] = plane.coefficients[2];
+            coeff.values[3] = plane.coefficients[3];
+            //
+            stringstream ss;
+            ss << prefix << "_" << id;
+//            map_viewer_->addPlane( coeff, 1.0, 1.0, 1.0, ss.str());
+            pclViewerLandmark( plane, ss.str(), id);
+        }
+
+        cout << GREEN << " Display landmarks: " << landmarks.size() << ", invalid = " << invalid_count << RESET << endl;
+    }
+}
+
 
 void Viewer::displayMapLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix )
 {
@@ -295,8 +327,10 @@ void Viewer::pclViewerLandmark( const PlaneType &plane, const std::string &id, c
     // inlier
     if( display_landmark_inlier_ )
     {
-        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color( plane.cloud, plane.color.Red, plane.color.Green, plane.color.Blue);
-        map_viewer_->addPointCloud( plane.cloud, color, id+"_inlier" );
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color( plane.cloud_voxel, plane.color.Red, plane.color.Green, plane.color.Blue);
+        map_viewer_->addPointCloud( plane.cloud_voxel, color, id+"_inlier" );
+//        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color( plane.cloud, plane.color.Red, plane.color.Green, plane.color.Blue);
+//        map_viewer_->addPointCloud( plane.cloud, color, id+"_inlier" );
         map_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, id+"_inlier" );
 
         if( display_landmark_arrow_ )
@@ -308,7 +342,8 @@ void Viewer::pclViewerLandmark( const PlaneType &plane, const std::string &id, c
             if( p1.z == 0)
             {
                 Eigen::Vector4f cen;
-                pcl::compute3DCentroid( *plane.cloud, cen );
+                pcl::compute3DCentroid( *plane.cloud_voxel, cen );
+//                pcl::compute3DCentroid( *plane.cloud, cen );
                 p1.x = cen[0];
                 p1.y = cen[1];
                 p1.z = cen[2];

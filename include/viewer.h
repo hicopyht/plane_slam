@@ -46,6 +46,8 @@ public:
 
     void displayKeypoint( const cv::Mat &visual, const std::vector<cv::KeyPoint> &keypoints );
 
+    void displayMapLandmarks( std::map<int, PlaneType*> &landmarks, const std::string &prefix = "landmark" );
+
     void displayMapLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix = "landmark" );
 
     void displayPlanes( const PointCloudTypePtr &input, const std::vector<PlaneType> &planes, const std::string &prefix, int viewport);

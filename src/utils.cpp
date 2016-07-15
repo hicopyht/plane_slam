@@ -116,6 +116,32 @@ void setPointCloudColor( PointCloudType &cloud, RGBValue &color )
     }
 }
 
+void voxelGridFilter( const PointCloudTypePtr &cloud,
+                      PointCloudTypePtr &cloud_filtered,
+                      float leaf_size)
+{
+    // Create the filtering object
+    pcl::VoxelGrid<PointType> sor;
+    sor.setInputCloud ( cloud );
+    sor.setLeafSize ( leaf_size, leaf_size, leaf_size );
+    sor.filter ( *cloud_filtered );
+}
+
+void voxelGridFilter( const PointCloudTypePtr &cloud,
+                      const std::vector<int> &inlier,
+                      PointCloudTypePtr &cloud_filtered,
+                      float leaf_size)
+{
+    pcl::PointIndicesPtr indices;
+    indices->indices = inlier;
+    // Create the filtering object
+    pcl::VoxelGrid<PointType> sor;
+    sor.setInputCloud ( cloud );
+    sor.setIndices( indices );
+    sor.setLeafSize ( leaf_size, leaf_size, leaf_size );
+    sor.filter ( *cloud_filtered );
+}
+
 template <typename PointT>
 PointT transformPoint (const PointT &point,
                      const Eigen::Matrix4d &transform)
@@ -238,6 +264,22 @@ void transformPointCloud (const PointCloudType &cloud_in,
             cloud_out[i].rgb = color.float_value;
         }
     }
+}
+
+PointCloudType transformPointCloud(const PointCloudType &cloud_in, const Matrix4d &transform)
+{
+    PointCloudType cloud_out;
+    transformPointCloud( cloud_in, cloud_out, transform );
+    return cloud_out;
+}
+
+PointCloudType transformPointCloud (const PointCloudType &cloud_in,
+                          const Eigen::Matrix4d &transform,
+                          const RGBValue &color)
+{
+    PointCloudType cloud_out;
+    transformPointCloud( cloud_in, cloud_out, transform, color );
+    return cloud_out;
 }
 
 void transformPlane( const Eigen::Vector4d &input,

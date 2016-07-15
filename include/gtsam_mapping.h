@@ -81,23 +81,19 @@ public:
     std::string getMapFrame() const { return map_frame_; }
 
 protected:
-    bool firstFrame( Frame *frame );
+    bool addFirstFrame( Frame *frame );
 
-    bool addFirstFrame( const Frame &frame );
+    bool doMapping( Frame *frame );
 
-    bool doMapping( const Frame &frame );
+    bool isKeyFrame( Frame *frame );
 
-    bool isKeyFrame( const Frame &frame );
+    std::map<int, gtsam::OrientedPlane3> getPredictedObservation( const Pose3 &pose );
 
-    std::vector<OrientedPlane3> getPredictedObservation( const std::vector<OrientedPlane3> &landmarks,
-                                                         const Pose3 &pose );
-
-    void matchPlanes( const std::vector<OrientedPlane3> &predicted_observations,
-                      const std::vector<PlaneType> &landmarks,
-                      const std::vector<OrientedPlane3> &observations,
-                      const std::vector<PlaneType> &observed_planes,
-                      const Pose3 pose,
-                      std::vector<PlanePair> &pairs);
+    void matchObservationWithPredicted( std::map<int, OrientedPlane3> &predicted_observations,
+                                        const std::vector<OrientedPlane3> &observations,
+                                        const std::vector<PlaneType> &observed_planes,
+                                        const Pose3 pose,
+                                        std::vector<PlanePair> &pairs);
 
     bool checkOverlap( const PointCloudTypePtr &landmark_cloud,
                        const OrientedPlane3 &landmark,
@@ -112,17 +108,9 @@ protected:
 
     bool removeBadInlier();
 
-    void updateSlamResult( std::vector<Pose3> &poses, std::vector<OrientedPlane3> &planes );
+    void updateOptimizedResult();
 
-    void updateLandmarks( std::vector<PlaneType> &landmarks,
-                          const std::vector<PlaneType> &observations,
-                          const std::vector<PlanePair> &pairs,
-                          const Pose3 &estimated_pose,
-                          const std::vector<OrientedPlane3> &estimated_planes);
-
-    void voxelGridFilter(  const PointCloudTypePtr &cloud,
-                           PointCloudTypePtr &cloud_filtered,
-                           float leaf_size = 0.02f);
+    void updateLandmarksInlier();
 
     void gtMappingReconfigCallback( plane_slam::GTMappingConfig &config, uint32_t level);
 
@@ -162,9 +150,15 @@ private:
     int next_plane_id_; // set identical id to plane
     int next_frame_id_; // set identical id to frame
     std::map<int, Frame*> frames_list_;      // frames list
+    std::map<int, PlaneType*> landmarks_list_;  // landmarks list
+    std::map<int, gtsam::Pose3> optimized_poses_list_;  // optimized pose list
+    std::map<int, gtsam::OrientedPlane3> optimized_landmarks_list_;    // optimized landmarks list
+    //
     std::set<int> landmark_ids_;  // ids of landmarks
     std::set<int> key_frame_ids_;  // ids of key frames
     std::map<int, std::set<int> > landmarks_related_frames_list_;// <lm, set<frames>>
+    //
+
 
     //
     std::string map_frame_;

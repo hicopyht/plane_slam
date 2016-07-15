@@ -29,6 +29,7 @@ private:
     CameraParameters camera_parameters_;
     PlaneFromLineSegment plane_from_line_segment_;
     bool is_update_line_based_parameters_;
+    //
     // LineBased segment
     bool use_horizontal_line_;
     bool use_verticle_line_;
