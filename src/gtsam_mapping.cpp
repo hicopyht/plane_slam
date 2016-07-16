@@ -512,7 +512,7 @@ bool GTMapping::refinePlanarMap()
     bool find_coplanar = false;
     const double direction_threshold = planar_merge_direction_threshold_;
     const double distance_threshold = planar_merge_distance_threshold_;
-    std::map<int, int> remove_list;  // removed landmarks
+    std::map<int, int> remove_list;  // removed landmarks, <from, to>
     for( std::map<int, PlaneType*>::iterator it1 = landmarks_list_.begin();
          it1 != landmarks_list_.end(); it1++)
     {
@@ -554,7 +554,7 @@ bool GTMapping::refinePlanarMap()
             const OrientedPlane3 &llm2 = lm2.transform( local );
             double dr_error = acos( llm1.normal().dot( llm2.normal() ));
             double ds_error = fabs( llm1.distance() - llm2.distance() );
-//            cout << CYAN << "  - " << i << "*" << j << ": " << dr_error << "("<< direction_threshold << "), "
+//            cout << CYAN << "  - " << idx1 << "*" << idx2 << ": " << dr_error << "("<< direction_threshold << "), "
 //                 << ds_error << "(" << distance_threshold << ")" << RESET << endl;
             if( (fabs(dr_error) < direction_threshold)
                     && (ds_error < distance_threshold) )
@@ -592,6 +592,77 @@ bool GTMapping::refinePlanarMap()
     } // end of for( int i = 0; i < (num - 1 ); i++)
 
     cout << YELLOW << " Find co-planar pairs: " << remove_list.size() << RESET << endl;
+
+    std::map<int, std::set<int> > merge_list;   // merge list <to, set<from>>
+    for( std::map<int,int>::iterator it = remove_list.begin(); it != remove_list.end(); it++)
+    {
+        int from = it->first;
+        int to = it->second;
+
+        // if to in tos
+        bool to_in_tos = false;
+        std::map<int, std::set<int> >::iterator ttitem = merge_list.find( to );
+        if( ttitem != merge_list.end() )
+        {
+            ttitem->second.insert( from );
+            to_in_tos = true;
+        }
+
+        // if from in tos
+        bool from_in_tos = false;
+        std::map<int, std::set<int> >::iterator ftitem = merge_list.find( from );
+        if( ftitem != merge_list.end() )
+        {
+            std::set<int> fset = ftitem->second;
+            fset.insert( from );
+            merge_list.erase( ftitem );
+            merge_list[to] = fset;
+            from_in_tos = true;
+        }
+
+        // if to in froms
+        bool to_is_removed = false;
+        for( std::map<int, std::set<int> >::iterator rit = merge_list.begin();
+             rit != merge_list.end(); rit++)
+        {
+            std::set<int>::iterator rset_item = rit->second.find( to );
+            if( rset_item != rit->second.end() ) // already be removed
+            {
+                rit->second.insert( from );
+                to_is_removed = true;
+                break;
+            }
+        }
+
+        if( to_in_tos || from_in_tos || to_is_removed )
+            continue;
+
+
+        // default, put into merge list
+        // construct empty set, add
+        std::set<int> from_set;
+        from_set.insert( from );
+        merge_list[to] = from_set;
+    }
+
+    // print merge list
+    cout << YELLOW << " Merge list: " << endl;
+    for( std::map<int, std::set<int> >::iterator it = merge_list.begin(); it != merge_list.end(); it++)
+    {
+        std::set<int> from_set = it->second;
+        cout << "  - from:";
+        for( std::set<int>::iterator its = from_set.begin(); its!= from_set.end(); its++)
+            cout << " " << (*its);
+        cout << " to: " << it->first << endl;
+    }
+    cout << RESET << endl;
+
+    // reset for test
+    for( std::map<int, PlaneType*>::iterator it = landmarks_list_.begin();
+         it != landmarks_list_.end(); it++)
+    {
+        it->second->valid = true;
+    }
 
     return find_coplanar;
 }
