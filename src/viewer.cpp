@@ -92,7 +92,7 @@ void Viewer::displayFrame(const Frame &frame, const std::string &prefix, int vie
     if( display_input_cloud_ )
     {
         pcl_viewer_->addPointCloud( frame.cloud_, prefix+"_"+"rgba_cloud", viewport );
-        pcl_viewer_->setPointCloudRenderingProperties ( pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, "rgba_cloud", viewport );
+        pcl_viewer_->setPointCloudRenderingProperties ( pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, prefix+"_"+"rgba_cloud", viewport );
     }
 
     // 3d keypoint in viewer
