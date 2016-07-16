@@ -322,15 +322,16 @@ void KinectListener::savePathAndLandmarks( const std::string &filename )
     fprintf( yaml, "#pose format: T(xyz) Q(xyzw)\n\n" );
 
     // Save Landmarks
-    std::vector<PlaneType> landmarks = gt_mapping_->getLandmark();
+    std::map<int, PlaneType*> landmarks = gt_mapping_->getLandmark();
     fprintf( yaml, "#landmarks, size %d\n", landmarks.size() );
-    for( int i = 0; i < landmarks.size(); i++)
+    for( std::map<int, PlaneType*>::const_iterator it = landmarks.begin();
+         it != landmarks.end(); it++)
     {
-        PlaneType &lm = landmarks[i];
-        if( !lm.valid )
+        PlaneType *lm = it->second;
+        if( !lm->valid )
             continue;
-        fprintf( yaml, "%f %f %f %f\n", lm.coefficients[0], lm.coefficients[1],
-                lm.coefficients[2], lm.coefficients[3] );
+        fprintf( yaml, "%f %f %f %f\n", lm->coefficients[0], lm->coefficients[1],
+                lm->coefficients[2], lm->coefficients[3] );
     }
     fprintf( yaml, "\n\n");
 

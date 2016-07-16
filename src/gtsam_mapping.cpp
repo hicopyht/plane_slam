@@ -11,8 +11,8 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer * viewer)
     , isam2_parameters_()
     , factor_graph_()
     , initial_estimate_()
-    , pose_count_( 0 )
-    , landmark_max_count_( 0 )
+    , factor_graph_buffer_()
+    , initial_estimate_buffer_()
     , use_keyframe_( true )
     , keyframe_linear_threshold_( 0.05f )
     , keyframe_angular_threshold_( 5.0f )
@@ -106,6 +106,8 @@ bool GTMapping::doMapping( Frame *frame )
 
         // do voxel grid filter
         voxelGridFilter( plane.cloud, plane.cloud_voxel, plane_inlier_leaf_size_ );
+        if( remove_plane_bad_inlier_ )
+            removePlaneBadInlier( plane.cloud_voxel );
     }
 
     // Get predicted-observation
@@ -137,8 +139,10 @@ bool GTMapping::doMapping( Frame *frame )
     Key pose_key = Symbol('x', frame->id() );
     Key last_key = Symbol('x', frame->id()-1);
     factor_graph_.push_back(BetweenFactor<Pose3>(last_key, pose_key, rel_pose, odometry_noise));
+    factor_graph_buffer_.push_back(BetweenFactor<Pose3>(last_key, pose_key, rel_pose, odometry_noise));
     // Add pose guess
     initial_estimate_.insert<Pose3>( pose_key, new_pose );
+    initial_estimate_buffer_.insert<Pose3>( pose_key, new_pose );
 
     // Add factor to exist landmark
     Eigen::VectorXi unpairs = Eigen::VectorXi::Ones( planes.size() );
@@ -151,6 +155,7 @@ bool GTMapping::doMapping( Frame *frame )
         Key ln =  Symbol( 'l', obs.id() );
         noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( obs.sigmas );
         factor_graph_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
+        factor_graph_buffer_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
     }
 
     // Add new landmark for unpaired observation
@@ -165,11 +170,13 @@ bool GTMapping::doMapping( Frame *frame )
             Key ln = Symbol('l', obs.id());
             noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( obs.sigmas );
             factor_graph_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
+            factor_graph_buffer_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
 
             // Add initial guess
             OrientedPlane3 lmn( obs.coefficients );
             OrientedPlane3 glmn = lmn.transform( new_pose.inverse() );
             initial_estimate_.insert<OrientedPlane3>( ln, glmn );
+            initial_estimate_buffer_.insert<OrientedPlane3>( ln, glmn );
 
             // Insert landmark coefficient to list
             optimized_landmarks_list_[obs.id()] = glmn;
@@ -237,6 +244,8 @@ bool GTMapping::addFirstFrame( Frame *frame )
 
         // do voxel grid filter
         voxelGridFilter( plane.cloud, plane.cloud_voxel, plane_inlier_leaf_size_ );
+        if( remove_plane_bad_inlier_ )
+            removePlaneBadInlier( plane.cloud_voxel );
     }
 
 
@@ -249,9 +258,11 @@ bool GTMapping::addFirstFrame( Frame *frame )
 //    noiseModel::Diagonal::shared_ptr poseNoise = //
 //        noiseModel::Diagonal::Variances((Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
     factor_graph_.push_back( PriorFactor<Pose3>( x0, init_pose, poseNoise ) );
+    factor_graph_buffer_.push_back( PriorFactor<Pose3>( x0, init_pose, poseNoise ) );
 
     // Add an initial guess for the current pose
     initial_estimate_.insert<Pose3>( x0, init_pose );
+    initial_estimate_buffer_.insert<Pose3>( x0, init_pose );
 
     // Add a prior landmark
     Key l0 = Symbol('l', planes[0].id() );
@@ -259,9 +270,9 @@ bool GTMapping::addFirstFrame( Frame *frame )
     OrientedPlane3 glm0 = lm0.transform(init_pose.inverse());
     noiseModel::Diagonal::shared_ptr lm_noise = noiseModel::Diagonal::Sigmas( (Vector(2) << planes[0].sigmas[0], planes[0].sigmas[1]).finished() );
     factor_graph_.push_back( OrientedPlane3DirectionPrior( l0, glm0.planeCoefficients(), lm_noise) );
+    factor_graph_buffer_.push_back( OrientedPlane3DirectionPrior( l0, glm0.planeCoefficients(), lm_noise) );
 
     // Add new landmark
-    landmark_max_count_ = 0;
     for(int i = 0; i < planes.size(); i++)
     {
         PlaneType &plane = planes[i];
@@ -275,12 +286,14 @@ bool GTMapping::addFirstFrame( Frame *frame )
         // Add observation factor
         noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( plane.sigmas );
         factor_graph_.push_back( OrientedPlane3Factor(plane.coefficients, obs_noise, x0, ln) );
+        factor_graph_buffer_.push_back( OrientedPlane3Factor(plane.coefficients, obs_noise, x0, ln) );
 
         // Add initial guesses to all observed landmarks
 //        cout << "Key: " << ln << endl;
         OrientedPlane3 lmn( plane.coefficients );
         OrientedPlane3 glmn = lmn.transform( init_pose.inverse() );
         initial_estimate_.insert<OrientedPlane3>( ln,  glmn );
+        initial_estimate_buffer_.insert<OrientedPlane3>( ln,  glmn );
 
         // Insert landmarks coefficients to list
         optimized_landmarks_list_[plane.id()] = glmn;
@@ -493,14 +506,6 @@ bool GTMapping::checkLandmarksOverlap( const PlaneType &lm1, const PlaneType &lm
     return false;
 }
 
-// just do project and voxel filter
-void GTMapping::mergeLandmarkInlier( PlaneType &from, PlaneType &to)
-{
-    PointCloudTypePtr cloud( new PointCloudType );
-    projectPoints( *from.cloud, to.coefficients, *cloud);
-    *cloud += *to.cloud;
-    voxelGridFilter( cloud, to.cloud, plane_inlier_leaf_size_ );
-}
 
 // return true if being refined.
 bool GTMapping::refinePlanarMap()
@@ -637,7 +642,6 @@ bool GTMapping::refinePlanarMap()
         if( to_in_tos || from_in_tos || to_is_removed )
             continue;
 
-
         // default, put into merge list
         // construct empty set, add
         std::set<int> from_set;
@@ -645,6 +649,15 @@ bool GTMapping::refinePlanarMap()
         merge_list[to] = from_set;
     }
 
+    // Merge co-planar
+    if( merge_list.size() > 0)
+        mergeCoplanarLandmarks( merge_list );
+
+    return find_coplanar;
+}
+
+void GTMapping::mergeCoplanarLandmarks( std::map<int, std::set<int> > merge_list )
+{
     // print merge list
     cout << YELLOW << " Merge list: " << endl;
     for( std::map<int, std::set<int> >::iterator it = merge_list.begin(); it != merge_list.end(); it++)
@@ -657,39 +670,131 @@ bool GTMapping::refinePlanarMap()
     }
     cout << RESET << endl;
 
-    // reset for test
-    for( std::map<int, PlaneType*>::iterator it = landmarks_list_.begin();
-         it != landmarks_list_.end(); it++)
+
+    // Graph variable
+    Values isam2_values = isam2_->calculateBestEstimate();
+
+    std::map<Key, Key> rekey_mapping; // old -> new
+    for( std::map<int, std::set<int> >::iterator itt = merge_list.begin(); itt != merge_list.end(); itt++)
     {
-        it->second->valid = true;
+        const int to = itt->first;
+        const std::set<int> from_set = itt->second;
+        for( std::set<int>::const_iterator itf = from_set.begin(); itf!= from_set.end(); itf++)
+        {
+            const int from = *itf;
+
+            // Do Merging
+            // Delete id == 'from' in the 'landmarks_list_'
+            std::map<int, PlaneType*>::iterator litem = landmarks_list_.find( from );
+            if( litem != landmarks_list_.end() )
+                landmarks_list_.erase( litem );
+
+            // Delete id == 'from' in the 'optimized_landmarks_list_'
+            std::map<int, gtsam::OrientedPlane3>::iterator olitem = optimized_landmarks_list_.find( from );
+            if( olitem != optimized_landmarks_list_.end() )
+                optimized_landmarks_list_.erase( olitem );
+
+            // Change PlaneType id in the frame,  from 'from' to 'to'
+            for( std::map<int, Frame*>::iterator frame_iter = frames_list_.begin();
+                 frame_iter != frames_list_.end(); frame_iter++)
+            {
+                Frame *frame = frame_iter->second;
+                for( int idx = 0; idx < frame->segment_planes_.size(); idx++)
+                {
+                    PlaneType &obs = frame->segment_planes_[idx];
+                    if( obs.id() == from )
+                        obs.setId( to );
+                }
+            }
+
+            Key key_from = Symbol( 'l', from );
+            Key key_to = Symbol( 'l', to );
+            // delete OrientedPlane3 id in the graph
+            if( isam2_values.exists( key_from ) )
+            {
+                isam2_values.erase( key_from );
+            }
+
+            // Change factor id in the graph, just build rekey_mapping
+            rekey_mapping[key_from] = key_to;
+
+        }
+
     }
 
-    return find_coplanar;
+    // Change factor id in the graph, provide rekey_mapping
+    for( NonlinearFactorGraph::iterator factor_iter = factor_graph_buffer_.begin();
+         factor_iter != factor_graph_buffer_.end(); factor_iter++)
+    {
+        // OrientedPlane3Factor factor
+        boost::shared_ptr<OrientedPlane3Factor> plane_factor =
+                boost::dynamic_pointer_cast<OrientedPlane3Factor>(*factor_iter);
+        if( plane_factor )
+        {
+            FastVector<Key> &keys = plane_factor->keys();
+            std::map<Key, Key>::const_iterator mapping = rekey_mapping.find( keys[1] );
+            if (mapping != rekey_mapping.end())
+                keys[1] = mapping->second;
+        }
+
+        // OrientedPlane3DirectionPrior factor
+        boost::shared_ptr<OrientedPlane3DirectionPrior> plane_prior_factor =
+                boost::dynamic_pointer_cast<OrientedPlane3DirectionPrior>(*factor_iter);
+        if( plane_prior_factor )
+        {
+            FastVector<Key> &keys = plane_prior_factor->keys();
+            std::map<Key, Key>::const_iterator mapping = rekey_mapping.find( keys[0] );
+            if (mapping != rekey_mapping.end())
+                keys[0] = mapping->second;
+        }
+
+    }
+
+    cout << YELLOW << " Update graph ..." << RESET << endl;
+    delete isam2_;
+    isam2_ = new ISAM2( isam2_parameters_ );
+    isam2_->update( factor_graph_buffer_, isam2_values );
+    isam2_->update();
+    updateOptimizedResult();
+    updateLandmarksInlier();
 }
 
-bool GTMapping::removeBadInlier()
+bool GTMapping::removeLandmarksBadInlier()
 {
-    float radius = 0.1;
+    float radius = plane_inlier_leaf_size_ * 5;
     int min_neighbors = M_PI * radius *radius
             / (plane_inlier_leaf_size_ * plane_inlier_leaf_size_) *  planar_bad_inlier_alpha_;
     cout << GREEN << " Remove bad inlier, radius = " << radius
          << ", minimum neighbours = " << min_neighbors << RESET << endl;
-    for( int i = 0; i < landmarks_.size(); i++)
+
+    for( std::map<int, PlaneType*>::const_iterator it = landmarks_list_.begin();
+         it != landmarks_list_.end(); it++)
     {
-        PlaneType &lm = landmarks_[i];
-        if( !lm.valid )
-            continue;
-        // build the filter
-        pcl::RadiusOutlierRemoval<PointType> ror;
-        ror.setInputCloud( lm.cloud_voxel );
-        ror.setRadiusSearch( radius );
-        ror.setMinNeighborsInRadius ( min_neighbors );
-        // apply filter
-        PointCloudTypePtr cloud_filtered( new PointCloudType );
-        ror.filter( *cloud_filtered );
-        // swap
-        lm.cloud->swap( *cloud_filtered );
+        PlaneType &lm = *(it->second);
+        removePlaneBadInlier( lm.cloud_voxel, radius, min_neighbors );
     }
+}
+
+void GTMapping::removePlaneBadInlier( PointCloudTypePtr &cloud_voxel, double radius, int min_neighbors )
+{
+    if( radius == 0)
+        radius = plane_inlier_leaf_size_ * 5;
+    if( min_neighbors == 0)
+    {
+        min_neighbors = M_PI * radius *radius
+                    / (plane_inlier_leaf_size_ * plane_inlier_leaf_size_) *  planar_bad_inlier_alpha_;
+    }
+
+    // build the filter
+    pcl::RadiusOutlierRemoval<PointType> ror;
+    ror.setInputCloud( cloud_voxel );
+    ror.setRadiusSearch( radius );
+    ror.setMinNeighborsInRadius ( min_neighbors );
+    // apply filter
+    PointCloudTypePtr cloud_filtered( new PointCloudType );
+    ror.filter( *cloud_filtered );
+    // swap
+    cloud_voxel->swap( *cloud_filtered );
 }
 
 void GTMapping::updateOptimizedResult()
@@ -846,12 +951,8 @@ void GTMapping::reset()
     isam2_ = new ISAM2( isam2_parameters_ );
 
     // clear
-    pose_count_ = 0;
-    landmark_max_count_ = 0;
+    factor_graph_.resize(0);
     initial_estimate_.clear();
-    estimated_poses_.clear();
-    landmarks_.clear();
-    estimated_planes_.clear();
 
     //
     next_plane_id_ = 0;
@@ -894,9 +995,10 @@ void GTMapping::saveMapPCD( const std::string &filename )
 std::vector<geometry_msgs::PoseStamped> GTMapping::getOptimizedPath()
 {
     std::vector<geometry_msgs::PoseStamped> poses;
-    for( int i = 0; i < estimated_poses_.size(); i++)
+    for( std::map<int, gtsam::Pose3>::iterator it = optimized_poses_list_.begin();
+            it != optimized_poses_list_.end(); it++)
     {
-        poses.push_back( pose3ToGeometryPose( estimated_poses_[i] ) );
+        poses.push_back( pose3ToGeometryPose( it->second ) );
     }
     return poses;
 }
@@ -922,6 +1024,8 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     refine_planar_map_ = config.refine_planar_map;
     planar_merge_direction_threshold_ = config.planar_merge_direction_threshold * DEG_TO_RAD;
     planar_merge_distance_threshold_ = config.planar_merge_distance_threshold;
+    //
+    remove_plane_bad_inlier_ = config.remove_plane_bad_inlier;
     planar_bad_inlier_alpha_ = config.planar_bad_inlier_alpha;
     //
     publish_optimized_path_ = config.publish_optimized_path;
@@ -938,8 +1042,12 @@ bool GTMapping::optimizeGraphCallback(std_srvs::Trigger::Request &req, std_srvs:
     }
     else
     {
-        optimizeGraph();    // graph optimizing
-        updateMapViewer();  // update map visualization
+        optimizeGraph();        // graph optimizing
+        updateOptimizedResult();    // update result
+        updateLandmarksInlier();    // Update Map
+        if( refine_planar_map_ )    // Refine map
+            refinePlanarMap();
+        updateMapViewer();  // update visualization
         res.success = true;
         res.message = " Optimize graph for 10 times, and update map viewer.";
     }
@@ -969,7 +1077,7 @@ bool GTMapping::saveGraphCallback(std_srvs::Trigger::Request &req, std_srvs::Tri
 
 bool GTMapping::saveMapPCDCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
-    if( !landmarks_.size() )
+    if( !landmarks_list_.size() )
     {
         res.success = false;
         res.message = " Failed, map is empty.";
@@ -988,14 +1096,14 @@ bool GTMapping::saveMapPCDCallback(std_srvs::Trigger::Request &req, std_srvs::Tr
 
 bool GTMapping::removeBadInlierCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
-    if( !landmarks_.size() )
+    if( !landmarks_list_.size() )
     {
         res.success = false;
         res.message = " Failed, map is empty.";
     }
     else
     {
-        removeBadInlier();  // remove bad inlier in landmarks
+        removeLandmarksBadInlier();  // remove bad inlier in landmarks
         updateMapViewer();  // update map visualization
         //
         res.success = true;

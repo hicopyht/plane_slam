@@ -75,7 +75,7 @@ public:
     // Get optimized path
     std::vector<geometry_msgs::PoseStamped> getOptimizedPath();
     // Get landmarks
-    const std::vector<PlaneType> &getLandmark() { return landmarks_; }
+    const std::map<int, PlaneType*> &getLandmark() { return landmarks_list_; }
     // Set map frame
     inline void setMapFrame( const std::string &frame_id ) { map_frame_ = frame_id; }
     std::string getMapFrame() const { return map_frame_; }
@@ -102,11 +102,13 @@ protected:
 
     bool checkLandmarksOverlap( const PlaneType &lm1, const PlaneType &lm2);
 
-    void mergeLandmarkInlier( PlaneType &from, PlaneType &to);
-
     bool refinePlanarMap();
 
-    bool removeBadInlier();
+    void mergeCoplanarLandmarks( std::map<int, std::set<int> > merge_list );
+
+    bool removeLandmarksBadInlier();
+
+    void removePlaneBadInlier( PointCloudTypePtr &cloud_voxel, double radius = 0, int min_neighbors = 0 );
 
     void updateOptimizedResult();
 
@@ -145,6 +147,9 @@ private:
     // Create a Factor Graph and Values to hold the new data
     NonlinearFactorGraph factor_graph_; // factor graph
     Values initial_estimate_; // initial guess
+    // Buffer
+    NonlinearFactorGraph factor_graph_buffer_; // factor graph
+    Values initial_estimate_buffer_; // initial guess
 
     //
     int next_plane_id_; // set identical id to plane
@@ -164,11 +169,6 @@ private:
     std::string map_frame_;
     Pose3 last_estimated_pose_;
     tf::Transform last_estimated_pose_tf_;
-    std::vector<Pose3> estimated_poses_;
-    std::vector<OrientedPlane3> estimated_planes_;
-    std::vector<PlaneType> landmarks_;
-    int pose_count_;
-    int landmark_max_count_;
     cv::RNG rng_;
 
     // Parameters
@@ -189,6 +189,7 @@ private:
     bool refine_planar_map_;
     double planar_merge_direction_threshold_;
     double planar_merge_distance_threshold_;
+    bool remove_plane_bad_inlier_;
     double planar_bad_inlier_alpha_;
     //
     bool publish_optimized_path_;
