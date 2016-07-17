@@ -158,6 +158,9 @@ private:
     std::map<int, PlaneType*> landmarks_list_;  // landmarks list
     std::map<int, gtsam::Pose3> optimized_poses_list_;  // optimized pose list
     std::map<int, gtsam::OrientedPlane3> optimized_landmarks_list_;    // optimized landmarks list
+//    std::map<int, gtsam::OrientedPlane3> optimized_landmarks_list_last_; // last optimized
+    //
+
     //
     std::set<int> landmark_ids_;  // ids of landmarks
     std::set<int> key_frame_ids_;  // ids of key frames
