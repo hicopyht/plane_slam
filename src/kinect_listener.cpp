@@ -274,7 +274,8 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     step_time = ros::Time::now();
 
     // Map for visualization
-    gt_mapping_->updateMapViewer();
+    if( frame->key_frame_)
+        gt_mapping_->updateMapViewer();
 
     // Display frame
     viewer_->removeFrames();

@@ -34,6 +34,8 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   sensor_msgs
   tf
+  octomap_ros
+  octomap
 )
 
 ## System dependencies are found with CMake's conventions

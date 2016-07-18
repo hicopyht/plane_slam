@@ -43,6 +43,9 @@ bool Tracking::track(const Frame &source, const Frame &target,
     match_f_dura = (ros::Time::now() - start_time).toSec() * 1000;
     start_time = ros::Time::now();
 
+    // Lookfor keypoint matches on the plane
+
+
 
     // Estimate transform
     std::vector<cv::DMatch> kp_inlier;

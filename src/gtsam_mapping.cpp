@@ -13,6 +13,8 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer * viewer)
     , initial_estimate_()
     , factor_graph_buffer_()
     , initial_estimate_buffer_()
+    , map_cloud_( new PointCloudType )
+    , octree_map_( new octomap::OcTree( 0.025 ) )
     , use_keyframe_( true )
     , keyframe_linear_threshold_( 0.05f )
     , keyframe_angular_threshold_( 5.0f )
@@ -24,6 +26,8 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer * viewer)
     , plane_match_overlap_alpha_( 0.5 )
     , plane_inlier_leaf_size_( 0.05f )  // 0.05meter
     , plane_hull_alpha_( 0.5 )
+    , octomap_resolution_( 0.025f )
+    , octomap_max_depth_range_( 4.0f )
     , rng_(12345)
     , next_plane_id_( 0 )
     , next_frame_id_( 0 )
@@ -36,6 +40,7 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer * viewer)
     optimized_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("optimized_pose", 10);
     optimized_path_publisher_ = nh_.advertise<nav_msgs::Path>("optimized_path", 10);
     map_cloud_publisher_ = nh_.advertise<sensor_msgs::PointCloud2>("map_cloud", 10);
+    octomap_publisher_ = nh_.advertise<octomap_msgs::Octomap>("octomap", 4);
     marker_publisher_ = nh_.advertise<visualization_msgs::Marker>("visualization_marker", 10);
 
     //
@@ -71,9 +76,10 @@ bool GTMapping::mapping( Frame *frame )
         }
     }
 
-    // Map visualization
-    if( success )
-        updateMapViewer();
+
+//    // Map visualization
+//    if( success )
+//        updateMapViewer();
 
     cout << GREEN << " GTMapping, success = " << (success?"true":"false") << "." << RESET << endl;
 
@@ -206,6 +212,9 @@ bool GTMapping::doMapping( Frame *frame )
 
     // Update Map
     updateLandmarksInlier();
+
+    // Update Octomap
+    updateOctoMap();
 
     // Clear the factor graph and values for the next iteration
     factor_graph_.resize(0);
@@ -861,6 +870,64 @@ void GTMapping::updateLandmarksInlier()
     }
 }
 
+void GTMapping::updateOctoMap()
+{
+    static int node_size = 0;
+
+    // Set Resolution
+    if( octree_map_->getResolution()!= octomap_resolution_ )
+        octree_map_->setResolution( octomap_resolution_ );
+
+    if( !(octomap_publisher_.getNumSubscribers()) )
+        return;
+
+    if( frames_list_.size() <= node_size )
+        return;
+
+    ros::Time start_time = ros::Time::now();
+    int number = 0;
+    cout << BLUE << " Octree scan size: " << node_size << RESET << endl;
+    for( int idx = node_size; idx < frames_list_.size(); idx++)
+    {
+        std::map<int, Frame*>::iterator itf = frames_list_.find( idx );
+        // Add one scan
+        if( itf != frames_list_.end() )
+        {
+            number ++;
+            const int id = itf->first;
+            const Frame *frame = itf->second;
+            const PointCloudTypePtr &cloud = frame->cloud_;
+            const tf::Transform &pose = frame->pose_;
+
+            // Construct a octomap::Pointcloud type
+            octomap::Pointcloud * scan = new octomap::Pointcloud();
+            scan->reserve( cloud->size() );
+            for( PointCloudType::const_iterator it = cloud->begin();
+                it != cloud->end(); ++it)
+            {
+                // Check if the point is invalid
+                if( pcl::isFinite(*it) )
+                {
+                    scan->push_back(it->x, it->y, it->z);
+                }
+            }
+
+            octomap::pose6d scan_pose(octomap::point3d(pose.getOrigin().x(), pose.getOrigin().y(), pose.getOrigin().z()),
+                                      octomath::Quaternion(pose.getRotation().w(), pose.getRotation().x(),
+                                                           pose.getRotation().y(), pose.getRotation().z()) );
+            // Construct a octomap::ScanNode
+            octomap::ScanNode node( scan, scan_pose, id);
+            octree_map_->insertPointCloud( node, octomap_max_depth_range_, false, false );
+            node_size ++;
+    //        ROS_INFO("inserted %d pt=%d ", id, (int)scan->size() );
+        }
+
+    }
+
+    ROS_INFO(" Updated inner octree map, inserted %d (%fs)", number, (ros::Time::now() - start_time).toSec() );
+
+}
+
 void GTMapping::optimizeGraph( int n )
 {
     while( n > 0 )
@@ -881,56 +948,68 @@ void GTMapping::publishOptimizedPose()
 
 void GTMapping::publishOptimizedPath()
 {
-    // publish trajectory
-    nav_msgs::Path path;
-    path.header.frame_id = map_frame_;
-    path.header.stamp = ros::Time::now();
-    for( std::map<int, gtsam::Pose3>::iterator it = optimized_poses_list_.begin();
-            it != optimized_poses_list_.end(); it++)
+    if( optimized_path_publisher_.getNumSubscribers() )
     {
-        path.poses.push_back( pose3ToGeometryPose( it->second ) );
-    }
+        // publish trajectory
+        nav_msgs::Path path;
+        path.header.frame_id = map_frame_;
+        path.header.stamp = ros::Time::now();
+        for( std::map<int, gtsam::Pose3>::iterator it = optimized_poses_list_.begin();
+                it != optimized_poses_list_.end(); it++)
+        {
+            path.poses.push_back( pose3ToGeometryPose( it->second ) );
+        }
 
-    optimized_path_publisher_.publish( path );
-    cout << GREEN << " Publisher optimized path, p = " << path.poses.size() << RESET << endl;
+        optimized_path_publisher_.publish( path );
+        cout << GREEN << " Publisher optimized path, p = " << path.poses.size() << RESET << endl;
+    }
 }
 
 void GTMapping::publishMapCloud()
 {
-    PointCloudTypePtr cloud ( new PointCloudType );
-
-    for( std::map<int, PlaneType*>::iterator it = landmarks_list_.begin();
-         it != landmarks_list_.end(); it++)
+    if( map_cloud_publisher_.getNumSubscribers() )
     {
-        PlaneType *lm = it->second;
-        *cloud += *(lm->cloud_voxel);
+        PointCloudTypePtr cloud ( new PointCloudType );
+
+        for( std::map<int, PlaneType*>::iterator it = landmarks_list_.begin();
+             it != landmarks_list_.end(); it++)
+        {
+            PlaneType *lm = it->second;
+            *cloud += *(lm->cloud_voxel);
+        }
+
+        sensor_msgs::PointCloud2 cloud2;
+        pcl::toROSMsg( *cloud, cloud2);
+        cloud2.header.frame_id = map_frame_;
+        cloud2.header.stamp = ros::Time::now();
+        cloud2.is_dense = false;
+
+        map_cloud_publisher_.publish( cloud2 );
+        cout << GREEN << " Publisher map as sensor_msgs/PointCloud2." << RESET << endl;
     }
+}
 
-//    for( int i = 0; i < landmarks_.size(); i++)
-//    {
-//        const PlaneType &lm = landmarks_[i];
-//        if( !lm.valid )
-//            continue;
-//       *cloud += *lm.cloud;
-//    }
-
-    sensor_msgs::PointCloud2 cloud2;
-    pcl::toROSMsg( *cloud, cloud2);
-    cloud2.header.frame_id = map_frame_;
-    cloud2.header.stamp = ros::Time::now();
-    cloud2.is_dense = false;
-
-    map_cloud_publisher_.publish( cloud2 );
-
-    cout << GREEN << " Publisher map as sensor_msgs/PointCloud2." << RESET << endl;
+void GTMapping::publishOctoMap()
+{
+    if( octomap_publisher_.getNumSubscribers() )
+    {
+//        octomap::OcTree *octree = createOctoMap();
+        octomap_msgs::Octomap msg;
+        octomap_msgs::fullMapToMsg( *octree_map_, msg);
+        msg.header.frame_id = map_frame_;
+        msg.header.stamp = ros::Time::now();
+        octomap_publisher_.publish( msg );
+        cout << GREEN << " Publisher octomap." << RESET << endl;
+    }
 }
 
 void GTMapping::updateMapViewer()
 {
-    // Pose, Path, MapCloud
+    // Pose, Path, MapCloud, Octomap
     publishOptimizedPose();
     publishOptimizedPath();
     publishMapCloud();
+    publishOctoMap();
     // Map in pcl visualization
     viewer_->removeMap();
     viewer_->displayMapLandmarks( landmarks_list_, "Map" );
@@ -975,20 +1054,74 @@ void GTMapping::reset()
 
 }
 
-void GTMapping::saveMapPCD( const std::string &filename )
+PointCloudTypePtr GTMapping::getMapCloud( bool force )
 {
-    PointCloudTypePtr cloud ( new PointCloudType );
-    for( std::map<int, PlaneType*>::iterator it = landmarks_list_.begin();
-         it != landmarks_list_.end(); it++)
+    static int iteration = 0;
+    if( optimized_poses_list_.size() != iteration || force == true )
     {
-        PlaneType *lm = it->second;
-//        if( !lm->valid )
-//            continue;
-        // Add color
-        setPointCloudColor( *(lm->cloud_voxel), lm->color );
-        *cloud += *(lm->cloud_voxel);
+        iteration = optimized_poses_list_.size();
+
+        // update map pointcloud
+        map_cloud_->clear();
+        for( std::map<int, PlaneType*>::iterator it = landmarks_list_.begin();
+             it != landmarks_list_.end(); it++)
+        {
+            PlaneType *lm = it->second;
+            setPointCloudColor( *(lm->cloud_voxel), lm->color );
+            *map_cloud_ += *(lm->cloud_voxel);
+        }
     }
 
+    return map_cloud_;
+}
+
+octomap::OcTree * GTMapping::createOctoMap()
+{
+    ros::Time start_time = ros::Time::now();
+
+    octomap::OcTree * octree = new octomap::OcTree( octomap_resolution_ );
+
+    int number = 0;
+    for( std::map<int, Frame*>::iterator itf = frames_list_.begin();
+         itf != frames_list_.end(); itf++)
+    {
+        number ++;
+        const int id = itf->first;
+        const Frame *frame = itf->second;
+        const PointCloudTypePtr &cloud = frame->cloud_;
+        const tf::Transform &pose = frame->pose_;
+
+        // Construct a octomap::Pointcloud type
+        octomap::Pointcloud * scan = new octomap::Pointcloud();
+        scan->reserve( cloud->size() );
+        for( PointCloudType::const_iterator it = cloud->begin();
+            it != cloud->end(); ++it)
+        {
+            // Check if the point is invalid
+            if( pcl::isFinite(*it) )
+            {
+                scan->push_back(it->x, it->y, it->z);
+            }
+        }
+
+        octomap::pose6d scan_pose(octomap::point3d(pose.getOrigin().x(), pose.getOrigin().y(), pose.getOrigin().z()),
+                                  octomath::Quaternion(pose.getRotation().w(), pose.getRotation().x(),
+                                                       pose.getRotation().y(), pose.getRotation().z()) );
+        // Construct a octomap::ScanNode
+        octomap::ScanNode node( scan, scan_pose, id);
+        octree->insertPointCloud( node, octomap_max_depth_range_, true, true);
+//        ROS_INFO("inserted %d pt=%d ", id, (int)scan->size() );
+    }
+
+    octree->updateInnerOccupancy();
+    ROS_INFO(" Create octree, inserted %d (%fs)", number, (ros::Time::now() - start_time).toSec() );
+
+    return octree;
+}
+
+void GTMapping::saveMapPCD( const std::string &filename )
+{
+    PointCloudTypePtr cloud = getMapCloud( true );
     pcl::io::savePCDFileASCII ( filename, *cloud);
 }
 
@@ -1028,6 +1161,8 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     remove_plane_bad_inlier_ = config.remove_plane_bad_inlier;
     planar_bad_inlier_alpha_ = config.planar_bad_inlier_alpha;
     //
+    octomap_resolution_ = config.octomap_resolution;
+    octomap_max_depth_range_ = config.octomap_max_depth_range;
     publish_optimized_path_ = config.publish_optimized_path;
 
     cout << GREEN <<" GTSAM Mapping Config." << RESET << endl;

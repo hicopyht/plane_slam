@@ -35,6 +35,11 @@
 #include <pcl/octree/octree.h>
 #include <pcl/octree/octree_pointcloud_occupancy.h>
 //
+#include <octomap/OcTree.h>
+#include <octomap_msgs/Octomap.h>
+#include <octomap_msgs/conversions.h>
+#include <octomap_ros/conversions.h>
+//
 #include "utils.h"
 #include "frame.h"
 #include "viewer.h"
@@ -60,9 +65,13 @@ public:
 
     void publishMapCloud();
 
+    void publishOctoMap();
+
     void updateMapViewer();
 
     void reset();
+
+    octomap::OcTree * createOctoMap();
 
     // Save map to PCD file
     void saveMapPCD( const std::string &filename = "plane_slam_map.pcd");
@@ -76,6 +85,8 @@ public:
     std::vector<geometry_msgs::PoseStamped> getOptimizedPath();
     // Get landmarks
     const std::map<int, PlaneType*> &getLandmark() { return landmarks_list_; }
+    // Get map cloud
+    PointCloudTypePtr getMapCloud( bool force = false);
     // Set map frame
     inline void setMapFrame( const std::string &frame_id ) { map_frame_ = frame_id; }
     std::string getMapFrame() const { return map_frame_; }
@@ -114,6 +125,8 @@ protected:
 
     void updateLandmarksInlier();
 
+    void updateOctoMap();
+
     void gtMappingReconfigCallback( plane_slam::GTMappingConfig &config, uint32_t level);
 
     bool optimizeGraphCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
@@ -139,6 +152,7 @@ private:
     ros::Publisher optimized_pose_publisher_;
     ros::Publisher optimized_path_publisher_;
     ros::Publisher map_cloud_publisher_;
+    ros::Publisher octomap_publisher_;
     ros::Publisher marker_publisher_;
 
     // ISAM2
@@ -158,9 +172,9 @@ private:
     std::map<int, PlaneType*> landmarks_list_;  // landmarks list
     std::map<int, gtsam::Pose3> optimized_poses_list_;  // optimized pose list
     std::map<int, gtsam::OrientedPlane3> optimized_landmarks_list_;    // optimized landmarks list
+    PointCloudTypePtr map_cloud_;
 //    std::map<int, gtsam::OrientedPlane3> optimized_landmarks_list_last_; // last optimized
-    //
-
+    octomap::OcTree *octree_map_;
     //
     std::set<int> landmark_ids_;  // ids of landmarks
     std::set<int> key_frame_ids_;  // ids of key frames
@@ -195,6 +209,8 @@ private:
     bool remove_plane_bad_inlier_;
     double planar_bad_inlier_alpha_;
     //
+    double octomap_resolution_;
+    double octomap_max_depth_range_;
     bool publish_optimized_path_;
 };
 

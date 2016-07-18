@@ -49,6 +49,8 @@
   <build_depend>sensor_msgs</build_depend>
   <build_depend>tf</build_depend>
   <build_depend>libg2o</build_depend>
+  <build_depend>octomap_ros</build_depend>
+  <build_depend>octomap</build_depend>
   <run_depend>cv_bridge</run_depend>
   <run_depend>dynamic_reconfigure</run_depend>
   <run_depend>message_filters</run_depend>
@@ -58,6 +60,7 @@
   <run_depend>sensor_msgs</run_depend>
   <run_depend>tf</run_depend>
   <run_depend>libg2o</run_depend>
+  <run_depend>octomap</run_depend>
 
 
   <!-- The export tag contains other, unspecified, tags -->
