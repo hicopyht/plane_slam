@@ -71,10 +71,11 @@ public:
 
     void reset();
 
-    octomap::OcTree * createOctoMap();
+    octomap::OcTree * createOctoMap( double resolution = 0);
 
     // Save map to PCD file
     void saveMapPCD( const std::string &filename = "plane_slam_map.pcd");
+    void saveMapFullPCD( const std::string &filename = "plane_slam_map_full.pcd");
     // Save graph
     inline void saveGraphDot( const std::string &filename = "plane_slam_graph.dot" ){
         isam2_->saveGraph( filename );
@@ -87,6 +88,7 @@ public:
     const std::map<int, PlaneType*> &getLandmark() { return landmarks_list_; }
     // Get map cloud
     PointCloudTypePtr getMapCloud( bool force = false);
+    PointCloudTypePtr getMapFullCloud();
     // Set map frame
     inline void setMapFrame( const std::string &frame_id ) { map_frame_ = frame_id; }
     std::string getMapFrame() const { return map_frame_; }
@@ -135,6 +137,8 @@ protected:
 
     bool saveMapPCDCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
 
+    bool saveMapFullPCDCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
+
     bool removeBadInlierCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
 
 private:
@@ -145,6 +149,7 @@ private:
     ros::ServiceServer optimize_graph_service_server_;
     ros::ServiceServer save_graph_service_server_;
     ros::ServiceServer save_map_service_server_;
+    ros::ServiceServer save_map_full_service_server_;
     ros::ServiceServer remove_bad_inlier_service_server_;
     dynamic_reconfigure::Server<plane_slam::GTMappingConfig> mapping_config_server_;
     dynamic_reconfigure::Server<plane_slam::GTMappingConfig>::CallbackType mapping_config_callback_;
@@ -209,8 +214,12 @@ private:
     bool remove_plane_bad_inlier_;
     double planar_bad_inlier_alpha_;
     //
+    double map_full_leaf_size_;
+    double map_full_min_neighbor_alpha_;
     double octomap_resolution_;
     double octomap_max_depth_range_;
+    bool publish_map_cloud_;
+    bool publish_octomap_;
     bool publish_optimized_path_;
 };
 

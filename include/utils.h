@@ -19,6 +19,7 @@
 #include <pcl/registration/registration.h>
 #include <pcl/filters/passthrough.h>
 #include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/radius_outlier_removal.h>
 #include <pcl/filters/project_inliers.h>
 #include <pcl/surface/concave_hull.h>
 #include <pcl/kdtree/kdtree_flann.h>
@@ -218,6 +219,17 @@ void voxelGridFilter( const PointCloudTypePtr &cloud,
                       const std::vector<int> &inlier,
                       PointCloudTypePtr &cloud_filtered,
                       float leaf_size = 0.02f);
+
+void radiusOutlierRemoval( const PointCloudTypePtr &cloud,
+                           PointCloudTypePtr &cloud_filtered,
+                           double radius,
+                           int min_neighbors);
+
+void radiusOutlierRemoval( const PointCloudTypePtr &cloud,
+                           const std::vector<int> &inlier,
+                           PointCloudTypePtr &cloud_filtered,
+                           double radius,
+                           int min_neighbors);
 
 template <typename PointT>
 PointT transformPoint (const PointT &point,

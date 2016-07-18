@@ -47,6 +47,7 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer * viewer)
     optimize_graph_service_server_ = nh_.advertiseService("optimize_graph", &GTMapping::optimizeGraphCallback, this );
     save_graph_service_server_ = nh_.advertiseService("save_graph", &GTMapping::saveGraphCallback, this );
     save_map_service_server_ = nh_.advertiseService("save_map_pcd", &GTMapping::saveMapPCDCallback, this );
+    save_map_full_service_server_ = nh_.advertiseService("save_map_full_pcd", &GTMapping::saveMapFullPCDCallback, this );
     remove_bad_inlier_service_server_ = nh_.advertiseService("remove_bad_inlier", &GTMapping::removeBadInlierCallback, this );
 
     // reset
@@ -793,15 +794,9 @@ void GTMapping::removePlaneBadInlier( PointCloudTypePtr &cloud_voxel, double rad
         min_neighbors = M_PI * radius *radius
                     / (plane_inlier_leaf_size_ * plane_inlier_leaf_size_) *  planar_bad_inlier_alpha_;
     }
-
-    // build the filter
-    pcl::RadiusOutlierRemoval<PointType> ror;
-    ror.setInputCloud( cloud_voxel );
-    ror.setRadiusSearch( radius );
-    ror.setMinNeighborsInRadius ( min_neighbors );
-    // apply filter
+    // filter
     PointCloudTypePtr cloud_filtered( new PointCloudType );
-    ror.filter( *cloud_filtered );
+    radiusOutlierRemoval( cloud_voxel, cloud_filtered, radius, min_neighbors );
     // swap
     cloud_voxel->swap( *cloud_filtered );
 }
@@ -873,6 +868,9 @@ void GTMapping::updateLandmarksInlier()
 void GTMapping::updateOctoMap()
 {
     static int node_size = 0;
+
+    if( !publish_octomap_ )
+        return;
 
     // Set Resolution
     if( octree_map_->getResolution()!= octomap_resolution_ )
@@ -948,6 +946,9 @@ void GTMapping::publishOptimizedPose()
 
 void GTMapping::publishOptimizedPath()
 {
+    if( !publish_optimized_path_ )
+        return;
+
     if( optimized_path_publisher_.getNumSubscribers() )
     {
         // publish trajectory
@@ -967,16 +968,12 @@ void GTMapping::publishOptimizedPath()
 
 void GTMapping::publishMapCloud()
 {
+    if( !publish_map_cloud_ )
+        return;
+
     if( map_cloud_publisher_.getNumSubscribers() )
     {
-        PointCloudTypePtr cloud ( new PointCloudType );
-
-        for( std::map<int, PlaneType*>::iterator it = landmarks_list_.begin();
-             it != landmarks_list_.end(); it++)
-        {
-            PlaneType *lm = it->second;
-            *cloud += *(lm->cloud_voxel);
-        }
+        PointCloudTypePtr cloud = getMapCloud( true );
 
         sensor_msgs::PointCloud2 cloud2;
         pcl::toROSMsg( *cloud, cloud2);
@@ -991,11 +988,14 @@ void GTMapping::publishMapCloud()
 
 void GTMapping::publishOctoMap()
 {
+    if( !publish_octomap_ )
+        return;
+
     if( octomap_publisher_.getNumSubscribers() )
     {
-//        octomap::OcTree *octree = createOctoMap();
+        octomap::OcTree *octree = createOctoMap();
         octomap_msgs::Octomap msg;
-        octomap_msgs::fullMapToMsg( *octree_map_, msg);
+        octomap_msgs::fullMapToMsg( *octree, msg);
         msg.header.frame_id = map_frame_;
         msg.header.stamp = ros::Time::now();
         octomap_publisher_.publish( msg );
@@ -1075,11 +1075,74 @@ PointCloudTypePtr GTMapping::getMapCloud( bool force )
     return map_cloud_;
 }
 
-octomap::OcTree * GTMapping::createOctoMap()
+PointCloudTypePtr GTMapping::getMapFullCloud()
+{
+    PointCloudTypePtr map_full_cloud( new PointCloudType );
+    // Clear landmark cloud
+    for( std::map<int, PlaneType*>::iterator it = landmarks_list_.begin();
+         it != landmarks_list_.end(); it++)
+    {
+        PlaneType *lm = it->second;
+        lm->cloud->clear();  // clear inlier
+    }
+    // Sum
+    for( std::map<int, Frame*>::iterator it = frames_list_.begin();
+         it != frames_list_.end(); it++)
+    {
+        Frame *frame = it->second;
+        Eigen::Matrix4d trans = transformTFToMatrix4d( frame->pose_ );
+        for( int idx = 0; idx < frame->segment_planes_.size(); idx++)
+        {
+            PlaneType &obs = frame->segment_planes_[idx];
+            PlaneType *lm = landmarks_list_[ obs.id() ];
+
+            *(lm->cloud) += transformPointCloud( *(obs.cloud), trans );
+        }
+    }
+
+    // Project and Downsample
+    float radius = map_full_leaf_size_ * 10;
+    int min_neighbors = M_PI * radius *radius
+            / (map_full_leaf_size_ * map_full_leaf_size_) *  map_full_min_neighbor_alpha_;
+    for( std::map<int, PlaneType*>::iterator it = landmarks_list_.begin();
+         it != landmarks_list_.end(); it++)
+    {
+        PlaneType *lm = it->second;
+        PointCloudTypePtr cloud_projected( new PointCloudType );
+        projectPoints( *(lm->cloud), lm->coefficients, *cloud_projected );
+        voxelGridFilter( cloud_projected, lm->cloud, map_full_leaf_size_ );
+        radiusOutlierRemoval( lm->cloud, cloud_projected, radius, min_neighbors );  // remove bad inlier
+        lm->cloud->swap( *cloud_projected );
+//        setPointCloudColor( *(lm->cloud), lm->color );
+        cloud_projected->clear();
+
+//        // compute 3d centroid
+//        Eigen::Vector4f cen;
+//        pcl::compute3DCentroid( *(lm->cloud), cen );
+//        lm->centroid.x = cen[0];
+//        lm->centroid.y = cen[1];
+//        lm->centroid.z = cen[2];
+//        lm->centroid.rgb = lm->color.float_value;
+    }
+
+
+    for( std::map<int, PlaneType*>::iterator it = landmarks_list_.begin();
+         it != landmarks_list_.end(); it++)
+    {
+        PlaneType *lm = it->second;
+//        setPointCloudColor( *(lm->cloud), lm->color );
+        *map_full_cloud += *(lm->cloud);
+    }
+
+    return map_full_cloud;
+}
+
+octomap::OcTree * GTMapping::createOctoMap( double resolution )
 {
     ros::Time start_time = ros::Time::now();
 
-    octomap::OcTree * octree = new octomap::OcTree( octomap_resolution_ );
+    if( resolution == 0) resolution = octomap_resolution_;
+    octomap::OcTree * octree = new octomap::OcTree( resolution );
 
     int number = 0;
     for( std::map<int, Frame*>::iterator itf = frames_list_.begin();
@@ -1125,6 +1188,12 @@ void GTMapping::saveMapPCD( const std::string &filename )
     pcl::io::savePCDFileASCII ( filename, *cloud);
 }
 
+void GTMapping::saveMapFullPCD( const std::string &filename )
+{
+    PointCloudTypePtr cloud = getMapFullCloud();
+    pcl::io::savePCDFileASCII ( filename, *cloud);
+}
+
 std::vector<geometry_msgs::PoseStamped> GTMapping::getOptimizedPath()
 {
     std::vector<geometry_msgs::PoseStamped> poses;
@@ -1161,8 +1230,12 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     remove_plane_bad_inlier_ = config.remove_plane_bad_inlier;
     planar_bad_inlier_alpha_ = config.planar_bad_inlier_alpha;
     //
+    map_full_leaf_size_ = config.map_full_leaf_size;
+    map_full_min_neighbor_alpha_ = config.map_full_min_neighbor_alpha;
     octomap_resolution_ = config.octomap_resolution;
     octomap_max_depth_range_ = config.octomap_max_depth_range;
+    publish_map_cloud_ = config.publish_map_cloud;
+    publish_octomap_ = config.publish_octomap;
     publish_optimized_path_ = config.publish_optimized_path;
 
     cout << GREEN <<" GTSAM Mapping Config." << RESET << endl;
@@ -1223,6 +1296,25 @@ bool GTMapping::saveMapPCDCallback(std_srvs::Trigger::Request &req, std_srvs::Tr
         saveMapPCD( filename );
         res.success = true;
         res.message = " Save map as pcd file: " + filename + ".";
+    }
+
+    cout << GREEN << res.message << RESET << endl;
+    return true;
+}
+
+bool GTMapping::saveMapFullPCDCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
+{
+    if( !landmarks_list_.size() )
+    {
+        res.success = false;
+        res.message = " Failed, map is empty.";
+    }
+    else
+    {
+        std::string filename = "/home/lizhi/bags/result/" + timeToStr() + "_map_full.pcd";
+        saveMapFullPCD( filename );
+        res.success = true;
+        res.message = " Save full map as pcd file: " + filename + ".";
     }
 
     cout << GREEN << res.message << RESET << endl;

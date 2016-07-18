@@ -120,6 +120,9 @@ void voxelGridFilter( const PointCloudTypePtr &cloud,
                       PointCloudTypePtr &cloud_filtered,
                       float leaf_size)
 {
+    // clear
+    cloud_filtered->clear();
+    //
     // Create the filtering object
     pcl::VoxelGrid<PointType> sor;
     sor.setInputCloud ( cloud );
@@ -132,6 +135,9 @@ void voxelGridFilter( const PointCloudTypePtr &cloud,
                       PointCloudTypePtr &cloud_filtered,
                       float leaf_size)
 {
+    // clear
+    cloud_filtered->clear();
+    //
     pcl::PointIndicesPtr indices;
     indices->indices = inlier;
     // Create the filtering object
@@ -140,6 +146,43 @@ void voxelGridFilter( const PointCloudTypePtr &cloud,
     sor.setIndices( indices );
     sor.setLeafSize ( leaf_size, leaf_size, leaf_size );
     sor.filter ( *cloud_filtered );
+}
+
+void radiusOutlierRemoval(const PointCloudTypePtr &cloud,
+                          PointCloudTypePtr &cloud_filtered,
+                          double radius,
+                          int min_neighbors)
+{
+    // clear
+    cloud_filtered->clear();
+    // build the filter
+    pcl::RadiusOutlierRemoval<PointType> ror;
+    ror.setInputCloud( cloud );
+    ror.setRadiusSearch( radius );
+    ror.setMinNeighborsInRadius ( min_neighbors );
+    // apply filter
+    ror.filter( *cloud_filtered );
+}
+
+void radiusOutlierRemoval(const PointCloudTypePtr &cloud,
+                          const std::vector<int> &inlier,
+                          PointCloudTypePtr &cloud_filtered,
+                          double radius,
+                          int min_neighbors)
+{
+    // clear
+    cloud_filtered->clear();
+    // inlier
+    pcl::PointIndicesPtr indices;
+    indices->indices = inlier;
+    // build the filter
+    pcl::RadiusOutlierRemoval<PointType> ror;
+    ror.setInputCloud( cloud );
+    ror.setIndices( indices );
+    ror.setRadiusSearch( radius );
+    ror.setMinNeighborsInRadius ( min_neighbors );
+    // apply filter
+    ror.filter( *cloud_filtered );
 }
 
 template <typename PointT>
