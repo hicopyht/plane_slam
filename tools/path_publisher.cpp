@@ -45,7 +45,7 @@ int main(int argc, char** argv)
     ros::NodeHandle nh;
     if( argc < 3)
     {
-        cout << "Must define the topic name and path file." << endl;
+        cout << "Usage: ./path_publisher topic_name path_file <latch> <cycle>" << endl;
         exit(0);
     }
     std::string topicname = argv[1];

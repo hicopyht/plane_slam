@@ -1075,7 +1075,7 @@ PointCloudTypePtr GTMapping::getMapCloud( bool force )
     return map_cloud_;
 }
 
-PointCloudTypePtr GTMapping::getMapFullCloud()
+PointCloudTypePtr GTMapping::getMapFullCloud( bool colored )
 {
     PointCloudTypePtr map_full_cloud( new PointCloudType );
     // Clear landmark cloud
@@ -1113,7 +1113,8 @@ PointCloudTypePtr GTMapping::getMapFullCloud()
         voxelGridFilter( cloud_projected, lm->cloud, map_full_leaf_size_ );
         radiusOutlierRemoval( lm->cloud, cloud_projected, radius, min_neighbors );  // remove bad inlier
         lm->cloud->swap( *cloud_projected );
-//        setPointCloudColor( *(lm->cloud), lm->color );
+//        if( colored )
+//            setPointCloudColor( *(lm->cloud), lm->color );
         cloud_projected->clear();
 
 //        // compute 3d centroid
@@ -1130,8 +1131,14 @@ PointCloudTypePtr GTMapping::getMapFullCloud()
          it != landmarks_list_.end(); it++)
     {
         PlaneType *lm = it->second;
-//        setPointCloudColor( *(lm->cloud), lm->color );
-        *map_full_cloud += *(lm->cloud);
+        if( colored )
+        {
+            PointCloudType cloud_color = *(lm->cloud);
+            setPointCloudColor( cloud_color, lm->color );
+            *map_full_cloud += cloud_color;
+        }
+        else
+            *map_full_cloud += *(lm->cloud);
     }
 
     return map_full_cloud;
@@ -1191,6 +1198,12 @@ void GTMapping::saveMapPCD( const std::string &filename )
 void GTMapping::saveMapFullPCD( const std::string &filename )
 {
     PointCloudTypePtr cloud = getMapFullCloud();
+    pcl::io::savePCDFileASCII ( filename, *cloud);
+}
+
+void GTMapping::saveMapFullColoredPCD( const std::string &filename )
+{
+    PointCloudTypePtr cloud = getMapFullCloud(true);
     pcl::io::savePCDFileASCII ( filename, *cloud);
 }
 
@@ -1312,9 +1325,11 @@ bool GTMapping::saveMapFullPCDCallback(std_srvs::Trigger::Request &req, std_srvs
     else
     {
         std::string filename = "/home/lizhi/bags/result/" + timeToStr() + "_map_full.pcd";
+        std::string filename_colored = "/home/lizhi/bags/result/" + timeToStr() + "_map_full_colored.pcd";
         saveMapFullPCD( filename );
+        saveMapFullColoredPCD( filename_colored );
         res.success = true;
-        res.message = " Save full map as pcd file: " + filename + ".";
+        res.message = " Save full map as pcd file: " + filename + " and " + filename_colored +".";
     }
 
     cout << GREEN << res.message << RESET << endl;

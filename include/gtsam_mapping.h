@@ -76,6 +76,7 @@ public:
     // Save map to PCD file
     void saveMapPCD( const std::string &filename = "plane_slam_map.pcd");
     void saveMapFullPCD( const std::string &filename = "plane_slam_map_full.pcd");
+    void saveMapFullColoredPCD( const std::string &filename = "plane_slam_map_full_colored.pcd");
     // Save graph
     inline void saveGraphDot( const std::string &filename = "plane_slam_graph.dot" ){
         isam2_->saveGraph( filename );
@@ -88,7 +89,7 @@ public:
     const std::map<int, PlaneType*> &getLandmark() { return landmarks_list_; }
     // Get map cloud
     PointCloudTypePtr getMapCloud( bool force = false);
-    PointCloudTypePtr getMapFullCloud();
+    PointCloudTypePtr getMapFullCloud( bool colored = false);
     // Set map frame
     inline void setMapFrame( const std::string &frame_id ) { map_frame_ = frame_id; }
     std::string getMapFrame() const { return map_frame_; }

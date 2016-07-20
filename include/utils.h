@@ -44,7 +44,6 @@ using namespace Eigen;
 const double DEG_TO_RAD = ( M_PI / 180.0 );
 const double RAD_TO_DEG = ( 180.0 / M_PI );
 
-
 typedef PlaneFromLineSegment::CAMERA_PARAMETERS  CameraParameters;
 
 typedef pcl::PointCloud< pcl::PointXYZ > PointCloudXYZ;
@@ -63,6 +62,7 @@ typedef std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >
 typedef Eigen::Vector4d PlaneCoefficients;
 
 bool isValidPoint(const PointType &p);
+
 
 // RGB Value
 typedef union
@@ -350,6 +350,80 @@ int bruteForceSearchORB(const uint64_t* v, const uint64_t* search_array, const u
 
 
 std::string timeToStr();
+
+// Runtimes
+struct Runtime{
+
+    Runtime()
+        : key_frame(false)
+        , frame(0)
+        , tracking(0)
+        , mapping(0)
+        , total(0) {}
+
+    Runtime( bool _key_frame, double _frame, double _track, double _map, double _total )
+        : key_frame(_key_frame)
+        , frame(_frame)
+        , tracking(_track)
+        , mapping(_map)
+        , total(_total) {}
+
+    void operator += ( const Runtime &other )
+    {
+        this->frame += other.frame;
+        this->tracking += other.tracking;
+        this->mapping += other.mapping;
+        this->total += other.total;
+    }
+
+    void operator -= ( const Runtime &other )
+    {
+        this->frame -= other.frame;
+        this->tracking -= other.tracking;
+        this->mapping -= other.mapping;
+        this->total -= other.total;
+    }
+
+    void operator /= ( const double value )
+    {
+        this->frame /= value;
+        this->tracking /= value;
+        this->mapping /= value;
+        this->total /= value;
+    }
+
+    void getMaximum( const Runtime &other )
+    {
+        this->frame = std::max( this->frame, other.frame);
+        this->tracking = std::max( this->tracking, other.tracking);
+        this->mapping = std::max( this->mapping, other.mapping);
+        this->total = std::max( this->total, other.total);
+    }
+
+    void getMinimum( const Runtime &other )
+    {
+        this->frame = std::min( this->frame, other.frame);
+        this->tracking = std::min( this->tracking, other.tracking);
+        this->mapping = std::min( this->mapping, other.mapping);
+        this->total = std::min( this->total, other.total);
+    }
+
+//    Runtime operator + ( const Runtime& left, const Runtime& right)
+//    {
+//        Runtime rt;
+//        rt.frame = left.frame + right.frame;
+//        rt.tracking = left.tracking + right.tracking;
+//        rt.mapping = left.mapping + right.mapping;
+//        rt.total = left.total + right.total;
+//        return rt;
+//    }
+
+    bool key_frame;
+    double frame;
+    double tracking;
+    double mapping;
+    double total;
+};
 
 //the following are UBUNTU/LINUX ONLY terminal color
 #define RESET "\033[0m"

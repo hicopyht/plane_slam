@@ -66,6 +66,8 @@ public:
 
     void savePathAndLandmarks( const std::string &filename = "plane_slam_path_landmarks.txt" );
 
+    void saveRuntimes( const std::string &filename );
+
     void cvtCameraParameter( const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
                              CameraParameters &camera);
 
@@ -154,6 +156,8 @@ private:
     // Path
     std::vector<geometry_msgs::PoseStamped> true_poses_;
     std::vector<geometry_msgs::PoseStamped> odometry_poses_;
+
+    std::vector<Runtime> runtimes_;
 };
 
 } // end of namespace plane_slam

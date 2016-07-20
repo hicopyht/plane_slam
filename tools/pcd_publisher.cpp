@@ -17,7 +17,8 @@ int main(int argc, char** argv)
     ros::NodeHandle nh;
     if( argc < 2)
     {
-        cout << "Must define the pcd file." << endl;
+        cout << "Usage: ./pcd_publisher filename <latch> <cycle>" << endl;
+        ROS_ERROR_STREAM("Must define the pcd file.");
         exit(0);
     }
     std::string topicname = "pcd_cloud";
@@ -37,7 +38,7 @@ int main(int argc, char** argv)
     PointCloudTypePtr cloud( new PointCloudType );
     if( pcl::io::loadPCDFile<PointType>(filename, *cloud) == -1)
     {
-        ROS_ERROR("Failed to load pcd file, exit.");
+        ROS_ERROR_STREAM("Failed to load pcd file, exit.");
         exit(1);
     }
 

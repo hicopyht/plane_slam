@@ -299,6 +299,14 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
          << ", display: " << display_dura
          << RESET << endl;
 
+    // Runtimes, push new one
+    if( frame->key_frame_ && last_frame_valid)
+    {
+        const double total = frame_dura + track_dura + map_dura;
+        runtimes_.push_back( Runtime(true, frame_dura, track_dura, map_dura, total) );
+        cout << GREEN << " Runtimes size: " << runtimes_.size() << RESET << endl;
+    }
+
     if( frame->valid_ )
     {
         if( !last_frame_valid )
@@ -314,17 +322,16 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     }
 }
 
-
 void KinectListener::savePathAndLandmarks( const std::string &filename )
 {
     FILE* yaml = std::fopen( filename.c_str(), "w" );
-    fprintf( yaml, "#landmarks and path file: %s\n", filename.c_str() );
-    fprintf( yaml, "#landmarks format: ax+by+cz+d = 0, (n,d), (a,b,c,d)\n");
-    fprintf( yaml, "#pose format: T(xyz) Q(xyzw)\n\n" );
+    fprintf( yaml, "# landmarks and path file: %s\n", filename.c_str() );
+    fprintf( yaml, "# landmarks format: ax+by+cz+d = 0, (n,d), (a,b,c,d)\n");
+    fprintf( yaml, "# pose format: T(xyz) Q(xyzw)\n\n" );
 
     // Save Landmarks
     std::map<int, PlaneType*> landmarks = gt_mapping_->getLandmark();
-    fprintf( yaml, "#landmarks, size %d\n", landmarks.size() );
+    fprintf( yaml, "# landmarks, size %d\n", landmarks.size() );
     for( std::map<int, PlaneType*>::const_iterator it = landmarks.begin();
          it != landmarks.end(); it++)
     {
@@ -338,7 +345,7 @@ void KinectListener::savePathAndLandmarks( const std::string &filename )
 
     // Save Optimized Path
     std::vector<geometry_msgs::PoseStamped> optimized_poses = gt_mapping_->getOptimizedPath();
-    fprintf( yaml, "#optimized path, size %d\n", optimized_poses.size() );
+    fprintf( yaml, "# optimized path, size %d\n", optimized_poses.size() );
     for( int i = 0; i < optimized_poses.size(); i++)
     {
         geometry_msgs::PoseStamped &pose = optimized_poses[i];
@@ -349,7 +356,7 @@ void KinectListener::savePathAndLandmarks( const std::string &filename )
     fprintf( yaml, "\n\n");
 
     // Save True Path
-    fprintf( yaml, "#true path, size %d\n", true_poses_.size() );
+    fprintf( yaml, "# true path, size %d\n", true_poses_.size() );
     for( int i = 0; i < true_poses_.size(); i++)
     {
         geometry_msgs::PoseStamped &pose = true_poses_[i];
@@ -359,7 +366,7 @@ void KinectListener::savePathAndLandmarks( const std::string &filename )
     fprintf( yaml, "\n\n");
 
     // Save Odometry Path
-    fprintf( yaml, "#odometry path, size %d\n", odometry_poses_.size() );
+    fprintf( yaml, "# odometry path, size %d\n", odometry_poses_.size() );
     for( int i = 0; i < odometry_poses_.size(); i++)
     {
         geometry_msgs::PoseStamped &pose = odometry_poses_[i];
@@ -368,6 +375,88 @@ void KinectListener::savePathAndLandmarks( const std::string &filename )
     }
     fprintf( yaml, "\n\n");
 
+    // close
+    fclose(yaml);
+}
+
+void KinectListener::saveRuntimes( const std::string &filename )
+{
+    FILE* yaml = std::fopen( filename.c_str(), "w" );
+    fprintf( yaml, "# runtimes file: %s\n", filename.c_str() );
+    fprintf( yaml, "# format: frame tracking mapping total\n");
+    fprintf( yaml, "# key frame size: %d\n\n", runtimes_.size());
+
+    Runtime avg_time;
+    Runtime max_time(true, 0, 0, 0, 0);
+    Runtime min_time( true, 1e6, 1e6, 1e6, 1e6);
+    int count = 0;
+    for( int i = 0; i < runtimes_.size(); i++)
+    {
+        Runtime &runtime = runtimes_[i];
+        if( !runtime.key_frame )
+            continue;
+        fprintf( yaml, "%f %f %f %f\n", runtime.frame, runtime.tracking, runtime.mapping, runtime.total);
+        avg_time += runtime;
+        count ++;
+        //
+        max_time.getMaximum( runtime );
+        min_time.getMinimum( runtime );
+    }
+    fprintf( yaml, "\n");
+
+    if( !count )
+    {
+        fclose(yaml);
+        return;
+    }
+
+    // Average
+    avg_time /= count;
+    fprintf( yaml, "# average time:\n", count);
+    fprintf( yaml, "%f %f %f %f\n", avg_time.frame,
+             avg_time.tracking,
+             avg_time.mapping,
+             avg_time.total);
+
+    // Maximum
+    fprintf( yaml, "# maximum time:\n");
+    fprintf( yaml, "%f %f %f %f\n", max_time.frame,
+             max_time.tracking, max_time.mapping, max_time.total);
+
+    // Minimum
+    fprintf( yaml, "# minimum time:\n");
+    fprintf( yaml, "%f %f %f %f\n", min_time.frame,
+             min_time.tracking, min_time.mapping, min_time.total);
+
+    //
+    Runtime error_time;
+    error_time = max_time;
+    error_time += min_time;
+    error_time /= 2.0;
+    fprintf( yaml, "# (max+min)/2.0 time:\n");
+    fprintf( yaml, "%f %f %f %f\n", error_time.frame,
+             error_time.tracking, error_time.mapping, error_time.total);
+    //
+    error_time = max_time;
+    error_time -= min_time;
+    error_time /= 2.0;
+    fprintf( yaml, "# (max-min)/2.0 time:\n");
+    fprintf( yaml, "%f %f %f %f\n", error_time.frame,
+             error_time.tracking, error_time.mapping, error_time.total);
+    //
+    error_time = max_time;
+    error_time -= avg_time;
+    fprintf( yaml, "# (max-avg) time:\n");
+    fprintf( yaml, "%f %f %f %f\n", error_time.frame,
+             error_time.tracking, error_time.mapping, error_time.total);
+    //
+    error_time = avg_time;
+    error_time -= min_time;
+    fprintf( yaml, "# (avg-min) time:\n");
+    fprintf( yaml, "%f %f %f %f\n", error_time.frame,
+             error_time.tracking, error_time.mapping, error_time.total);
+
+    fprintf( yaml, "\n");
     // close
     fclose(yaml);
 }
@@ -489,15 +578,21 @@ bool KinectListener::savePathLandmarksCallback( std_srvs::Trigger::Request &req,
 bool KinectListener::saveSlamResultCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
     std::string time_str = timeToStr(); // appended time string
-    std::string dir = "/home/lizhi/bags/result";    // directory
+    std::string dir = "/home/lizhi/bags/result/"+timeToStr();    // directory
+    if( !boost::filesystem::create_directory(dir) )
+        dir = "/home/lizhi/bags/result";
     //
     savePathAndLandmarks( dir+"/"+time_str+"_landmarks_path.txt");  // save path and landmarks
-    gt_mapping_->saveMapPCD( dir+"/"+time_str+"_map.pcd");      // save map
-    gt_mapping_->saveGraphDot( dir+"/"+time_str+"_graph.dot");  // save grapy
+    saveRuntimes( dir+"/"+time_str+"_runtimes.txt" );   // save runtimes
+    gt_mapping_->saveGraphDot( dir+"/"+time_str+"_graph.dot");      // save grapy
+    gt_mapping_->saveMapPCD( dir+"/"+time_str+"_map.pcd");          // save map
+    gt_mapping_->saveMapFullPCD( dir+"/"+time_str+"_map_full.pcd"); // save map full
+    gt_mapping_->saveMapFullColoredPCD( dir+"/"+time_str+"_map_full_colored.pcd"); // save map full colored
     res.success = true;
-    res.message = " Save slam result(landmarks&path, map, graph) to directory " + dir + ".";
+    res.message = " Save slam result(landmarks&path, map(simplied, full, full colored), graph) to directory: " + dir + ".";
     cout << GREEN << res.message << RESET << endl;
     return true;
 }
+
 
 } // end of namespace plane_slam
