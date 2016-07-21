@@ -105,7 +105,7 @@ int main(int argc, char** argv)
     }
 
     double skip_time = 0;
-    double duration = 300;
+    double duration = 0;
     bool is_paused = false;
     bool save_bagfile = false;
     if( argc >= 4 )
@@ -190,6 +190,8 @@ int main(int argc, char** argv)
         if( finish_time > full_view.getEndTime() )
             finish_time = full_view.getEndTime();
     }
+    else
+        duration = (finish_time - start_time).toSec();
 
     rosbag::View view;
     view.addQuery( bag, rosbag::TopicQuery( topics ), start_time, finish_time );
@@ -303,7 +305,7 @@ int main(int argc, char** argv)
 
                 // process frame
                 cout << BLUE << "Processing frame " << depth_img_msg->header.seq
-                     << ", time = " << (m.getTime() - start_time).toSec() << " seconds." << RESET << endl;
+                     << ", time = " << (m.getTime() - start_time).toSec() << " / " << duration << " seconds." << RESET << endl;
                 kl.trackDepthRgbImage( rgb_img_msg, depth_img_msg, camera );
                 valid_depth = false;
                 valid_rgb = false;
@@ -337,7 +339,7 @@ int main(int argc, char** argv)
 
                 // process frame
                 cout << BLUE << "Processing frame " << depth_img_msg->header.seq
-                     << ", time = " << (m.getTime() - start_time).toSec() << " seconds." << RESET << endl;
+                     << ", time = " << (m.getTime() - start_time).toSec() << " / " << duration << " seconds." << RESET << endl;
                 kl.trackDepthRgbImage( rgb_img_msg, depth_img_msg, camera );
                 valid_depth = false;
                 valid_rgb = false;
@@ -348,7 +350,7 @@ int main(int argc, char** argv)
     }
 
     // pause before processing
-    cout << MAGENTA << "Press ctrl+c to stop processing." << RESET << endl;
+    cout << MAGENTA << "Processing finished. Press ctrl+c to exit." << RESET << endl;
     while( ros::ok() )
     {
         ros::spinOnce();

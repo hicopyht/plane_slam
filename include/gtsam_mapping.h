@@ -77,6 +77,7 @@ public:
     void saveMapPCD( const std::string &filename = "plane_slam_map.pcd");
     void saveMapFullPCD( const std::string &filename = "plane_slam_map_full.pcd");
     void saveMapFullColoredPCD( const std::string &filename = "plane_slam_map_full_colored.pcd");
+    void saveStructurePCD( const std::string &filename = "plane_slam_structure.pcd" );
     // Save graph
     inline void saveGraphDot( const std::string &filename = "plane_slam_graph.dot" ){
         isam2_->saveGraph( filename );
@@ -90,6 +91,7 @@ public:
     // Get map cloud
     PointCloudTypePtr getMapCloud( bool force = false);
     PointCloudTypePtr getMapFullCloud( bool colored = false);
+    PointCloudTypePtr getStructureCloud();
     // Set map frame
     inline void setMapFrame( const std::string &frame_id ) { map_frame_ = frame_id; }
     std::string getMapFrame() const { return map_frame_; }
@@ -216,7 +218,11 @@ private:
     double planar_bad_inlier_alpha_;
     //
     double map_full_leaf_size_;
+    bool map_full_remove_bad_inlier_;
+    int map_full_min_neighbor_;
+    double map_full_search_radius_;
     double map_full_min_neighbor_alpha_;
+    double construct_full_leaf_size_;
     double octomap_resolution_;
     double octomap_max_depth_range_;
     bool publish_map_cloud_;

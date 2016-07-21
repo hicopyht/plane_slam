@@ -32,12 +32,14 @@ Viewer::Viewer( ros::NodeHandle &nh)
     pcl_viewer_->addCoordinateSystem(0.000001);
     pcl_viewer_->initCameraParameters();
     pcl_viewer_->setCameraPosition(0.0, 0.0, -0.4, 0, 0, 0.6, 0, -1, 0);
+    pcl_viewer_->setBackgroundColor( 1.0, 1.0, 1.0);
     pcl_viewer_->setShowFPS(true);
 
     map_viewer_->addCoordinateSystem(0.5);
     map_viewer_->initCameraParameters();
 //    map_viewer_->setCameraPosition(0.0, 0.0, -2.4, 0, 0, 0.6, 0, -1, 0);
     map_viewer_->setCameraPosition( 0, 3.0, 3.0, -3.0, 0, 0, -1, -1, 0 );
+    map_viewer_->setBackgroundColor( 1.0, 1.0, 1.0);
     map_viewer_->setShowFPS(true);
 
     //
@@ -86,7 +88,7 @@ void Viewer::displayFrame(const Frame &frame, const std::string &prefix, int vie
     if( !display_frame_ )
         return;
 
-    pcl_viewer_->addText(prefix, 100, 3, prefix+"_text", viewport);
+    pcl_viewer_->addText(prefix, 100, 3, 0.0, 0.0, 0.0, prefix+"_text", viewport);
 
     // Input cloud
     if( display_input_cloud_ )
@@ -331,7 +333,7 @@ void Viewer::pclViewerLandmark( const PlaneType &plane, const std::string &id, c
         map_viewer_->addPointCloud( plane.cloud_voxel, color, id+"_inlier" );
 //        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color( plane.cloud, plane.color.Red, plane.color.Green, plane.color.Blue);
 //        map_viewer_->addPointCloud( plane.cloud, color, id+"_inlier" );
-        map_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, id+"_inlier" );
+        map_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2.0, id+"_inlier" );
 
         if( display_landmark_arrow_ )
         {
@@ -349,9 +351,9 @@ void Viewer::pclViewerLandmark( const PlaneType &plane, const std::string &id, c
                 p1.z = cen[2];
             }
 
-            p2.x = p1.x + plane.coefficients[0]*0.4;
-            p2.y = p1.y + plane.coefficients[1]*0.4;
-            p2.z = p1.z + plane.coefficients[2]*0.4;
+            p2.x = p1.x + plane.coefficients[0]*0.7;
+            p2.y = p1.y + plane.coefficients[1]*0.7;
+            p2.z = p1.z + plane.coefficients[2]*0.7;
             map_viewer_->addArrow(p2, p1, plane.color.Red/255.0, plane.color.Green/255.0, plane.color.Blue/255.0, false, id+"_arrow" );
             // add a sphere
         //    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point" );
@@ -363,13 +365,13 @@ void Viewer::pclViewerLandmark( const PlaneType &plane, const std::string &id, c
             PointType p1, p2;
             p1 = plane.centroid;
             //
-            p2.x = p1.x + plane.coefficients[0]*0.43;
-            p2.y = p1.y + plane.coefficients[1]*0.43;
-            p2.z = p1.z + plane.coefficients[2]*0.43;
+            p2.x = p1.x + plane.coefficients[0]*(0.25);
+            p2.y = p1.y + plane.coefficients[1]*(0.25);
+            p2.z = p1.z + plane.coefficients[2]*0.25;
             // add plane number
             stringstream ss;
             ss << number;
-            map_viewer_->addText3D( ss.str(), p2, 0.1, 1.0, 1.0, 1.0, id+"_number");
+            map_viewer_->addText3D( ss.str(), p2, 0.2, 0.0, 0.0, 0.0, id+"_number");
         }
     }
 
@@ -513,7 +515,7 @@ void Viewer::pclViewerPlane( const PointCloudTypePtr &input, const PlaneType &pl
             // add plane number
             stringstream ss;
             ss << number;
-            pcl_viewer_->addText3D( ss.str(), p2, 0.05, 1.0, 1.0, 1.0, id+"_number", viewport+1);
+            pcl_viewer_->addText3D( ss.str(), p2, 0.05, 0.0, 0.0, 0.0, id+"_number", viewport+1);
         }
     }
     else if( display_plane_inlier_ )
@@ -560,7 +562,7 @@ void Viewer::pclViewerPlane( const PointCloudTypePtr &input, const PlaneType &pl
             // add plane number
             stringstream ss;
             ss << number;
-            pcl_viewer_->addText3D( ss.str(), p2, 0.05, 1.0, 1.0, 1.0, id+"_number", viewport+1);
+            pcl_viewer_->addText3D( ss.str(), p2, 0.05, 0.0, 0.0, 0.0, id+"_number", viewport+1);
         }
     }
 
@@ -698,11 +700,11 @@ bool Viewer::autoSpinMapViewerCallback( std_srvs::Trigger::Request &req, std_srv
             ss << "Spinning " << sec << "/" << ((int)dura) << " seconds";
             if( ! added )
             {
-                map_viewer_->addText( ss.str(), 100, 20, "spinning_text" );
+                map_viewer_->addText( ss.str(), 100, 20, 0.0, 0.0, 0.0, "spinning_text" );
                 added = true;
             }
             else
-                map_viewer_->updateText( ss.str(), 100, 20, "spinning_text" );
+                map_viewer_->updateText( ss.str(), 100, 20, 0.0, 0.0, 0.0, "spinning_text" );
         }
 
         map_viewer_->spinOnce( 20 );
@@ -712,7 +714,7 @@ bool Viewer::autoSpinMapViewerCallback( std_srvs::Trigger::Request &req, std_srv
             auto_spin_map_viewer_ = false;
     }
 
-    map_viewer_->updateText( " ", 100, 20, "spinning_text" );
+    map_viewer_->updateText( " ", 100, 20, 0.0, 0.0, 0.0, "spinning_text" );
     map_viewer_->spinOnce( 20 );
     ROS_INFO("Stop spinning.");
     res.success = true;

@@ -246,6 +246,11 @@ bool GTMapping::addFirstFrame( Frame *frame )
     // set ids
     frame->setId( next_frame_id_ );
     next_frame_id_++;
+
+    //
+    double radius = plane_inlier_leaf_size_ * 5;
+    int min_neighbors = M_PI * radius *radius
+                    / (plane_inlier_leaf_size_ * plane_inlier_leaf_size_) *  planar_bad_inlier_alpha_;
     for( int i = 0; i < planes.size(); i++)
     {
         PlaneType &plane = planes[i];
@@ -253,9 +258,14 @@ bool GTMapping::addFirstFrame( Frame *frame )
         next_plane_id_ ++;
 
         // do voxel grid filter
-        voxelGridFilter( plane.cloud, plane.cloud_voxel, plane_inlier_leaf_size_ );
         if( remove_plane_bad_inlier_ )
-            removePlaneBadInlier( plane.cloud_voxel );
+        {
+            PointCloudTypePtr cloud_filtered( new PointCloudType );
+            voxelGridFilter( plane.cloud, cloud_filtered, plane_inlier_leaf_size_ );
+            radiusOutlierRemoval( cloud_filtered, plane.cloud_voxel, radius, min_neighbors );
+        }
+        else
+            voxelGridFilter( plane.cloud, plane.cloud_voxel, plane_inlier_leaf_size_ );
     }
 
 
@@ -1086,6 +1096,9 @@ PointCloudTypePtr GTMapping::getMapFullCloud( bool colored )
         lm->cloud->clear();  // clear inlier
     }
     // Sum
+    double radius = map_full_search_radius_;
+//    int min_neighbors =  map_full_min_neighbor_;
+    int min_neighbors =  M_PI * radius * radius / ( map_full_leaf_size_ * map_full_leaf_size_) * map_full_min_neighbor_alpha_;
     for( std::map<int, Frame*>::iterator it = frames_list_.begin();
          it != frames_list_.end(); it++)
     {
@@ -1095,15 +1108,22 @@ PointCloudTypePtr GTMapping::getMapFullCloud( bool colored )
         {
             PlaneType &obs = frame->segment_planes_[idx];
             PlaneType *lm = landmarks_list_[ obs.id() ];
-
-            *(lm->cloud) += transformPointCloud( *(obs.cloud), trans );
+            PointCloudTypePtr cloud_voxeled( new PointCloudType );
+            voxelGridFilter( obs.cloud, cloud_voxeled, map_full_leaf_size_ );
+            if( map_full_remove_bad_inlier_ )
+            {
+                PointCloudTypePtr cloud_filtered( new PointCloudType );
+                radiusOutlierRemoval( cloud_voxeled, cloud_filtered, radius, min_neighbors );  // remove bad inlier
+                *(lm->cloud) += transformPointCloud( *(cloud_filtered), trans );
+            }
+            else
+            {
+                *(lm->cloud) += transformPointCloud( *(cloud_voxeled), trans );
+            }
         }
     }
 
     // Project and Downsample
-    float radius = map_full_leaf_size_ * 10;
-    int min_neighbors = M_PI * radius *radius
-            / (map_full_leaf_size_ * map_full_leaf_size_) *  map_full_min_neighbor_alpha_;
     for( std::map<int, PlaneType*>::iterator it = landmarks_list_.begin();
          it != landmarks_list_.end(); it++)
     {
@@ -1111,19 +1131,6 @@ PointCloudTypePtr GTMapping::getMapFullCloud( bool colored )
         PointCloudTypePtr cloud_projected( new PointCloudType );
         projectPoints( *(lm->cloud), lm->coefficients, *cloud_projected );
         voxelGridFilter( cloud_projected, lm->cloud, map_full_leaf_size_ );
-        radiusOutlierRemoval( lm->cloud, cloud_projected, radius, min_neighbors );  // remove bad inlier
-        lm->cloud->swap( *cloud_projected );
-//        if( colored )
-//            setPointCloudColor( *(lm->cloud), lm->color );
-        cloud_projected->clear();
-
-//        // compute 3d centroid
-//        Eigen::Vector4f cen;
-//        pcl::compute3DCentroid( *(lm->cloud), cen );
-//        lm->centroid.x = cen[0];
-//        lm->centroid.y = cen[1];
-//        lm->centroid.z = cen[2];
-//        lm->centroid.rgb = lm->color.float_value;
     }
 
 
@@ -1142,6 +1149,32 @@ PointCloudTypePtr GTMapping::getMapFullCloud( bool colored )
     }
 
     return map_full_cloud;
+}
+
+PointCloudTypePtr GTMapping::getStructureCloud()
+{
+    PointCloudTypePtr structure_cloud( new PointCloudType );
+//    double radius = map_full_search_radius_;
+//    int min_neighbors =  M_PI * radius * radius / ( map_full_leaf_size_ * map_full_leaf_size_) * map_full_min_neighbor_alpha_;
+    for( std::map<int, Frame*>::iterator it = frames_list_.begin();
+         it != frames_list_.end(); it++)
+    {
+        Frame *frame = it->second;
+        Eigen::Matrix4d trans = transformTFToMatrix4d( frame->pose_ );
+        PointCloudTypePtr cloud_voxeled( new PointCloudType );
+        voxelGridFilter( frame->cloud_, cloud_voxeled, construct_full_leaf_size_ );
+//        PointCloudTypePtr cloud_filtered( new PointCloudType );
+//        radiusOutlierRemoval( cloud_voxeled, cloud_filtered, radius, min_neighbors );  // remove bad inlier
+        *structure_cloud += transformPointCloud( *(cloud_voxeled), trans );
+    }
+
+    // voxel grid filter
+    PointCloudTypePtr structure_cloud_voxeled( new PointCloudType );
+    voxelGridFilter( structure_cloud, structure_cloud_voxeled, construct_full_leaf_size_ );
+
+//    cout << YELLOW << " construct_full_leaf_size_ = " << construct_full_leaf_size_ << RESET << endl;
+
+    return structure_cloud_voxeled;
 }
 
 octomap::OcTree * GTMapping::createOctoMap( double resolution )
@@ -1207,6 +1240,12 @@ void GTMapping::saveMapFullColoredPCD( const std::string &filename )
     pcl::io::savePCDFileASCII ( filename, *cloud);
 }
 
+void GTMapping::saveStructurePCD( const std::string &filename )
+{
+    PointCloudTypePtr cloud = getStructureCloud();
+    pcl::io::savePCDFileASCII ( filename, *cloud);
+}
+
 std::vector<geometry_msgs::PoseStamped> GTMapping::getOptimizedPath()
 {
     std::vector<geometry_msgs::PoseStamped> poses;
@@ -1244,7 +1283,11 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     planar_bad_inlier_alpha_ = config.planar_bad_inlier_alpha;
     //
     map_full_leaf_size_ = config.map_full_leaf_size;
+    map_full_remove_bad_inlier_ = config.map_full_remove_bad_inlier;
+    map_full_min_neighbor_ = config.map_full_min_neighbor;
+    map_full_search_radius_ = config.map_full_search_radius;
     map_full_min_neighbor_alpha_ = config.map_full_min_neighbor_alpha;
+    construct_full_leaf_size_ = config.construct_full_leaf_size;
     octomap_resolution_ = config.octomap_resolution;
     octomap_max_depth_range_ = config.octomap_max_depth_range;
     publish_map_cloud_ = config.publish_map_cloud;

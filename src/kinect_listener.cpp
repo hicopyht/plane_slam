@@ -578,18 +578,22 @@ bool KinectListener::savePathLandmarksCallback( std_srvs::Trigger::Request &req,
 bool KinectListener::saveSlamResultCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
 {
     std::string time_str = timeToStr(); // appended time string
-    std::string dir = "/home/lizhi/bags/result/"+timeToStr();    // directory
+    std::string dir = "/home/lizhi/bags/result/"+time_str;    // directory
+    std::string prefix;
     if( !boost::filesystem::create_directory(dir) )
-        dir = "/home/lizhi/bags/result";
+        prefix = "/home/lizhi/bags/result/"+time_str+"_";
+    else
+        prefix = "/home/lizhi/bags/result/"+time_str+"/";
     //
-    savePathAndLandmarks( dir+"/"+time_str+"_landmarks_path.txt");  // save path and landmarks
-    saveRuntimes( dir+"/"+time_str+"_runtimes.txt" );   // save runtimes
-    gt_mapping_->saveGraphDot( dir+"/"+time_str+"_graph.dot");      // save grapy
-    gt_mapping_->saveMapPCD( dir+"/"+time_str+"_map.pcd");          // save map
-    gt_mapping_->saveMapFullPCD( dir+"/"+time_str+"_map_full.pcd"); // save map full
-    gt_mapping_->saveMapFullColoredPCD( dir+"/"+time_str+"_map_full_colored.pcd"); // save map full colored
+    savePathAndLandmarks( prefix + "landmarks_path.txt");  // save path and landmarks
+    saveRuntimes( prefix + "runtimes.txt" );   // save runtimes
+    gt_mapping_->saveGraphDot( prefix + "graph.dot");      // save grapy
+    gt_mapping_->saveMapPCD( prefix + "map.pcd");          // save map
+    gt_mapping_->saveMapFullPCD( prefix + "map_full.pcd"); // save map full
+    gt_mapping_->saveMapFullColoredPCD( prefix + "map_full_colored.pcd"); // save map full colored
+    gt_mapping_->saveStructurePCD( prefix + "structure.pcd"); // save structure cloud
     res.success = true;
-    res.message = " Save slam result(landmarks&path, map(simplied, full, full colored), graph) to directory: " + dir + ".";
+    res.message = " Save slam result(landmarks&path, map(simplied, full, full colored, structure), graph) to directory: " + dir + ".";
     cout << GREEN << res.message << RESET << endl;
     return true;
 }

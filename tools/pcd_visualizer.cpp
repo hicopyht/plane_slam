@@ -40,13 +40,13 @@ int main(int argc, char** argv)
 
     // PCL Visualizer
     pcl::visualization::PCLVisualizer* pcl_viewer(new pcl::visualization::PCLVisualizer("PCD Viewer") );
-    pcl_viewer->addCoordinateSystem(0.1);
+    pcl_viewer->addCoordinateSystem(0.0001);
     pcl_viewer->initCameraParameters();
 //    pcl_viewer->setCameraPosition(0.0, 0.0, -2.4, 0, 0, 0.6, 0, -1, 0);
     // For stairs
-//    pcl_viewer->setCameraPosition( -1.37337, 2.82294, 6.15235, 1.95741, -0.600154, 2.06345, 0.59628, -0.306218, 0.742079);
+    pcl_viewer->setCameraPosition( 1.5238,3.10527,8.24389,2.5285,-1.16693,1.38802,0.549193,-0.670762,0.498464 );
     // For TUM3 structure near
-    pcl_viewer->setCameraPosition( 0.971344,0.475402,2.00935, 0.842887,0.475649,1.95646, -0.380643,0.0150451,0.9246);
+//    pcl_viewer->setCameraPosition( 3.08438,0.471339,2.87936,0.842887,0.475649,1.95646,-0.380643,0.0150451,0.9246);
     pcl_viewer->setBackgroundColor( 1.0, 1.0, 1.0 );
     pcl_viewer->setShowFPS(true);
 
