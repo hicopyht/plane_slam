@@ -25,7 +25,7 @@
 #include <pcl/common/time.h>
 //
 #include <plane_slam/PlaneSlamConfig.h>
-#include <plane_slam/PlaneSegmentConfig.h>
+//#include <plane_slam/PlaneSegmentConfig.h>
 #include "utils.h"
 #include "frame.h"
 #include "viewer.h"

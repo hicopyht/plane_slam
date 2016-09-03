@@ -34,8 +34,6 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   sensor_msgs
   tf
-  octomap_ros
-  octomap
 )
 
 ## System dependencies are found with CMake's conventions
@@ -46,8 +44,12 @@ LIST( APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules )
 ## System dependencies are found with CMake's conventions
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(Eigen3 REQUIRED)
-find_package(OpenCV 2.4.13 REQUIRED)
+find_package(OpenCV 2.4.8 REQUIRED)
 find_package(PCL 1.7 REQUIRED)
+
+find_package(octomap REQUIRED)
+include_directories(${OCTOMAP_INCLUDE_DIRS})
+link_libraries(${OCTOMAP_LIBRARIES})
 
 # Include GTSAM CMake tools
 find_package(GTSAMCMakeTools)
