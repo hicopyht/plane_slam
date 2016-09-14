@@ -3,6 +3,7 @@
 
 #include <ros/ros.h>
 #include <ros/callback_queue.h>
+#include <ros/timer.h>
 #include <dynamic_reconfigure/server.h>
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
@@ -14,6 +15,7 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <cv_bridge/cv_bridge.h>
 #include <tf/transform_listener.h>
+#include <tf/transform_broadcaster.h>
 #include <tf_conversions/tf_eigen.h>
 #include <nav_msgs/Path.h>
 #include <std_srvs/Trigger.h>
@@ -62,6 +64,11 @@ public:
 
     void trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visual_img_msg,
                              const sensor_msgs::ImageConstPtr &depth_img_msg,
+                             CameraParameters &camera,
+                             tf::Transform &odom_pose);
+
+    void trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visual_img_msg,
+                             const sensor_msgs::ImageConstPtr &depth_img_msg,
                              CameraParameters &camera);
 
     void savePathAndLandmarks( const std::string &filename = "plane_slam_path_landmarks.txt" );
@@ -90,6 +97,8 @@ protected:
 
     bool saveSlamResultCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
 
+    void publishTfTimerCallback( const ros::TimerEvent& event );
+
 private:
     bool getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time &time = ros::Time(0) );
 
@@ -104,10 +113,12 @@ private:
 private:
     ros::NodeHandle nh_;
     ros::NodeHandle private_nh_;
+    ros::Timer tf_timer_;
     ros::CallbackQueue my_callback_queue_;
     ros::AsyncSpinner* async_spinner_;
     //
     tf::TransformListener tf_listener_;
+    tf::TransformBroadcaster tf_broadcaster_;
     //
     dynamic_reconfigure::Server<plane_slam::PlaneSlamConfig> plane_slam_config_server_;
     dynamic_reconfigure::Server<plane_slam::PlaneSlamConfig>::CallbackType plane_slam_config_callback_;
@@ -159,6 +170,12 @@ private:
     std::vector<geometry_msgs::PoseStamped> odometry_poses_;
 
     std::vector<Runtime> runtimes_;
+
+    //
+    bool publish_map_tf_;
+    double map_tf_freq_;
+    boost::mutex map_tf_mutex_;
+    tf::Transform odom_to_map_tf_;
 };
 
 } // end of namespace plane_slam
