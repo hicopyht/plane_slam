@@ -17,7 +17,7 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer * viewer)
     , octree_map_( new octomap::OcTree( 0.025 ) )
     , use_keyframe_( true )
     , keyframe_linear_threshold_( 0.05f )
-    , keyframe_angular_threshold_( 5.0f )
+    , keyframe_angular_threshold_( 5.0f*DEG_TO_RAD )
     , isam2_relinearize_threshold_( 0.05f )
     , isam2_relinearize_skip_( 1 )
     , plane_match_direction_threshold_( 10.0*DEG_TO_RAD )   // 10 degree

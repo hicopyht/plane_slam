@@ -38,7 +38,9 @@ Viewer::Viewer( ros::NodeHandle &nh)
     map_viewer_->addCoordinateSystem(0.5);
     map_viewer_->initCameraParameters();
 //    map_viewer_->setCameraPosition(0.0, 0.0, -2.4, 0, 0, 0.6, 0, -1, 0);
-    map_viewer_->setCameraPosition( 0, 3.0, 3.0, -3.0, 0, 0, -1, -1, 0 );
+//    map_viewer_->setCameraPosition( 0, 3.0, 3.0, -3.0, 0, 0, -1, -1, 0 );
+//    7.83553,18.0737/7.98352,-1.33264,5.13725/-1.65863,-6.09147,13.7632/0.253037,0.699241,0.668606/0.8575/683,384/65,52
+    map_viewer_->setCameraPosition( -1.65863,-6.09147,13.7632, 7.98352,-1.33264,5.13725, 0.253037,0.699241,0.668606);
     map_viewer_->setBackgroundColor( 1.0, 1.0, 1.0);
     map_viewer_->setShowFPS(true);
 

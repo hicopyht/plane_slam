@@ -144,6 +144,7 @@ private:
     bool do_visual_odometry_;
     bool do_mapping_;
     bool do_slam_;
+    bool force_odom_;
     string map_frame_;
     string base_frame_;
     string odom_frame_;

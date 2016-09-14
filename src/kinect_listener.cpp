@@ -33,18 +33,18 @@ KinectListener::KinectListener() :
     plane_slam_config_callback_ = boost::bind(&KinectListener::planeSlamReconfigCallback, this, _1, _2);
     plane_slam_config_server_.setCallback(plane_slam_config_callback_);
 
+    private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
+    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/head_kinect/rgb/image_rect_color");
+    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/head_kinect/depth_registered/image");
+    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/head_kinect/depth_registered/camera_info");
+    private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
+
 //    private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
 //    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/camera/rgb/image_color");
-//    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth_registered/image");
+////    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "");
+//    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth/image");
 //    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/depth/camera_info");
 //    private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
-
-    private_nh_.param<int>("subscriber_queue_size", subscriber_queue_size_, 4);
-    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "/camera/rgb/image_color");
-//    private_nh_.param<string>("topic_image_visual", topic_image_visual_, "");
-    private_nh_.param<string>("topic_image_depth", topic_image_depth_, "/camera/depth/image");
-    private_nh_.param<string>("topic_camera_info", topic_camera_info_, "/camera/depth/camera_info");
-    private_nh_.param<string>("topic_point_cloud", topic_point_cloud_, "");
 
     // True path and odometry path
     true_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("true_pose", 10);
@@ -123,6 +123,10 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
 
         // store pose
         last_odom_pose = odom_pose;
+    }
+    else{
+        if(force_odom_)
+            return;
     }
 
     // Get camera parameter
@@ -552,6 +556,7 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     do_visual_odometry_ = config.do_visual_odometry;
     do_mapping_ = config.do_mapping;
     do_slam_ = config.do_slam;
+    force_odom_ = config.force_odom;
     map_frame_ = config.map_frame;
     base_frame_ = config.base_frame;
     odom_frame_ = config.odom_frame;
