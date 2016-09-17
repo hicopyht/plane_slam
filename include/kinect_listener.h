@@ -100,7 +100,7 @@ protected:
     void publishTfTimerCallback( const ros::TimerEvent& event );
 
 private:
-    bool getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time &time = ros::Time(0) );
+    bool getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time &t = ros::Time(0) );
 
     void publishTruePose();
 
@@ -156,6 +156,7 @@ private:
     bool do_mapping_;
     bool do_slam_;
     bool force_odom_;
+    string camera_frame_;
     string map_frame_;
     string base_frame_;
     string odom_frame_;

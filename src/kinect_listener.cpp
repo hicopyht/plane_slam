@@ -10,6 +10,8 @@ KinectListener::KinectListener() :
   , camera_parameters_()
   , set_init_pose_( false )
 {
+    odom_to_map_tf_.setIdentity();
+    //
     nh_.setCallbackQueue(&my_callback_queue_);
 
     // Set initial pose
@@ -83,8 +85,6 @@ KinectListener::KinectListener() :
         exit(1);
     }
 
-    odom_to_map_tf_.setIdentity();
-
     if( publish_map_tf_ )
     {
         tf_timer_ = nh_.createTimer(ros::Duration(1.0/map_tf_freq_), &KinectListener::publishTfTimerCallback, this );
@@ -106,8 +106,9 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
                                 const sensor_msgs::ImageConstPtr& depth_img_msg,
                                 const sensor_msgs::CameraInfoConstPtr& cam_info_msg)
 {
-    static tf::Transform last_odom_pose = tf::Transform::getIdentity();
+//    static tf::Transform last_odom_pose = tf::Transform::getIdentity();
     static int skip = 0;
+    camera_frame_ = depth_img_msg->header.frame_id;
 
     skip = (skip + 1) % skip_message_;
     if( skip )
@@ -121,17 +122,17 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
     tf::Transform odom_pose;
     if( getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
     {
-        // Relative transform
-        tf::Transform rel_tf = last_odom_pose.inverse() * odom_pose;
-        gtsam::Pose3 real_r_pose = tfToPose3( rel_tf );
+//        // Relative transform
+//        tf::Transform rel_tf = last_odom_pose.inverse() * odom_pose;
+//        gtsam::Pose3 real_r_pose = tfToPose3( rel_tf );
 
-        cout << CYAN << " true motion: " << endl;
-        cout << "  - R(rpy): " << real_r_pose.rotation().roll()
-             << ", " << real_r_pose.rotation().pitch()
-             << ", " << real_r_pose.rotation().yaw() << endl;
-        cout << "  - T:      " << real_r_pose.translation().x()
-             << ", " << real_r_pose.translation().y()
-             << ", " << real_r_pose.translation().z() << RESET << endl;
+//        cout << CYAN << " true motion: " << endl;
+//        cout << "  - R(rpy): " << real_r_pose.rotation().roll()
+//             << ", " << real_r_pose.rotation().pitch()
+//             << ", " << real_r_pose.rotation().yaw() << endl;
+//        cout << "  - T:      " << real_r_pose.translation().x()
+//             << ", " << real_r_pose.translation().y()
+//             << ", " << real_r_pose.translation().z() << RESET << endl;
 
         // Publish true path
         true_poses_.push_back( tfToGeometryPose(odom_pose) );
@@ -139,7 +140,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
         publishTruePath();
 
         // store pose
-        last_odom_pose = odom_pose;
+//        last_odom_pose = odom_pose;
     }
     else{
         if(force_odom_)
@@ -197,11 +198,14 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
 
-    // Tracking
     // Guess motion from odom
+    if( !last_frame_valid )
+        last_odom_pose = odom_pose;
     tf::Transform estimated_rel_tf = odom_pose.inverse()*last_odom_pose;
-    last_odom_pose = odom_pose;
     Eigen::Matrix4d estimated_transform = transformTFToMatrix4d( estimated_rel_tf );
+    cout << GREEN << "Relative Motion: " << RESET << endl;
+    printTransform( estimated_transform );
+    // Tracking
     RESULT_OF_MOTION motion;
     motion.valid = false;
     if( last_frame_valid )  // Do tracking
@@ -237,7 +241,10 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     else
     {
         if( frame->segment_planes_.size() > 0)
+        {
             frame->valid_ = true;   // first frame, set valid, add to mapper as first frame
+            frame->pose_ = odom_pose;
+        }
     }
 
     //
@@ -271,10 +278,22 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     map_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
 
+    // Store last odom
+    if( frame->key_frame_ )
+    {
+        last_odom_pose = odom_pose;
+    }
+
     // Upate odom to map tf
+    tf::Transform odom_to_map = frame->pose_ * odom_pose.inverse();
+    double yaw = tf::getYaw( odom_to_map.getRotation() );
+    // Set x, y, yaw
     map_tf_mutex_.lock();
-    odom_to_map_tf_ = frame->pose_ * odom_pose.inverse();
+    odom_to_map_tf_ = tf::Transform( tf::createQuaternionFromYaw(yaw),
+                                     tf::Vector3(odom_to_map.getOrigin().x(), odom_to_map.getOrigin().y(), 0) );
     map_tf_mutex_.unlock();
+    // Correct pose
+//    frame->pose_ = odom_to_map_tf_ * odom_pose;
 
     // Map for visualization
     if( frame->key_frame_)
@@ -657,33 +676,56 @@ void KinectListener::cvtCameraParameter( const sensor_msgs::CameraInfoConstPtr &
     camera.height = cam_info_msg->height;
 
 
-    // TUM3
-    cout << YELLOW << " Use TUM3 camera parameters." << RESET << endl;
-    camera.cx = 320.1;
-    camera.cy = 247.6;
-    camera.fx = 535.4;
-    camera.fy = 539.2;
-    //
-    camera.scale = 1.0;
-    camera.width = 640;
-    camera.height = 480;
+//    // TUM3
+//    cout << YELLOW << " Use TUM3 camera parameters." << RESET << endl;
+//    camera.cx = 320.1;
+//    camera.cy = 247.6;
+//    camera.fx = 535.4;
+//    camera.fy = 539.2;
+//    //
+//    camera.scale = 1.0;
+//    camera.width = 640;
+//    camera.height = 480;
 
 }
 
-bool KinectListener::getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time &time)
+//bool KinectListener::getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time &time)
+//{
+//    // get transform
+//    tf::StampedTransform trans;
+//    try{
+//        tf_listener_.lookupTransform(camera_frame, odom_frame_, time, trans);
+//    }catch (tf::TransformException &ex)
+//    {
+//        ROS_WARN("%s",ex.what());
+//        odom_pose.setIdentity();
+//        return false;
+//    }
+//    odom_pose.setOrigin( trans.getOrigin() );
+//    odom_pose.setRotation( trans.getRotation() );
+
+//    return true;
+//}
+
+
+bool KinectListener::getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time& t)
 {
-    // get transform
-    tf::StampedTransform trans;
-    try{
-        tf_listener_.lookupTransform(odom_frame_, camera_frame, time, trans);
-    }catch (tf::TransformException &ex)
+    // Identity camera pose
+    tf::Stamped<tf::Pose> camera_pose = tf::Stamped<tf::Pose>(tf::Transform(tf::createQuaternionFromRPY(0,0,0),
+                                                                        tf::Vector3(0,0,0)), t, camera_frame);
+    // Get the camera's pose that is centered
+    tf::Stamped<tf::Transform> pose;
+    try
     {
-        ROS_WARN("%s",ex.what());
-        odom_pose.setIdentity();
+        tf_listener_.transformPose(odom_frame_, camera_pose, pose);
+    }
+    catch(tf::TransformException e)
+    {
+        ROS_WARN("Failed to compute odom pose, skipping.", e.what());
         return false;
     }
-    odom_pose.setOrigin( trans.getOrigin() );
-    odom_pose.setRotation( trans.getRotation() );
+
+    odom_pose = pose;
 
     return true;
 }
@@ -781,6 +823,8 @@ void KinectListener::publishTfTimerCallback(const ros::TimerEvent &event)
     map_tf_mutex_.lock();
     tf::Transform trans = odom_to_map_tf_;
     map_tf_mutex_.unlock();
+//    tf::Quaternion quter = trans.getRotation().normalize();
+//    trans.setRotation( quter );
     tf_broadcaster_.sendTransform( tf::StampedTransform(trans, ros::Time::now(), map_frame_, odom_frame_ ));
 }
 
