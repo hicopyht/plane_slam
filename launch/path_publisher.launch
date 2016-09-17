@@ -1,0 +1,13 @@
+<!-- New Main Building dataset -->
+<launch>
+
+  <node pkg="plane_slam" type="path_publisher" name="path_true_publisher" args="true_path $(env SLAM_DIR)/true_path.txt false 0.1" output="screen" >
+  </node>
+
+  <node pkg="plane_slam" type="path_publisher" name="path_optimized_publisher" args="optimized_path $(env SLAM_DIR)/optimized_path.txt false 0.1" output="screen" >
+  </node>
+
+  <node pkg="plane_slam" type="path_publisher" name="path_odometry_publisher" args="odometry_path $(env SLAM_DIR)/odometry_path.txt false 0.1" output="screen" >
+  </node>
+
+</launch>
