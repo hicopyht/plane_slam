@@ -201,7 +201,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     // Guess motion from odom
     if( !last_frame_valid )
         last_odom_pose = odom_pose;
-    tf::Transform estimated_rel_tf = odom_pose.inverse()*last_odom_pose;
+    tf::Transform estimated_rel_tf = last_odom_pose.inverse()*odom_pose;
     Eigen::Matrix4d estimated_transform = transformTFToMatrix4d( estimated_rel_tf );
     cout << GREEN << "Relative Motion: " << RESET << endl;
     printTransform( estimated_transform );
@@ -210,10 +210,15 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     motion.valid = false;
     if( last_frame_valid )  // Do tracking
     {
-        tracker_->track( *last_frame, *frame, motion, estimated_transform);
-
+        if( !use_odom_tracking_ )
+            tracker_->track( *last_frame, *frame, motion, estimated_transform);
+        else
+        {
+            motion.setTransform4d( estimated_transform );
+            motion.valid = true;
+        }
         // print motion
-        if( motion.valid )  // success, print tracking result
+        if( motion.valid && !use_odom_tracking_ )  // success, print tracking result
         {
             gtsam::Rot3 rot3( motion.rotation );
             cout << MAGENTA << " estimated motion, rmse = " << motion.rmse << endl;
@@ -223,27 +228,23 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
             cout << "  - T:      " << motion.translation[0]
                  << ", " << motion.translation[1]
                  << ", " << motion.translation[2] << RESET << endl;
-
-            // estimated pose
-            frame->pose_ = last_frame->pose_ * motionToTf( motion );
-            frame->valid_ = true;
         }
         else    // failed
         {
             motion.setTransform4d( estimated_transform );
             cout << YELLOW << "failed to estimated motion, use odom." << RESET << endl;
-
-            // estimated pose
-            frame->pose_ = last_frame->pose_ * motionToTf( motion );
-            frame->valid_ = true;
         }
+
+        // estimated pose
+        frame->pose_ = last_frame->pose_ * motionToTf( motion );
+        frame->valid_ = true;
     }
     else
     {
         if( frame->segment_planes_.size() > 0)
         {
             frame->valid_ = true;   // first frame, set valid, add to mapper as first frame
-            frame->pose_ = odom_pose;
+            frame->pose_ = odom_pose;   // set odom pose as initial pose
         }
     }
 

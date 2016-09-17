@@ -156,6 +156,7 @@ private:
     bool do_mapping_;
     bool do_slam_;
     bool force_odom_;
+    bool use_odom_tracking_;
     string camera_frame_;
     string map_frame_;
     string base_frame_;
