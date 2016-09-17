@@ -12,6 +12,57 @@ Tracking::Tracking( ros::NodeHandle &nh, Viewer * viewer )
     tracking_config_server_.setCallback(tracking_config_callback_);
 }
 
+bool Tracking::trackPlanes(const Frame &source, const Frame &target,
+                     RESULT_OF_MOTION &motion, const Eigen::Matrix4d estimated_transform)
+{
+    ros::Time start_time = ros::Time::now();
+    double pairs_dura, m_e_dura;
+
+    // Set invalid at beginning
+    motion.valid = false;
+    motion.rmse = 1e9;
+    motion.inlier = 0;
+
+    // Find plane correspondences
+    const std::vector<PlaneType> &planes = target.segment_planes_;
+    const std::vector<PlaneType> &last_planes = source.segment_planes_;
+    std::vector<PlanePair> pairs;
+    if( planes.size() > 0 && last_planes.size() > 0 )
+    {
+        ITree::euclidianPlaneCorrespondences( planes, last_planes, pairs, estimated_transform);
+        std::sort( pairs.begin(), pairs.end() );
+    }
+    const int pairs_num = pairs.size();
+    cout << GREEN << " Plane pairs = " << pairs_num << RESET << endl;
+    if( pairs_num < 3 )
+        return false;
+
+    //
+    pairs_dura = (ros::Time::now() - start_time).toSec() * 1000;
+    start_time = ros::Time::now();
+
+    // Estimate transform
+    // Estimate motion using plane correspondences
+    RESULT_OF_MOTION best_transform;
+    std::vector<PlanePair> best_inlier;
+    best_transform.rmse = 1e6; // no inlier
+    best_transform.valid = false;   // no result
+    best_transform.valid = solveRelativeTransformPlanes( source, target, pairs, best_transform, best_inlier );
+    if( best_transform.valid && validRelativeTransform(best_transform) )
+        motion = best_transform;
+    //
+    m_e_dura = (ros::Time::now() - start_time).toSec() * 1000;
+
+    double total_time = pairs_dura + m_e_dura;
+    cout << GREEN << " Tracking total time: " << total_time << endl;
+    cout << " - Time:"
+         << " pairing: " << pairs_dura
+         << ", motion_estimate: " << m_e_dura
+         << RESET << endl;
+
+    return motion.valid;
+}
+
 bool Tracking::track(const Frame &source, const Frame &target,
                      RESULT_OF_MOTION &motion, const Eigen::Matrix4d estimated_transform)
 {

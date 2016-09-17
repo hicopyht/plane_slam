@@ -162,8 +162,218 @@ void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img
                                 const sensor_msgs::PointCloud2ConstPtr& point_cloud,
                                 const sensor_msgs::CameraInfoConstPtr& cam_info_msg)
 {
-    printf("cloud msg: %d\n", point_cloud->header.seq);
+    static int skip = 0;
+    camera_frame_ = point_cloud->header.frame_id;
 
+    skip = (skip + 1) % skip_message_;
+    if( skip )
+    {
+        cout << BLUE << " Skip cloud message." << RESET << endl;
+        return;
+    }
+
+    cout << RESET << "----------------------------------------------------------------------" << endl;
+    // Get odom pose
+    tf::Transform odom_pose;
+    if( getOdomPose( odom_pose, point_cloud->header.frame_id, ros::Time(0) ) )
+    {
+        // Publish true path
+        true_poses_.push_back( tfToGeometryPose(odom_pose) );
+        publishTruePose();
+        publishTruePath();
+    }
+    else{
+        if(force_odom_)
+            return;
+    }
+
+    // Get camera parameter
+    CameraParameters camera;
+    cvtCameraParameter( cam_info_msg, camera);
+
+    if(force_odom_)
+        trackPointCloud( point_cloud, camera, odom_pose );
+}
+
+// Only use planes from pointcloud as landmarks
+void KinectListener::trackPointCloud( const sensor_msgs::PointCloud2ConstPtr &point_cloud,
+                                      CameraParameters& camera,
+                                      tf::Transform &odom_pose )
+{
+    static tf::Transform last_odom_pose = tf::Transform::getIdentity();
+    static Frame *last_frame;
+    static bool last_frame_valid = false;
+    static tf::Transform last_tf;
+
+    cout << RESET << "----------------------------------------------------------------------" << endl;
+    cout << BOLDMAGENTA << "no cloud msg: " << point_cloud->header.seq << RESET << endl;
+
+    camera_parameters_ = camera;
+
+    // Ros message to pcl type
+    PointCloudTypePtr input( new PointCloudType );
+    pcl::fromROSMsg( *point_cloud, *input);
+
+    //
+    const ros::Time start_time = ros::Time::now();
+    ros::Time step_time = start_time;
+    double frame_dura, track_dura, map_dura, display_dura;
+    double total_dura;
+
+    // Compute Frame
+    Frame *frame = new Frame( input, camera_parameters_, plane_segmentor_);
+    frame->stamp_ = point_cloud->header.stamp;
+    frame->valid_ = false;
+    //
+    frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
+    // Guess motion from odom
+    if( !last_frame_valid )
+        last_odom_pose = odom_pose;
+    tf::Transform estimated_rel_tf = last_odom_pose.inverse()*odom_pose;
+    Eigen::Matrix4d estimated_transform = transformTFToMatrix4d( estimated_rel_tf );
+    cout << GREEN << "Relative Motion: " << RESET << endl;
+    printTransform( estimated_transform );
+    // Tracking
+    RESULT_OF_MOTION motion;
+    motion.valid = false;
+    if( last_frame_valid )  // Do tracking
+    {
+        if( !use_odom_tracking_ )
+            tracker_->track( *last_frame, *frame, motion, estimated_transform);
+        else
+        {
+            motion.setTransform4d( estimated_transform );
+            motion.valid = true;
+        }
+        // print motion
+        if( motion.valid && !use_odom_tracking_ )  // success, print tracking result
+        {
+            gtsam::Rot3 rot3( motion.rotation );
+            cout << MAGENTA << " estimated motion, rmse = " << motion.rmse << endl;
+            cout << "  - R(rpy): " << rot3.roll()
+                 << ", " << rot3.pitch()
+                 << ", " << rot3.yaw() << endl;
+            cout << "  - T:      " << motion.translation[0]
+                 << ", " << motion.translation[1]
+                 << ", " << motion.translation[2] << RESET << endl;
+        }
+        else    // failed
+        {
+            motion.setTransform4d( estimated_transform );
+            cout << YELLOW << "failed to estimated motion, use odom." << RESET << endl;
+        }
+
+        // estimated pose
+        frame->pose_ = last_frame->pose_ * motionToTf( motion );
+        frame->valid_ = true;
+    }
+    else
+    {
+        if( frame->segment_planes_.size() > 0)
+        {
+            frame->valid_ = true;   // first frame, set valid, add to mapper as first frame
+            frame->pose_ = odom_pose;   // set odom pose as initial pose
+        }
+    }
+
+    //
+    track_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
+    // Publish visual odometry path
+    if( !last_frame_valid && frame->valid_ ) // First frame, valid, set initial pose
+    {
+        // First odometry pose to true pose.
+        odometry_poses_.clear();
+        odometry_poses_.push_back( tfToGeometryPose(odom_pose) );
+        last_tf = odom_pose;
+    }
+    else if( motion.valid ) // not first frame, motion is always valid, calculate & publish odometry pose.
+    {
+        tf::Transform rel_tf = motionToTf( motion );
+        rel_tf.setOrigin( tf::Vector3( motion.translation[0], motion.translation[1], motion.translation[2]) );
+        tf::Transform new_tf = last_tf * rel_tf;
+        odometry_poses_.push_back( tfToGeometryPose(new_tf) );
+        publishOdometryPose();
+        publishOdometryPath();
+        last_tf = new_tf;
+    }
+
+    // Mapping
+    if( frame->valid_ ) // always valid
+    {
+        frame->key_frame_ = gt_mapping_->mapping( frame );
+    }
+    map_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
+    // Store last odom
+    if( frame->key_frame_ )
+    {
+        last_odom_pose = odom_pose;
+    }
+
+    // Upate odom to map tf
+    tf::Transform odom_to_map = frame->pose_ * odom_pose.inverse();
+    double yaw = tf::getYaw( odom_to_map.getRotation() );
+    // Set x, y, yaw
+    map_tf_mutex_.lock();
+    odom_to_map_tf_ = tf::Transform( tf::createQuaternionFromYaw(yaw),
+                                     tf::Vector3(odom_to_map.getOrigin().x(), odom_to_map.getOrigin().y(), 0) );
+    map_tf_mutex_.unlock();
+    // Correct pose
+//    frame->pose_ = odom_to_map_tf_ * odom_pose;
+
+    // Map for visualization
+    if( frame->key_frame_)
+        gt_mapping_->updateMapViewer();
+
+
+    // Display frame
+    viewer_->removeFrames();
+    if( last_frame_valid )
+        viewer_->displayFrame( *last_frame, "last_frame", viewer_->vp1() );
+    if( frame->valid_ )
+        viewer_->displayFrame( *frame, "frame", viewer_->vp2() );
+    viewer_->spinFramesOnce();
+    //
+    display_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
+    //
+    total_dura = (step_time - start_time).toSec() * 1000.0f;
+    // Print time
+    cout << GREEN << "Processing total time: " << total_dura << endl;
+    cout << "Time:"
+         << " frame: " << frame_dura
+         << ", tracking: " << track_dura
+         << ", mapping: " << map_dura
+         << ", display: " << display_dura
+         << RESET << endl;
+
+    // Runtimes, push new one
+    if( frame->key_frame_ && last_frame_valid)
+    {
+        const double total = frame_dura + track_dura + map_dura;
+        runtimes_.push_back( Runtime(true, frame_dura, track_dura, map_dura, total) );
+        cout << GREEN << " Runtimes size: " << runtimes_.size() << RESET << endl;
+    }
+
+    if( frame->valid_ )
+    {
+        if( !last_frame_valid )
+        {
+            last_frame_valid = true;
+        }
+        else if( !last_frame->key_frame_ )
+        {
+            delete last_frame;  // not keyframe, delete data
+        }
+
+        last_frame = frame;
+    }
 }
 
 void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visual_img_msg,
@@ -211,7 +421,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     if( last_frame_valid )  // Do tracking
     {
         if( !use_odom_tracking_ )
-            tracker_->track( *last_frame, *frame, motion, estimated_transform);
+            tracker_->trackPlanes( *last_frame, *frame, motion, estimated_transform);
         else
         {
             motion.setTransform4d( estimated_transform );

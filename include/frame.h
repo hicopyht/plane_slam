@@ -19,6 +19,8 @@ class Frame
 
 public:
     Frame();
+    Frame( PointCloudTypePtr &input, CameraParameters &camera_params,
+           LineBasedPlaneSegmentor* plane_segmentor);
     Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camera_params,
            ORBextractor *orb_extractor, LineBasedPlaneSegmentor *plane_segmentor );
     Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,

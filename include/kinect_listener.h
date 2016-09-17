@@ -62,6 +62,10 @@ public:
 
     ~KinectListener();
 
+    void trackPointCloud( const sensor_msgs::PointCloud2ConstPtr &point_cloud,
+                          CameraParameters& camera,
+                          tf::Transform &odom_pose );
+
     void trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visual_img_msg,
                              const sensor_msgs::ImageConstPtr &depth_img_msg,
                              CameraParameters &camera,

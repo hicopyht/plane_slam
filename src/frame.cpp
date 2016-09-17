@@ -12,6 +12,25 @@ Frame::Frame()
 
 }
 
+Frame::Frame( PointCloudTypePtr &input, CameraParameters &camera_params,
+              LineBasedPlaneSegmentor* plane_segmentor)
+    : valid_(false),
+      camera_params_(),
+      cloud_downsampled_( new PointCloudType ),
+      feature_cloud_( new PointCloudXYZ ),
+      plane_segmentor_(plane_segmentor)
+{
+    // Observation
+    cloud_ = input;
+    camera_params_ = camera_params;
+
+    // Downsample cloud
+    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
+
+    // Only segment planes
+    segmentPlane();
+}
+
 Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camera_params,
               ORBextractor* orb_extractor, LineBasedPlaneSegmentor* plane_segmentor)
     : valid_(false),
