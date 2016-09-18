@@ -104,6 +104,8 @@ struct PlaneType
     std::vector<cv::KeyPoint> feature_locations_2d;
     std_vector_of_eigen_vector4f feature_locations_3d;
     cv::Mat feature_descriptors;
+    // semantic label
+    std::string semantic_label; // NONE or "", FLOOR, WALL, DOOR, TABLE
 
     PlaneType() : cloud( new PointCloudType)
       , cloud_boundary( new PointCloudType)

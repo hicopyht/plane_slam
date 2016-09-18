@@ -428,7 +428,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
             motion.valid = true;
         }
         // print motion
-        if( motion.valid && !use_odom_tracking_ )  // success, print tracking result
+        if( motion.valid && !use_odom_tracking_ )  // success, print tracking result. Not if using odom
         {
             gtsam::Rot3 rot3( motion.rotation );
             cout << MAGENTA << " estimated motion, rmse = " << motion.rmse << endl;
