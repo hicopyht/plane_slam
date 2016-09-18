@@ -227,6 +227,9 @@ bool GTMapping::doMapping( Frame *frame )
         refinePlanarMap();
     }
 
+    // Semantic labelling: floor, wall, door, table
+    semanticMapLabel();
+
     // update estimated
     last_estimated_pose_ = optimized_poses_list_[ frame->id() ];
     last_estimated_pose_tf_ = pose3ToTF( last_estimated_pose_ );
@@ -365,6 +368,59 @@ bool GTMapping::isKeyFrame( Frame *frame )
         return true;
     else
         return false;
+}
+
+void GTMapping::semanticMapLabel()
+{
+    // Assign semantic label to every landmark
+    for( std::map<int, PlaneType*>::iterator it = landmarks_list_.begin();
+         it != landmarks_list_.end(); it++)
+    {
+        PlaneType *lm = it->second;
+        if( lm->semantic_label.empty() ) // No label, labelling it
+            labelPlane( lm );
+    }
+}
+
+void GTMapping::labelPlane( PlaneType *plane )
+{
+    static int min_wall_indices = (1.6 / plane_inlier_leaf_size_) * (1.6 / plane_inlier_leaf_size_);
+
+    Eigen::Vector3d n( plane->coefficients[0], plane->coefficients[1], plane->coefficients[2] );
+    double theta = acos( plane->coefficients[2] );
+    double d = plane->coefficients[3];
+    int size = plane->cloud_voxel->size();
+
+    // Print info
+    cout << GREEN << "  Label: " << plane->landmark_id
+         << " - angle(z): " << (theta*RAD_TO_DEG)
+         << ", d: " << d
+         << ", indices:" << size << RESET << endl;
+
+    // Labelling "FLOOR"
+    if( theta < (5.0*DEG_TO_RAD) && (d < 0.1) ) // theta < 5deg, d < 0.1m
+    {
+        plane->semantic_label = "FLOOR";
+        return;
+    }
+    // Labelling "WALL"
+    if( theta > (82.0*DEG_TO_RAD) && theta < (98.0*DEG_TO_RAD) && size > min_wall_indices )
+    {
+        plane->semantic_label = "WALL";
+        return;
+    }
+    // Labelling "TABLE"
+    if( theta < (5.0*DEG_TO_RAD) && (d > 0.4) && (d < 1.0) ) // theta < 5deg, 0.4m < d < 1m
+    {
+        plane->semantic_label = "TABLE";
+        return;
+    }
+    // Labelling "DOOR"
+    if(0)
+    {
+        plane->semantic_label = "DOOR";
+        return;
+    }
 }
 
 // get predicted landmarks
