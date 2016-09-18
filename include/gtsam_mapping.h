@@ -103,6 +103,10 @@ protected:
 
     bool isKeyFrame( Frame *frame );
 
+    void semanticMapLabel();
+
+    void labelPlane( PlaneType *plane );
+
     std::map<int, gtsam::OrientedPlane3> getPredictedObservation( const Pose3 &pose );
 
     void matchObservationWithPredicted( std::map<int, OrientedPlane3> &predicted_observations,
