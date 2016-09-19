@@ -361,6 +361,19 @@ void Viewer::pclViewerLandmark( const PlaneType &plane, const std::string &id, c
         //    pcl_viewer_->addSphere( p1, 0.05, 255.0, 255.0, 0.0, id+"_point" );
         }
 
+        if( display_landmark_label_ && !plane.semantic_label.empty() )
+        {
+            // add a plane label
+            PointType p1, p2;
+            p1 = plane.centroid;
+            //
+            p2.x = p1.x + plane.coefficients[0]*(0.45);
+            p2.y = p1.y + plane.coefficients[1]*(0.25);
+            p2.z = p1.z + plane.coefficients[2]*0.25;
+            // add plane label
+            map_viewer_->addText3D( plane.semantic_label, p2, 0.2, 0.0, 0.0, 0.0, id+"_label");
+        }
+
         if( display_landmark_number_ && number >= 0 )
         {
             // add a plane number
@@ -668,6 +681,7 @@ void Viewer::viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t 
     display_landmark_number_ = config.display_landmark_number;
     display_landmark_boundary_ = config.display_landmark_boundary;
     display_landmark_hull_ = config.display_landmark_hull;
+    display_landmark_label_ = config.display_landmark_label;
 
     cout << GREEN <<" Viewer Config." << RESET << endl;
 }

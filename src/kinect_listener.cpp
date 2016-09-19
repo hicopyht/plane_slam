@@ -983,6 +983,7 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     do_mapping_ = config.do_mapping;
     do_slam_ = config.do_slam;
     force_odom_ = config.force_odom;
+    use_odom_tracking_ = config.use_odom_tracking;
     map_frame_ = config.map_frame;
     base_frame_ = config.base_frame;
     odom_frame_ = config.odom_frame;

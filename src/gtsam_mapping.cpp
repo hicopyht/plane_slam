@@ -86,7 +86,9 @@ bool GTMapping::mapping( Frame *frame )
 
     return success;
 }
-
+// Note from isam2:  Also, as iSAM solves incrementally,
+// we must wait until each is observed at least twice before
+// adding it to iSAM.
 bool GTMapping::doMapping( Frame *frame )
 {
     //

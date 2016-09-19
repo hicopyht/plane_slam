@@ -115,6 +115,7 @@ private:
     bool display_landmark_number_;
     bool display_landmark_boundary_;
     bool display_landmark_hull_;
+    bool display_landmark_label_;
 
 };
 
