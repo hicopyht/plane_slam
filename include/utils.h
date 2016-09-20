@@ -206,8 +206,10 @@ tf::Matrix3x3 matrixEigen2TF(const Eigen::Matrix3d &m33);
 
 //
 void transformTFToMatrix4d(const tf::Transform &t, Eigen::Matrix4d &e);
-void transformMatrix4dToTF(const Eigen::Matrix4d &e, tf::Transform &t);
 Eigen::Matrix4d transformTFToMatrix4d(const tf::Transform &t);
+void transformTFToMatrix4f(const tf::Transform &t, Eigen::Matrix4f &e);
+Eigen::Matrix4f transformTFToMatrix4f(const tf::Transform &t);
+void transformMatrix4dToTF(const Eigen::Matrix4d &e, tf::Transform &t);
 tf::Transform transformMatrix4dToTF(const Eigen::Matrix4d &e);
 
 //

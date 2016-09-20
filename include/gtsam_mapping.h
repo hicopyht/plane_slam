@@ -43,6 +43,7 @@
 #include "utils.h"
 #include "frame.h"
 #include "viewer.h"
+#include "tracking.h"
 
 using namespace std;
 using namespace gtsam;
@@ -53,7 +54,9 @@ namespace plane_slam
 class GTMapping
 {
 public:
-    GTMapping( ros::NodeHandle &nh, Viewer* viewer );
+    GTMapping( ros::NodeHandle &nh, Viewer* viewer, Tracking* tracker = NULL);
+
+    bool mappingMix( Frame *frame );
 
     bool mapping( Frame *frame );
 
@@ -97,6 +100,10 @@ public:
     std::string getMapFrame() const { return map_frame_; }
 
 protected:
+    bool addFirstFrameMix( Frame *frame );
+
+    bool doMappingMix( Frame *frame );
+
     bool addFirstFrame( Frame *frame );
 
     bool doMapping( Frame *frame );
@@ -151,6 +158,7 @@ protected:
 private:
     //
     Viewer *viewer_;
+    Tracking *tracker_;
     //
     ros::NodeHandle nh_;
     ros::ServiceServer optimize_graph_service_server_;

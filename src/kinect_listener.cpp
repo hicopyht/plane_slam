@@ -31,7 +31,7 @@ KinectListener::KinectListener() :
     plane_segmentor_ = new LineBasedPlaneSegmentor(nh_);
     viewer_ = new Viewer(nh_);
     tracker_ = new Tracking(nh_, viewer_ );
-    gt_mapping_ = new GTMapping(nh_, viewer_);
+    gt_mapping_ = new GTMapping(nh_, viewer_, tracker_);
 
     // reconfigure
     plane_slam_config_callback_ = boost::bind(&KinectListener::planeSlamReconfigCallback, this, _1, _2);

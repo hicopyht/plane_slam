@@ -23,7 +23,7 @@ public:
     bool trackPlanes(const Frame &source, const Frame &target, RESULT_OF_MOTION &motion,
                      const Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4) );
 
-    bool track( const Frame &source, const Frame &target, RESULT_OF_MOTION &motion,
+    bool track( const Frame &source, Frame &target, RESULT_OF_MOTION &motion,
                 const Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4) );
 
 public:
@@ -63,6 +63,30 @@ public:
                                  RESULT_OF_MOTION &result,
                                  std::vector<PlanePair> &pl_inlier,
                                  std::vector<cv::DMatch> &kp_inlier );
+
+    void matchImageFeatures( const Frame& source,
+                             const Frame& target,
+                             vector< cv::DMatch > &good_matches,
+                             double good_match_threshold = 4.0,
+                             int min_match_size = 0);
+
+    void computePairInliersAndError( const Eigen::Matrix4d &transform,
+                                     const std::vector<PlanePair>& pairs,
+                                     const std::vector<PlaneType>& last_planes,
+                                     const std::vector<PlaneType>& planes,
+                                     std::vector<PlanePair> &inlier,
+                                     double &return_mean_error,
+                                     const double max_direction_error,
+                                     const double max_distance_error );
+
+    void computeCorrespondenceInliersAndError( const std::vector<cv::DMatch> & matches,
+                                               const Eigen::Matrix4f& transform4f,
+                                               const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& query_points,
+                                               const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& train_points,
+                                               unsigned int min_inlier,
+                                               std::vector<cv::DMatch>& inlier, //pure output var
+                                               double& return_mean_error,//pure output var: rms-mahalanobis-distance
+                                               double squared_max_distance) const;
 
 private:
     bool solveRtIcp( const PointCloudXYZPtr &source,
@@ -118,31 +142,6 @@ private:
         return true;
 
     }
-
-
-    void matchImageFeatures( const Frame& source,
-                             const Frame& target,
-                             vector< cv::DMatch > &good_matches,
-                             double good_match_threshold = 4.0,
-                             int min_match_size = 0);
-
-    void computeCorrespondenceInliersAndError( const std::vector<cv::DMatch> & matches,
-                                               const Eigen::Matrix4f& transform4f,
-                                               const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& query_points,
-                                               const std::vector<Eigen::Vector4f, Eigen::aligned_allocator<Eigen::Vector4f> >& train_points,
-                                               unsigned int min_inlier,
-                                               std::vector<cv::DMatch>& inlier, //pure output var
-                                               double& return_mean_error,//pure output var: rms-mahalanobis-distance
-                                               double squared_max_distance) const;
-
-    void computePairInliersAndError( const Eigen::Matrix4d &transform,
-                                     const std::vector<PlanePair>& pairs,
-                                     const std::vector<PlaneType>& last_planes,
-                                     const std::vector<PlaneType>& planes,
-                                     std::vector<PlanePair> &inlier,
-                                     double &return_mean_error,
-                                     const double max_direction_error,
-                                     const double max_distance_error );
 
     // Random pick
     std::vector<PlanePair> randomChoosePlanePairsPreferGood( const std::vector< std::vector<PlanePair> > &sample_pairs );

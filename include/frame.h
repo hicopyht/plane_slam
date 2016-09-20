@@ -82,6 +82,10 @@ public:
     cv::Mat feature_descriptors_;
     std_vector_of_eigen_vector4f feature_locations_3d_;
     PointCloudXYZPtr feature_cloud_;
+    // For mapping
+    std::vector<cv::DMatch> good_matches_;
+    std::vector<cv::DMatch> kp_inlier_;
+    std::vector<int> good_features_;
     // Planes
     std::vector<PlaneType> segment_planes_;
 };

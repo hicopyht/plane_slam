@@ -3,9 +3,10 @@
 namespace plane_slam
 {
 
-GTMapping::GTMapping(ros::NodeHandle &nh, Viewer * viewer)
+GTMapping::GTMapping(ros::NodeHandle &nh, Viewer *viewer, Tracking *tracker)
     : nh_(nh)
-    , viewer_(viewer)
+    , viewer_( viewer )
+    , tracker_( tracker )
     , map_frame_("/world")
     , mapping_config_server_( ros::NodeHandle( nh_, "GTMapping" ) )
     , isam2_parameters_()
@@ -54,6 +55,344 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer * viewer)
     reset();
 }
 
+// Only good plane correspondences or point correspondences could be added to global map
+bool GTMapping::mappingMix( Frame *frame )
+{
+    bool success;
+    if( !optimized_poses_list_.size() )    // first frame, add prior
+    {
+        success = addFirstFrameMix( frame );
+    }
+    else    // do mapping
+    {
+        if( use_keyframe_ )
+        {
+            if( isKeyFrame( frame ))
+                success = doMappingMix( frame );   // do mapping
+            else
+                success = false;
+        }
+        else
+        {
+            success = doMappingMix( frame );   // do mapping
+        }
+    }
+
+
+//    // Map visualization
+//    if( success )
+//        updateMapViewer();
+
+    cout << GREEN << " GTMapping, success = " << (success?"true":"false") << "." << RESET << endl;
+
+    return success;
+}
+
+// Note from isam2:  Also, as iSAM solves incrementally,
+// we must wait until each is observed at least twice before
+// adding it to iSAM.
+bool GTMapping::doMappingMix( Frame *frame )
+{
+    //
+    if( !landmarks_list_.size() )
+    {
+        ROS_ERROR("You should call mapping() instead of doMapping().");
+        exit(1);
+    }
+
+    // Set id to frame
+    frame->setId( next_frame_id_ );
+    next_frame_id_ ++;
+
+    std::vector<PlaneType> &planes = frame->segment_planes_;
+    gtsam::Pose3 new_pose = tfToPose3( frame->pose_ );
+    gtsam::Pose3 rel_pose = last_estimated_pose_.inverse() * new_pose;
+
+    // Convert observations to OrientedPlane3
+    std::vector<OrientedPlane3> observations;
+    for( int i = 0; i < planes.size(); i++)
+    {
+        PlaneType &plane = planes[i];
+        observations.push_back( OrientedPlane3(plane.coefficients) );
+
+        // do voxel grid filter
+        voxelGridFilter( plane.cloud, plane.cloud_voxel, plane_inlier_leaf_size_ );
+        if( remove_plane_bad_inlier_ )
+            removePlaneBadInlier( plane.cloud_voxel );
+    }
+
+    /// 1: plane features
+    // Get predicted-observation
+    std::map<int, gtsam::OrientedPlane3> predicted_observations = getPredictedObservation( new_pose );
+
+    // Match observations with predicted ones
+    std::vector<PlanePair> pairs; // <lm, obs>
+    matchObservationWithPredicted( predicted_observations, observations, planes, new_pose, pairs);
+
+    // Print pairs info
+    cout << GREEN << " find pairs(obs, lm): " << pairs.size() << RESET << endl;
+    for( int i = 0; i < pairs.size(); i++)
+    {
+        const PlanePair &pair = pairs[i];
+        cout << "  - " << pair.iobs << ", " << pair.ilm << endl;
+    }
+
+//    // check pairs
+//    if( pairs.size() < 3 )
+//        return new_pose;
+
+    // Add odometry factors
+    Vector odom_sigmas(6);
+//    odom_sigmas << rel_pose.translation().vector()*0.1, rel_pose.rotation().rpy() * 0.1;
+    odom_sigmas << 0.05, 0.05, 0.05, 0.05, 0.05, 0.05;
+    noiseModel::Diagonal::shared_ptr odometry_noise =
+            noiseModel::Diagonal::Sigmas( odom_sigmas );
+//    cout << GREEN << "odom noise dim: " << odometry_noise->dim() << RESET << endl;
+    Key pose_key = Symbol('x', frame->id() );
+    Key last_key = Symbol('x', frame->id()-1);
+    factor_graph_.push_back(BetweenFactor<Pose3>(last_key, pose_key, rel_pose, odometry_noise));
+    factor_graph_buffer_.push_back(BetweenFactor<Pose3>(last_key, pose_key, rel_pose, odometry_noise));
+    // Add pose guess
+    initial_estimate_.insert<Pose3>( pose_key, new_pose );
+    initial_estimate_buffer_.insert<Pose3>( pose_key, new_pose );
+
+    /// 3: plane features
+    // Add factor to existed landmark
+    Eigen::VectorXi unpairs = Eigen::VectorXi::Ones( planes.size() );
+    for( int i = 0; i < pairs.size(); i++)
+    {
+        PlanePair &pair = pairs[i];
+        PlaneType &obs = planes[pair.iobs];
+        unpairs[pair.iobs] = 0;
+        obs.setId( pair.ilm );
+        Key ln =  Symbol( 'l', obs.id() );
+        noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( obs.sigmas );
+        factor_graph_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
+        factor_graph_buffer_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
+    }
+
+    // Add new landmark for unpaired observation
+    for( int i = 0; i < unpairs.size(); i++ )
+    {
+        if( unpairs[i] )
+        {
+            // Add factor
+            PlaneType &obs = planes[i];
+            obs.setId( next_plane_id_ );
+            next_plane_id_++;
+            Key ln = Symbol('l', obs.id());
+            noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( obs.sigmas );
+            factor_graph_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
+            factor_graph_buffer_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
+
+            // Add initial guess
+            OrientedPlane3 lmn( obs.coefficients );
+            OrientedPlane3 glmn = lmn.transform( new_pose.inverse() );
+            initial_estimate_.insert<OrientedPlane3>( ln, glmn );
+            initial_estimate_buffer_.insert<OrientedPlane3>( ln, glmn );
+
+            // Insert landmark coefficient to list
+            optimized_landmarks_list_[obs.id()] = glmn;
+            // Insert global plane to list
+            PlaneType *lm( new PlaneType(true) );
+            lm->coefficients = glmn.planeCoefficients();
+            lm->color.Blue = rng_.uniform(0, 255);
+            lm->color.Green = rng_.uniform(0, 255);
+            lm->color.Red = rng_.uniform(0, 255);
+            lm->color.Alpha = 255;
+            landmarks_list_[obs.id()] = lm;
+        }
+    }
+
+    /// 2: point features
+    // inlier for tracking of frame with previous
+    if( frame->kp_inlier_.size() < 5 )
+    {
+        Frame* frame_last = frames_list_[next_frame_id_-2];
+        unsigned int min_inlier_threshold = 10;
+        double inlier_error = 1e6;
+        double max_dist_m = 3.0;
+        Eigen::Matrix4f transformation = transformTFToMatrix4f(frame_last->pose_.inverse() * frame->pose_);
+        tracker_->computeCorrespondenceInliersAndError( frame->good_matches_, transformation, frame_last->feature_locations_3d_, frame->feature_locations_3d_,
+                                                        min_inlier_threshold, frame->kp_inlier_, inlier_error, max_dist_m );
+    }
+    //
+    if( frame->id() == 1 ) // first two frames
+    {
+        // add prior factor
+    }
+    else    // match with global
+    {
+        // Keypoint matches with map
+
+        // add factor to existed landmark
+
+        // add factor to unpaired landmark
+    }
+
+
+    // Insert optimized pose to list
+    optimized_poses_list_[frame->id()] = new_pose;
+    // Insert keyframe to list
+    frames_list_[ frame->id() ] = frame;
+
+
+    // Update graph
+    isam2_->update(factor_graph_, initial_estimate_);
+    isam2_->update(); // call additionally
+
+    // Update optimized poses and planes
+    updateOptimizedResult();
+
+    // Update Map
+    updateLandmarksInlier();
+
+    // Update Octomap
+    updateOctoMap();
+
+    // Clear the factor graph and values for the next iteration
+    factor_graph_.resize(0);
+    initial_estimate_.clear();
+
+    // Refine map
+    if( refine_planar_map_ )
+    {
+        refinePlanarMap();
+    }
+
+    // Semantic labelling: floor, wall, door, table
+    semanticMapLabel();
+
+    // update estimated
+    last_estimated_pose_ = optimized_poses_list_[ frame->id() ];
+    last_estimated_pose_tf_ = pose3ToTF( last_estimated_pose_ );
+    return true;
+
+}
+
+bool GTMapping::addFirstFrameMix( Frame *frame )
+{
+    // check number of planes
+    if( frame->segment_planes_.size() == 0 )
+        return false;
+
+    std::vector<PlaneType> &planes = frame->segment_planes_;
+    gtsam::Pose3 init_pose = tfToPose3( frame->pose_ );
+
+    // set ids
+    frame->setId( next_frame_id_ );
+    next_frame_id_++;
+
+    //
+    double radius = plane_inlier_leaf_size_ * 5;
+    int min_neighbors = M_PI * radius *radius
+                    / (plane_inlier_leaf_size_ * plane_inlier_leaf_size_) *  planar_bad_inlier_alpha_;
+    for( int i = 0; i < planes.size(); i++)
+    {
+        PlaneType &plane = planes[i];
+        plane.setId( next_plane_id_ );
+        next_plane_id_ ++;
+
+        // do voxel grid filter
+        if( remove_plane_bad_inlier_ )
+        {
+            PointCloudTypePtr cloud_filtered( new PointCloudType );
+            voxelGridFilter( plane.cloud, cloud_filtered, plane_inlier_leaf_size_ );
+            radiusOutlierRemoval( cloud_filtered, plane.cloud_voxel, radius, min_neighbors );
+        }
+        else
+            voxelGridFilter( plane.cloud, plane.cloud_voxel, plane_inlier_leaf_size_ );
+    }
+
+
+    // Add a prior factor
+    Key x0 = Symbol('x', frame->id());
+    Vector pose_sigmas(6);
+//    pose_sigmas << init_pose.translation().vector()*0.2, init_pose.rotation().rpy() * 0.2;
+    pose_sigmas << 0.001, 0.001, 0.001, 0.0001, 0.001, 0.001;
+    noiseModel::Diagonal::shared_ptr poseNoise = noiseModel::Diagonal::Sigmas( pose_sigmas ); // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
+//    noiseModel::Diagonal::shared_ptr poseNoise = //
+//        noiseModel::Diagonal::Variances((Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
+    factor_graph_.push_back( PriorFactor<Pose3>( x0, init_pose, poseNoise ) );
+    factor_graph_buffer_.push_back( PriorFactor<Pose3>( x0, init_pose, poseNoise ) );
+
+    // Add an initial guess for the current pose
+    initial_estimate_.insert<Pose3>( x0, init_pose );
+    initial_estimate_buffer_.insert<Pose3>( x0, init_pose );
+
+    /// 1: Plane features
+    // Add a prior landmark
+    Key l0 = Symbol('l', planes[0].id() );
+    OrientedPlane3 lm0(planes[0].coefficients);
+    OrientedPlane3 glm0 = lm0.transform(init_pose.inverse());
+    noiseModel::Diagonal::shared_ptr lm_noise = noiseModel::Diagonal::Sigmas( (Vector(2) << planes[0].sigmas[0], planes[0].sigmas[1]).finished() );
+    factor_graph_.push_back( OrientedPlane3DirectionPrior( l0, glm0.planeCoefficients(), lm_noise) );
+    factor_graph_buffer_.push_back( OrientedPlane3DirectionPrior( l0, glm0.planeCoefficients(), lm_noise) );
+
+    // Add new landmark
+    for(int i = 0; i < planes.size(); i++)
+    {
+        PlaneType &plane = planes[i];
+        Key ln = Symbol('l', plane.id() );
+
+        cout << YELLOW << " lm" << i << " coefficents: " << plane.coefficients[0]
+             << ", " << plane.coefficients[1] << ", " << plane.coefficients[2]
+             << ", " << plane.coefficients[3] << ", centroid: " << plane.centroid.x
+             << ", " << plane.centroid.y << ", " << plane.centroid.z << RESET << endl;
+
+        // Add observation factor
+        noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( plane.sigmas );
+        factor_graph_.push_back( OrientedPlane3Factor(plane.coefficients, obs_noise, x0, ln) );
+        factor_graph_buffer_.push_back( OrientedPlane3Factor(plane.coefficients, obs_noise, x0, ln) );
+
+        // Add initial guesses to all observed landmarks
+//        cout << "Key: " << ln << endl;
+        OrientedPlane3 lmn( plane.coefficients );
+        OrientedPlane3 glmn = lmn.transform( init_pose.inverse() );
+        initial_estimate_.insert<OrientedPlane3>( ln,  glmn );
+        initial_estimate_buffer_.insert<OrientedPlane3>( ln,  glmn );
+
+        // Insert landmarks coefficients to list
+        optimized_landmarks_list_[plane.id()] = glmn;
+        // Insert empty global plane to list
+        PlaneType *lm( new PlaneType(true) );
+        lm->coefficients = glmn.planeCoefficients();
+        lm->color.Blue = rng_.uniform(0, 255);
+        lm->color.Green = rng_.uniform(0, 255);
+        lm->color.Red = rng_.uniform(0, 255);
+        lm->color.Alpha = 255;
+        landmarks_list_[plane.id()] = lm;
+    }
+
+    /// 2: Point features
+    // For first frame, no point feature is added.
+
+    // Insert first pose to list
+    optimized_poses_list_[ frame->id() ] = init_pose;
+    // Insert first frame to list
+    frames_list_[ frame->id() ] = frame;  // add frame to list
+
+    // Optimize factor graph
+//    isam2_->update( graph_, initial_estimate_ );
+//    updateOptimizedResult();
+
+//    // Clear the factor graph and values for the next iteration
+//    graph_.resize(0);
+//    initial_estimate_.clear();
+//    //
+    updateLandmarksInlier();
+
+    last_estimated_pose_ = init_pose;
+    last_estimated_pose_tf_ = pose3ToTF( last_estimated_pose_ );
+
+    cout << GREEN << " Register first frame in the map." << endl;
+//    initial_estimate_.print(" - Init pose: ");
+    cout << " - Initial pose: " << endl;
+    printTransform( init_pose.matrix() );
+    cout << RESET << endl;
+
+    return true;
+}
 
 bool GTMapping::mapping( Frame *frame )
 {
@@ -238,6 +577,7 @@ bool GTMapping::doMapping( Frame *frame )
     return true;
 
 }
+
 
 bool GTMapping::addFirstFrame( Frame *frame )
 {

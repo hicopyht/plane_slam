@@ -63,7 +63,7 @@ bool Tracking::trackPlanes(const Frame &source, const Frame &target,
     return motion.valid;
 }
 
-bool Tracking::track(const Frame &source, const Frame &target,
+bool Tracking::track(const Frame &source, Frame &target,
                      RESULT_OF_MOTION &motion, const Eigen::Matrix4d estimated_transform)
 {
     ros::Time start_time = ros::Time::now();
@@ -88,6 +88,8 @@ bool Tracking::track(const Frame &source, const Frame &target,
     std::vector<cv::DMatch> good_matches;
     matchImageFeatures( source, target, good_matches,
                         feature_good_match_threshold_, feature_min_good_match_size_ );
+    // Assign good matches to Frame
+    target.good_matches_ = good_matches;
     //
     cout << GREEN << " Matches features, good_matches = " << good_matches.size() << RESET << endl;
     //
@@ -103,6 +105,9 @@ bool Tracking::track(const Frame &source, const Frame &target,
     std::vector<PlanePair> pl_inlier;
     bool valid = solveRelativeTransform( source, target, pairs, good_matches,
                                          motion, pl_inlier, kp_inlier );
+    // Assign keypoint inlier to Frame
+    target.kp_inlier_ = kp_inlier;
+
     m_e_dura = (ros::Time::now() - start_time).toSec() * 1000;
     start_time = ros::Time::now();
 

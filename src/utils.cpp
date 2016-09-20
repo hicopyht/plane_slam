@@ -92,6 +92,36 @@ Eigen::Matrix4d transformTFToMatrix4d(const tf::Transform &t)
     return e;
 }
 
+void transformTFToMatrix4f(const tf::Transform &t, Eigen::Matrix4f &e)
+{
+    // Translation
+    e(0,3) = t.getOrigin().x();
+    e(1,3) = t.getOrigin().y();
+    e(2,3) = t.getOrigin().z();
+    // Rotation matrix
+    e(0,0) = t.getBasis()[0][0];
+    e(0,1) = t.getBasis()[0][1];
+    e(0,2) = t.getBasis()[0][2];
+    e(1,0) = t.getBasis()[1][0];
+    e(1,1) = t.getBasis()[1][1];
+    e(1,2) = t.getBasis()[1][2];
+    e(2,0) = t.getBasis()[2][0];
+    e(2,1) = t.getBasis()[2][1];
+    e(2,2) = t.getBasis()[2][2];
+    // Identity
+    e(3,0) = 0;
+    e(3,1) = 0;
+    e(3,2) = 0;
+    e(3,3) = 1;
+}
+
+Eigen::Matrix4f transformTFToMatrix4f(const tf::Transform &t)
+{
+    Eigen::Matrix4f e;
+    transformTFToMatrix4f(t, e);
+    return e;
+}
+
 void transformMatrix4dToTF(const Eigen::Matrix4d &e, tf::Transform &t)
 {
     t.setOrigin(tf::Vector3( e(0,3), e(1,3), e(2,3)));
@@ -99,6 +129,7 @@ void transformMatrix4dToTF(const Eigen::Matrix4d &e, tf::Transform &t)
                               e(1,0), e(1,1), e(1,2),
                               e(2,0), e(2,1), e(2,2)));
 }
+
 
 tf::Transform transformMatrix4dToTF(const Eigen::Matrix4d &e)
 {
