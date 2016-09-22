@@ -46,7 +46,7 @@ public:
 
     void displayKeypoint( const cv::Mat &visual, const std::vector<cv::KeyPoint> &keypoints );
 
-    void displayMapLandmarks( std::map<int, KeyPoint*> &landmarks, const std::string &prefix = "point_landmark" );
+    void displayMapLandmarks( const PointCloudTypePtr &keypoints_cloud, const std::string &prefix = "point_landmark" );
 
     void displayMapLandmarks( std::map<int, PlaneType*> &landmarks, const std::string &prefix = "plane_landmark" );
 
@@ -73,6 +73,9 @@ public:
     const int& vp2() const { return viewer_v2_; }
     const int& vp3() const { return viewer_v3_; }
     const int& vp4() const { return viewer_v4_; }
+
+    const bool& isDisplayKeypointLandmarks() const { return display_point_landmarks_; }
+    const bool& isDisplayPlaneLandmarks() const { return display_plane_landmarks_; }
 
 protected:
     void viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t level);
@@ -113,7 +116,7 @@ private:
     bool show_keypoint_matches_;
     bool display_3d_keypoint_matches_;
     // parameter for landmark
-    bool display_landmarks_;
+    bool display_plane_landmarks_;
     bool display_point_landmarks_;
     bool display_landmark_inlier_;
     bool display_landmark_arrow_;

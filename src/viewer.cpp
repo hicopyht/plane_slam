@@ -43,6 +43,7 @@ Viewer::Viewer( ros::NodeHandle &nh)
 //    map_viewer_->setCameraPosition( -1.65863,-6.09147,13.7632, 7.98352,-1.33264,5.13725, 0.253037,0.699241,0.668606);
     map_viewer_->setBackgroundColor( 1.0, 1.0, 1.0);
     map_viewer_->setShowFPS(true);
+    map_viewer_->setRepresentationToSurfaceForAllActors();
 
     //
     cv::namedWindow( KeypointWindow );
@@ -214,31 +215,19 @@ void Viewer::displayKeypoint( const cv::Mat &visual, const std::vector<cv::KeyPo
     cv::waitKey(1);
 }
 
-void Viewer::displayMapLandmarks( std::map<int, KeyPoint*> &landmarks, const std::string &prefix )
+void Viewer::displayMapLandmarks( const PointCloudTypePtr &keypoints_cloud, const std::string &prefix )
 {
-    if( display_landmarks_ )
+    if( display_point_landmarks_ )
     {
-        int invalid_count = 0;
-
-        for( std::map<int, KeyPoint*>::iterator it = landmarks.begin();
-             it != landmarks.end(); it++)
-        {
-            const int id = it->first;
-            KeyPoint *lm = it->second;
-            const KeyPoint &keypoint = *lm;
-            //
-            stringstream ss;
-            ss << prefix << "_" << id;
-            pclViewerLandmark( keypoint, ss.str(), id);
-        }
-
-        cout << GREEN << " Display keypoint landmarks: " << landmarks.size() << ", invalid = " << invalid_count << RESET << endl;
+        map_viewer_->addPointCloud( keypoints_cloud, prefix );
+        map_viewer_->setPointCloudRenderingProperties ( pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 4, prefix );
+        cout << GREEN << " Display keypoint landmarks: " << keypoints_cloud->size() << RESET << endl;
     }
 }
 
 void Viewer::displayMapLandmarks( std::map<int, PlaneType*> &landmarks, const std::string &prefix )
 {
-    if( display_landmarks_ )
+    if( display_plane_landmarks_ )
     {
         map_viewer_->addText(prefix, 300, 3, prefix+"_text");
 
@@ -270,7 +259,7 @@ void Viewer::displayMapLandmarks( std::map<int, PlaneType*> &landmarks, const st
 
 void Viewer::displayMapLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix )
 {
-    if( display_landmarks_ )
+    if( display_plane_landmarks_ )
     {
         map_viewer_->addText(prefix, 300, 3, prefix+"_text");
 
@@ -360,7 +349,7 @@ void Viewer::pclViewerLandmark( const KeyPoint &keypoint, const std::string &id,
     pt.z = keypoint.translation.z();
 
     // add point
-    map_viewer_->addSphere( pt, 0.02, 255.0, 0.0, 0.0, id+"_point");
+    map_viewer_->addSphere( pt, 0.02, keypoint.color.Red, keypoint.color.Green, keypoint.color.Blue, id+"_point");
 
     // add a plane number
     if( display_landmark_number_ && number >= 0 )
@@ -727,7 +716,7 @@ void Viewer::viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t 
     show_keypoint_matches_ = config.show_keypoint_matches;
     display_3d_keypoint_matches_ = config.display_3d_keypoint_matches;
     // parameter for landmark
-    display_landmarks_ = config.display_landmarks;
+    display_plane_landmarks_ = config.display_plane_landmarks;
     display_point_landmarks_ = config.display_point_landmarks;
     display_landmark_inlier_ = config.display_landmark_inlier;
     display_landmark_arrow_ = config.display_landmark_arrow;

@@ -469,7 +469,10 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     // Mapping
     if( frame->valid_ ) // always valid
     {
-        frame->key_frame_ = gt_mapping_->mapping( frame );
+        if( mapping_keypoint_ )
+            frame->key_frame_ = gt_mapping_->mappingMix( frame );
+        else
+            frame->key_frame_ = gt_mapping_->mapping( frame );
     }
     map_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
@@ -651,7 +654,10 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     // Mapping
     if( frame->valid_ )
     {
-        frame->key_frame_ = gt_mapping_->mappingMix( frame );
+        if( mapping_keypoint_ )
+            frame->key_frame_ = gt_mapping_->mappingMix( frame );
+        else
+            frame->key_frame_ = gt_mapping_->mapping( frame );
     }
     map_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
@@ -964,6 +970,7 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     do_slam_ = config.do_slam;
     force_odom_ = config.force_odom;
     use_odom_tracking_ = config.use_odom_tracking;
+    mapping_keypoint_ = config.mapping_keypoint;
     map_frame_ = config.map_frame;
     base_frame_ = config.base_frame;
     odom_frame_ = config.odom_frame;

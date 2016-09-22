@@ -106,10 +106,10 @@ public:
     // Get landmarks
     const std::map<int, PlaneType*> &getLandmark() { return landmarks_list_; }
     // Get map cloud
-    PointCloudTypePtr getMapCloud( bool force = false);
-    PointCloudTypePtr getMapFullCloud( bool colored = false);
+    PointCloudTypePtr getMapCloud( bool force = false );
+    PointCloudTypePtr getMapFullCloud( bool colored = false );
     PointCloudTypePtr getStructureCloud();
-    PointCloudTypePtr getKeypointCloud();
+    PointCloudTypePtr getKeypointCloud( bool force = false );
     // Set map frame
     inline void setMapFrame( const std::string &frame_id ) { map_frame_ = frame_id; }
     std::string getMapFrame() const { return map_frame_; }
@@ -231,6 +231,7 @@ private:
     std::map<int, gtsam::OrientedPlane3> optimized_landmarks_list_;    // optimized landmarks list
     std::map<int, gtsam::Point3> optimized_keypoints_list_; // optimized keypoints list
     PointCloudTypePtr map_cloud_;
+    PointCloudTypePtr keypoints_cloud_; // keypoints cloud for visualization
 //    std::map<int, gtsam::OrientedPlane3> optimized_landmarks_list_last_; // last optimized
     octomap::OcTree *octree_map_;
     //
@@ -250,6 +251,7 @@ private:
     double isam2_relinearize_threshold_;
     int isam2_relinearize_skip_;
     //
+    int min_keypoint_correspondences_;
     double plane_match_direction_threshold_;
     double plane_match_distance_threshold_;
     bool plane_match_check_overlap_;

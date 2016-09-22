@@ -216,6 +216,24 @@ void radiusOutlierRemoval(const PointCloudTypePtr &cloud,
     ror.filter( *cloud_filtered );
 }
 
+Eigen::Matrix3d kinectBearingRangeCov( const gtsam::Point3 &point )
+{
+    static const double cam_angle_x = 58.0/180.0*M_PI;
+    static const double cam_angle_y = 45.0/180.0*M_PI;
+    static const double cam_resol_x = 640;
+    static const double cam_resol_y = 480;
+    static const double bearing_stddev_x = 5.0*cam_angle_x/cam_resol_x; // 5pix
+    static const double bearing_stddev_y = 5.0*cam_angle_y/cam_resol_y; // 5pix
+    static const double bearing_cov_x = bearing_stddev_x * bearing_stddev_x;
+    static const double bearing_cov_y = bearing_stddev_y * bearing_stddev_y;
+
+    Eigen::Matrix3d cov = Eigen::Matrix3d::Zero();
+    cov(0,0) = bearing_cov_x; //how big is 1px std dev in meter, depends on depth
+    cov(1,1) = bearing_cov_y; //how big is 1px std dev in meter, depends on depth
+    cov(2,2) = depth_covariance(point(2));
+    return cov;
+}
+
 Eigen::Matrix3d kinectPointCov( const Eigen::Vector4f &point )
 {
     static const double cam_angle_x = 58.0/180.0*M_PI;
@@ -247,6 +265,18 @@ gtsam::Point3 transformPoint( const gtsam::Point3 &point, const Eigen::Matrix4d 
 }
 
 Eigen::Vector4f transformPoint ( const Eigen::Vector4f &point, const Eigen::Matrix4f &transform )
+{
+    Eigen::Vector4f ret;
+    //ret.getVector3fMap () = transform * point.getVector3fMap ();
+    ret[0] = static_cast<float> (transform (0, 0) * point[0] + transform (0, 1) * point[1] + transform (0, 2) * point[2] + transform (0, 3));
+    ret[1] = static_cast<float> (transform (1, 0) * point[0] + transform (1, 1) * point[1] + transform (1, 2) * point[2] + transform (1, 3));
+    ret[2] = static_cast<float> (transform (2, 0) * point[0] + transform (2, 1) * point[1] + transform (2, 2) * point[2] + transform (2, 3));
+    ret[3] = 1.0;
+
+    return (ret);
+}
+
+Eigen::Vector4f transformPoint ( const Eigen::Vector4f &point, const Eigen::Matrix4d &transform )
 {
     Eigen::Vector4f ret;
     //ret.getVector3fMap () = transform * point.getVector3fMap ();

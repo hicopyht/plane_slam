@@ -152,8 +152,14 @@ struct KeyPoint
     int keypoint_id;
     uint64_t descriptor[4];
     gtsam::Point3 translation;
+    //
+    RGBValue color;
+    bool valid;
 
-    KeyPoint() : translation(0, 0, 0) { descriptor[0] = random(); descriptor[1] = random(); descriptor[2] = random(); descriptor[3] = random();}
+    KeyPoint() : valid(true), translation(0, 0, 0) {
+        descriptor[0] = random(); descriptor[1] = random(); descriptor[2] = random(); descriptor[3] = random();
+        color.long_value = 0xFFFFFFFF;
+    }
     void setId( int _id ) { keypoint_id = _id; }
     int &id() { return keypoint_id;}
 };
@@ -242,39 +248,48 @@ void radiusOutlierRemoval( const PointCloudTypePtr &cloud,
                            double radius,
                            int min_neighbors);
 
+Eigen::Matrix3d kinectBearingRangeCov( const gtsam::Point3 &point );
 Eigen::Matrix3d kinectPointCov( const Eigen::Vector4f &point );
 
 // Transform a point to world
 gtsam::Point3 transformPoint( const gtsam::Point3 &point, const Matrix4d &transform );
 
+// Transform a point to world
 Eigen::Vector4f transformPoint ( const Eigen::Vector4f &point, const Eigen::Matrix4f &transform );
+Eigen::Vector4f transformPoint ( const Eigen::Vector4f &point, const Eigen::Matrix4d &transform );
 
+// Transform a point to world
 template <typename PointT>
 PointT transformPoint (const PointT &point,
                      const Eigen::Matrix4d &transform);
 
+// Transform a point to world
 template <typename PointT>
 PointT transformPoint (const PointT &point,
                      const Eigen::Matrix4f &transform);
 
-
+// Transform a pointcloud to world
 void transformPointCloud (const PointCloudType &cloud_in,
                           PointCloudType &cloud_out,
                           const Eigen::Matrix4d &transform);
 
+// Transform a pointcloud to world
 void transformPointCloud (const PointCloudType &cloud_in,
                           PointCloudType &cloud_out,
                           const Eigen::Matrix4d &transform,
                           const RGBValue &color);
 
+// Transform a pointcloud to world
 PointCloudType transformPointCloud(const PointCloudType &cloud_in,
                                    const Matrix4d &transform);
 
+// Transform a pointcloud to world
 PointCloudType transformPointCloud (const PointCloudType &cloud_in,
                           const Eigen::Matrix4d &transform,
                           const RGBValue &color);
 
 
+// Transform a plane to pose coordinate
 void transformPlane( const Eigen::Vector4d &input,
                      const Eigen::Matrix4d &transform,
                      Eigen::Vector4d &output);
