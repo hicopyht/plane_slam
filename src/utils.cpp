@@ -216,6 +216,48 @@ void radiusOutlierRemoval(const PointCloudTypePtr &cloud,
     ror.filter( *cloud_filtered );
 }
 
+Eigen::Matrix3d kinectPointCov( const Eigen::Vector4f &point )
+{
+    static const double cam_angle_x = 58.0/180.0*M_PI;
+    static const double cam_angle_y = 45.0/180.0*M_PI;
+    static const double cam_resol_x = 640;
+    static const double cam_resol_y = 480;
+    static const double raster_stddev_x = 3*tan(cam_angle_x/cam_resol_x);  //5pix stddev in x
+    static const double raster_stddev_y = 3*tan(cam_angle_y/cam_resol_y);  //5pix stddev in y
+    static const double raster_cov_x = raster_stddev_x * raster_stddev_x;
+    static const double raster_cov_y = raster_stddev_y * raster_stddev_y;/*}}}*/
+
+    Eigen::Matrix3d cov = Eigen::Matrix3d::Zero();
+    cov(0,0) = raster_cov_x * point(2); //how big is 1px std dev in meter, depends on depth
+    cov(1,1) = raster_cov_y * point(2); //how big is 1px std dev in meter, depends on depth
+    cov(2,2) = depth_covariance(point(2));
+    return cov;
+}
+
+// Transform a point to world
+gtsam::Point3 transformPoint( const gtsam::Point3 &point, const Eigen::Matrix4d &transform )
+{
+    gtsam::Point3 ret = point;
+    //ret.getVector3fMap () = transform * point.getVector3fMap ();
+    ret[0] = static_cast<double> (transform (0, 0) * point[0] + transform (0, 1) * point[1] + transform (0, 2) * point[2] + transform (0, 3));
+    ret[1] = static_cast<double> (transform (1, 0) * point[0] + transform (1, 1) * point[1] + transform (1, 2) * point[2] + transform (1, 3));
+    ret[2] = static_cast<double> (transform (2, 0) * point[0] + transform (2, 1) * point[1] + transform (2, 2) * point[2] + transform (2, 3));
+
+    return (ret);
+}
+
+Eigen::Vector4f transformPoint ( const Eigen::Vector4f &point, const Eigen::Matrix4f &transform )
+{
+    Eigen::Vector4f ret;
+    //ret.getVector3fMap () = transform * point.getVector3fMap ();
+    ret[0] = static_cast<float> (transform (0, 0) * point[0] + transform (0, 1) * point[1] + transform (0, 2) * point[2] + transform (0, 3));
+    ret[1] = static_cast<float> (transform (1, 0) * point[0] + transform (1, 1) * point[1] + transform (1, 2) * point[2] + transform (1, 3));
+    ret[2] = static_cast<float> (transform (2, 0) * point[0] + transform (2, 1) * point[1] + transform (2, 2) * point[2] + transform (2, 3));
+    ret[3] = 1.0;
+
+    return (ret);
+}
+
 template <typename PointT>
 PointT transformPoint (const PointT &point,
                      const Eigen::Matrix4d &transform)
@@ -542,33 +584,39 @@ void depthToCV8UC1(cv::Mat& depth_img, cv::Mat& mono8_img)
     }
 }
 
-void printTransform( const Eigen::Matrix4d &transform)
+void printTransform( const Eigen::Matrix4d &transform, const std::string name, const std::string color )
 {
     gtsam::Pose3 pose3( transform );
-    cout << CYAN;
-    cout << "  - R(rpy): " << pose3.rotation().roll()
-         << ", " << pose3.rotation().pitch()
-         << ", " << pose3.rotation().yaw() << endl;
+    if( name.empty() )
+        cout << color;
+    else
+        cout << color << name << ": " << endl;
     cout << "  - T:      " << pose3.translation().x()
          << ", " << pose3.translation().y()
-         << ", " << pose3.translation().z() << RESET << endl;
+         << ", " << pose3.translation().z() << endl;
+    cout << "  - R(rpy): " << pose3.rotation().roll()
+         << ", " << pose3.rotation().pitch()
+         << ", " << pose3.rotation().yaw() << RESET << endl;
 }
 
-void printTransform( const Eigen::Matrix4f &transform)
+void printTransform( const Eigen::Matrix4f &transform, const std::string name, const std::string color )
 {
     Eigen::Matrix4d tr = transform.cast<double>();
-    printTransform(tr);
+    printTransform(tr, name, color);
 }
 
 void printPose3( const gtsam::Pose3 &pose3, const std::string name, const std::string color )
 {
-    cout << color << name << ": " << endl;
-    cout << "  - R(rpy): " << pose3.rotation().roll()
-         << ", " << pose3.rotation().pitch()
-         << ", " << pose3.rotation().yaw() << endl;
+    if( name.empty() )
+        cout << color;
+    else
+        cout << color << name << ": " << endl;
     cout << "  - T:      " << pose3.translation().x()
          << ", " << pose3.translation().y()
-         << ", " << pose3.translation().z() << RESET << endl;
+         << ", " << pose3.translation().z() << endl;
+    cout << "  - R(rpy): " << pose3.rotation().roll()
+         << ", " << pose3.rotation().pitch()
+         << ", " << pose3.rotation().yaw() << RESET << endl;
 }
 
 // https://github.com/felixendres/rgbdslam_v2
@@ -576,7 +624,6 @@ double errorFunction2(const Eigen::Vector4f& x1,
                       const Eigen::Vector4f& x2,
                       const Eigen::Matrix4d& transformation)
 {
-    //FIXME: Take from paramter_server or cam info
     static const double cam_angle_x = 58.0/180.0*M_PI;/*{{{*/
     static const double cam_angle_y = 45.0/180.0*M_PI;
     static const double cam_resol_x = 640;
@@ -791,6 +838,27 @@ int bruteForceSearchORB(const uint64_t* v, const uint64_t* search_array, const u
         {
             min_distance = hamming_distance_i;
             result_index = i;
+        }
+    }
+    return min_distance;
+}
+
+int bruteForceSearchORB(const uint64_t* v, const std::map<int, KeyPoint*> &keypoints_list,
+                        const std::map<int, gtsam::Point3> &predicted_keypoints, int& result_index)
+{
+    //constexpr unsigned int howmany64bitwords = 4;//32*8/64;
+    const unsigned int howmany64bitwords = 4;//32*8/64;
+    result_index = -1;//impossible
+    int min_distance = 1 + 256;//More than maximum distance
+    for( std::map<int, gtsam::Point3>::const_iterator it = predicted_keypoints.begin();
+         it != predicted_keypoints.end(); it++)
+    {
+        const KeyPoint* kp = keypoints_list.at(it->first);
+        int hamming_distance_i = hamming_distance_orb32x8_popcountll(v, kp->descriptor);
+        if(hamming_distance_i < min_distance)
+        {
+            min_distance = hamming_distance_i;
+            result_index = it->first;
         }
     }
     return min_distance;

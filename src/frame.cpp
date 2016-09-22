@@ -5,6 +5,7 @@ namespace plane_slam
 
 Frame::Frame()
     : valid_(false),
+      key_frame_(false),
       camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ )
@@ -15,6 +16,7 @@ Frame::Frame()
 Frame::Frame( PointCloudTypePtr &input, CameraParameters &camera_params,
               LineBasedPlaneSegmentor* plane_segmentor)
     : valid_(false),
+      key_frame_(false),
       camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
@@ -34,6 +36,7 @@ Frame::Frame( PointCloudTypePtr &input, CameraParameters &camera_params,
 Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camera_params,
               ORBextractor* orb_extractor, LineBasedPlaneSegmentor* plane_segmentor)
     : valid_(false),
+      key_frame_(false),
       camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
@@ -58,6 +61,7 @@ Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camer
 Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
               ORBextractor* orb_extractor, LineBasedPlaneSegmentor* plane_segmentor)
     : valid_(false),
+      key_frame_(false),
       camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
@@ -227,7 +231,7 @@ PointCloudTypePtr Frame::image2PointCloud( const cv::Mat &rgb_img, const cv::Mat
             color.Blue = rgb_img.at<uint8_t>(color_idx);
             color.Green = rgb_img.at<uint8_t>(color_idx+1);
             color.Red = rgb_img.at<uint8_t>(color_idx+2);
-            color.Alpha = 1.0;
+            color.Alpha = 255.0;
             pt.rgb = color.float_value;
             //
             pt_iter ++;

@@ -31,6 +31,7 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer *viewer, Tracking *tracker)
     , octomap_max_depth_range_( 4.0f )
     , rng_(12345)
     , next_plane_id_( 0 )
+    , next_point_id_( 0 )
     , next_frame_id_( 0 )
 {
     // reconfigure
@@ -38,11 +39,16 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer *viewer, Tracking *tracker)
     mapping_config_server_.setCallback(mapping_config_callback_);
 
     // Pose and Map
-    optimized_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("optimized_pose", 10);
-    optimized_path_publisher_ = nh_.advertise<nav_msgs::Path>("optimized_path", 10);
-    map_cloud_publisher_ = nh_.advertise<sensor_msgs::PointCloud2>("map_cloud", 10);
+    optimized_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("optimized_pose", 4);
+    optimized_path_publisher_ = nh_.advertise<nav_msgs::Path>("optimized_path", 4);
+    map_cloud_publisher_ = nh_.advertise<sensor_msgs::PointCloud2>("map_cloud", 4);
     octomap_publisher_ = nh_.advertise<octomap_msgs::Octomap>("octomap", 4);
-    marker_publisher_ = nh_.advertise<visualization_msgs::Marker>("visualization_marker", 10);
+    keypoint_cloud_publisher_ = nh_.advertise<sensor_msgs::PointCloud2>("keypoints_cloud", 4);
+    predicted_keypoint_publisher_ = nh_.advertise<sensor_msgs::PointCloud2>("predicted_keypoints", 4);
+    frame_keypoint_publisher_ = nh_.advertise<sensor_msgs::PointCloud2>("frame_keypoints", 4);
+    matched_keypoint_frame_publisher_ = nh_.advertise<sensor_msgs::PointCloud2>("matched_keypoints_frame", 4);
+    matched_keypoint_global_publisher_ = nh_.advertise<sensor_msgs::PointCloud2>("matched_keypoints_global", 4);
+    marker_publisher_ = nh_.advertise<visualization_msgs::Marker>("visualization_marker", 4);
 
     //
     optimize_graph_service_server_ = nh_.advertiseService("optimize_graph", &GTMapping::optimizeGraphCallback, this );
@@ -208,26 +214,93 @@ bool GTMapping::doMappingMix( Frame *frame )
     // inlier for tracking of frame with previous
     if( frame->kp_inlier_.size() < 5 )
     {
-        Frame* frame_last = frames_list_[next_frame_id_-2];
+
+        Frame* frame_last = frames_list_[frame->id()-1];
         unsigned int min_inlier_threshold = 10;
         double inlier_error = 1e6;
         double max_dist_m = 3.0;
-        Eigen::Matrix4f transformation = transformTFToMatrix4f(frame_last->pose_.inverse() * frame->pose_);
+        Eigen::Matrix4f transformation = transformTFToMatrix4f( frame_last->pose_.inverse() * frame->pose_);
         tracker_->computeCorrespondenceInliersAndError( frame->good_matches_, transformation, frame_last->feature_locations_3d_, frame->feature_locations_3d_,
                                                         min_inlier_threshold, frame->kp_inlier_, inlier_error, max_dist_m );
+        cout << GREEN << " compute matches with previous: " << frame_last->id()
+             << ", good_matches_ = " << frame->good_matches_.size()
+             << ", kp_inlier = " << frame->kp_inlier_.size() << RESET << endl;
+        printTransform( transformation, "  Relative TF", WHITE);
+        printPose3( rel_pose, "  Relative Pose:", BLUE );
     }
     //
-    if( frame->id() == 1 ) // first two frames
+    if( frame->id() == 1 ) // first two frames, add bwtween factors
     {
-        // add prior factor
+        // Define the camera calibration parameters
+        Frame* frame_last = frames_list_[frame->id()-1];
+        Eigen::Matrix4d toWorldLast = transformTFToMatrix4d(frame_last->pose_);
+        Eigen::Matrix4d toWorld = transformTFToMatrix4d(frame->pose_);
+        const int matches_size = frame->kp_inlier_.size();
+        uint64_t* descriptor_value =  reinterpret_cast<uint64_t*>(frame->feature_descriptors_.data);
+        // Noise
+        Vector noise_sigmas(3);
+        noise_sigmas << 0.01, 0.01, 0.01;
+        for(int i = 0; i < matches_size; i++)
+        {
+            // Point correspondence
+            const cv::DMatch& m = frame->kp_inlier_[i];
+            const Eigen::Vector4f& last_point = frame_last->feature_locations_3d_[m.queryIdx];
+            const Eigen::Vector4f& point = frame->feature_locations_3d_[m.trainIdx];
+            gtsam::Point3 p1(last_point[0], last_point[1], last_point[2]);
+            gtsam::Point3 p2(point[0], point[1], point[2]);
+            gtsam::Point3 p1_w = transformPoint(p1, toWorldLast);
+//            gtsam::Point3 p2_w = transformPoint(p2, toWorld);
+            // Add new keypoint landmark
+            KeyPoint *keypoint( new KeyPoint() );
+            Key kp_key = Symbol('p', next_point_id_ );
+            keypoint->setId( next_point_id_ );
+            keypoint->translation = p1_w;
+            uint64_t* des_idx = descriptor_value + (m.trainIdx)*4;
+            keypoint->descriptor[0] = *des_idx++;
+            keypoint->descriptor[1] = *des_idx++;
+            keypoint->descriptor[2] = *des_idx++;
+            keypoint->descriptor[3] = *des_idx++;
+//            keypoint->descriptor = ??;
+            next_point_id_++;
+            keypoints_list_[keypoint->id()] = keypoint;
+            optimized_keypoints_list_[keypoint->id()] = keypoint->translation;
+            keypoints_vector_.push_back( last_point );
+            if( i == 0) // Add a prior on landmark p0
+            {
+                noiseModel::Isotropic::shared_ptr pointNoise = noiseModel::Isotropic::Sigma(3, 0.01);
+                factor_graph_.push_back(PriorFactor<Point3>(Symbol('p', 0), p1_w, pointNoise));
+            }
+            // Noise
+            Eigen::Matrix3d cov1 = kinectPointCov( last_point );
+            Eigen::Matrix3d cov2 = kinectPointCov( point );
+            noiseModel::Gaussian::shared_ptr noise1 = noiseModel::Gaussian::Covariance( cov1 );
+            noiseModel::Gaussian::shared_ptr noise2 = noiseModel::Gaussian::Covariance( cov2 );
+            // Define the camera observation noise model
+            // Keys: pose_key, last_key, kp_key
+            // BearingRange factor
+            factor_graph_.push_back(BearingRangeFactor<Pose3, Point3>(last_key, kp_key, (gtsam::Unit3)p1, p1.norm(), noise1));
+            factor_graph_.push_back(BearingRangeFactor<Pose3, Point3>(last_key, kp_key, (gtsam::Unit3)p2, p2.norm(), noise2));
+            factor_graph_buffer_.push_back(BearingRangeFactor<Pose3, Point3>(last_key, kp_key, (gtsam::Unit3)p1, p1.norm(), noise1));
+            factor_graph_buffer_.push_back(BearingRangeFactor<Pose3, Point3>(last_key, kp_key, (gtsam::Unit3)p2, p2.norm(), noise2));
+            // Add initial guess
+            initial_estimate_.insert<Point3>( kp_key, p1_w );
+            initial_estimate_buffer_.insert<Point3>( kp_key, p1_w );
+        }
     }
-    else    // match with global
+    else
     {
         // Keypoint matches with map
+        std::vector<cv::DMatch> matches;
+        matchKeypointsWithGlobal( *frame, matches );
+//        matchKeypointsWithGlobal( frame->kp_inlier_, frame->pose_, frame->camera_params_,
+//                                  frame->feature_descriptors_, frame->feature_locations_3d_, matches );
 
         // add factor to existed landmark
+        std::vector<bool> is_matched;
 
         // add factor to unpaired landmark
+
+        // add prior factor
     }
 
 
@@ -241,8 +314,8 @@ bool GTMapping::doMappingMix( Frame *frame )
     isam2_->update(factor_graph_, initial_estimate_);
     isam2_->update(); // call additionally
 
-    // Update optimized poses and planes
-    updateOptimizedResult();
+    // Update optimized poses, planes, keypoints
+    updateOptimizedResultMix();
 
     // Update Map
     updateLandmarksInlier();
@@ -386,9 +459,7 @@ bool GTMapping::addFirstFrameMix( Frame *frame )
     last_estimated_pose_tf_ = pose3ToTF( last_estimated_pose_ );
 
     cout << GREEN << " Register first frame in the map." << endl;
-//    initial_estimate_.print(" - Init pose: ");
-    cout << " - Initial pose: " << endl;
-    printTransform( init_pose.matrix() );
+    printTransform( init_pose.matrix(), " - Initial pose", GREEN);
     cout << RESET << endl;
 
     return true;
@@ -692,9 +763,7 @@ bool GTMapping::addFirstFrame( Frame *frame )
     last_estimated_pose_tf_ = pose3ToTF( last_estimated_pose_ );
 
     cout << GREEN << " Register first frame in the map." << endl;
-//    initial_estimate_.print(" - Init pose: ");
-    cout << " - Initial pose: " << endl;
-    printTransform( init_pose.matrix() );
+    printTransform( init_pose.matrix(), " - Initial pose", GREEN );
     cout << RESET << endl;
 
     return true;
@@ -764,6 +833,108 @@ void GTMapping::labelPlane( PlaneType *plane )
         return;
     }
 }
+
+void GTMapping::matchKeypointsWithGlobal( const Frame &frame,
+                                          std::vector<cv::DMatch> &matches)
+{
+    // Get prediction
+    std_vector_of_eigen_vector4f predicted_feature_3d = getPredictedKeypoints( frame.pose_, keypoints_vector_ );
+    std::map<int, gtsam::Point3> predicted_keypoints = getPredictedKeypoints( tfToPose3(frame.pose_), frame.camera_params_ );
+    cout << GREEN << "  predicted keypoints: " << predicted_keypoints.size() << RESET << endl;
+
+    // Publish info
+    publishPredictedKeypoints( predicted_keypoints );
+    publishFrameKeypoints( predicted_feature_3d );
+
+    // Match descriptors, use all keypoints from current frame
+    std::vector<cv::DMatch> good_matches;
+    tracker_->matchImageFeatures( frame, keypoints_list_, predicted_keypoints, good_matches );
+    cout << GREEN << "  good matches: " << good_matches.size() << RESET << endl;
+
+    // Estimate rigid transform
+    RESULT_OF_MOTION motion;
+    motion.valid = tracker_->solveRelativeTransformPointsRansac( frame.feature_locations_3d_,
+                                                                 predicted_feature_3d,
+                                                                 good_matches, motion, matches );
+    cout << GREEN << "  global matches: " << matches.size() << RESET << endl;
+    printTransform( motion.transform4d(), "  Estimate motion", BLUE );
+
+    // Publish info
+    publishMatchedKeypoints( frame.feature_locations_3d_, predicted_keypoints, matches );
+
+}
+
+void GTMapping::matchKeypointsWithGlobal( const std::vector<cv::DMatch> &kp_inlier,
+                                          const tf::Transform &pose,
+                                          const CameraParameters &camera_param,
+                                          const cv::Mat &features_descriptor,
+                                          const std_vector_of_eigen_vector4f &feature_3d,
+                                          std::vector<cv::DMatch> &matches)
+{
+    // Get prediction
+    std_vector_of_eigen_vector4f predicted_feature_3d = getPredictedKeypoints( pose, keypoints_vector_ );
+    std::map<int, gtsam::Point3> predicted_keypoints = getPredictedKeypoints( tfToPose3(pose), camera_param );
+    cout << GREEN << "  predicted keypoints: " << predicted_keypoints.size() << RESET << endl;
+
+    // Publish info
+    publishPredictedKeypoints( predicted_keypoints );
+    publishFrameKeypoints( predicted_feature_3d );
+
+    // Match descriptors
+    std::vector<cv::DMatch> good_matches;
+    tracker_->matchImageFeatures( features_descriptor, kp_inlier, keypoints_list_, predicted_keypoints, good_matches );
+    cout << GREEN << "  good matches: " << good_matches.size() << RESET << endl;
+
+
+    // Estimate rigid transform
+    RESULT_OF_MOTION motion;
+    motion.valid = tracker_->solveRelativeTransformPointsRansac( feature_3d,
+                                                                 predicted_feature_3d,
+                                                                 good_matches, motion, matches );
+
+    cout << GREEN << "  global matches: " << matches.size() << RESET << endl;
+    printTransform( motion.transform4d(), "  Estimate motion", BLUE );
+
+    // Publish info
+    publishMatchedKeypoints( feature_3d, predicted_keypoints, matches );
+}
+
+// Get predicted keypoints
+std_vector_of_eigen_vector4f GTMapping::getPredictedKeypoints( const tf::Transform &pose,
+                                                               const std_vector_of_eigen_vector4f &feature_3d)
+{
+    std_vector_of_eigen_vector4f predicted_keypoints( feature_3d.size() );
+    Eigen::Matrix4f trans = transformTFToMatrix4f( pose.inverse() );
+    std_vector_of_eigen_vector4f::const_iterator it = feature_3d.begin();
+    std_vector_of_eigen_vector4f::iterator prd_it = predicted_keypoints.begin();
+    for( ; it != feature_3d.end(); it++, prd_it++)
+    {
+        *prd_it = transformPoint( *it, trans );
+    }
+    return predicted_keypoints;
+}
+
+// Get predicted keypoints in FOV
+std::map<int, gtsam::Point3> GTMapping::getPredictedKeypoints( const gtsam::Pose3 &pose,
+                                                               const CameraParameters &camera_param)
+{
+    // Define the camera calibration parameters
+    Cal3_S2::shared_ptr K(new Cal3_S2(camera_param.fx, camera_param.fy, 0.0, camera_param.cx, camera_param.cy));
+    gtsam::SimpleCamera camera( pose, *K );
+    std::map<int, gtsam::Point3> predicted_keypoints;
+    for( std::map<int, gtsam::Point3>::iterator it = optimized_keypoints_list_.begin();
+         it != optimized_keypoints_list_.end(); it++)
+    {
+        gtsam::Point2 pc = camera.project( it->second );
+        if( pc.x() > 0 && pc.x() < 639 && pc.y() > 0 && pc.y() < 479)
+        {
+            predicted_keypoints[ it->first ] = pose.transform_to( it->second );
+        }
+    }
+
+    return predicted_keypoints;
+}
+
 
 // get predicted landmarks
 std::map<int, gtsam::OrientedPlane3> GTMapping::getPredictedObservation( const Pose3 &pose )
@@ -1209,6 +1380,34 @@ void GTMapping::removePlaneBadInlier( PointCloudTypePtr &cloud_voxel, double rad
     cloud_voxel->swap( *cloud_filtered );
 }
 
+void GTMapping::updateOptimizedResultMix()
+{
+    //
+    Values values = isam2_->calculateBestEstimate();
+    for( std::map<int, gtsam::Pose3>::iterator it = optimized_poses_list_.begin();
+            it != optimized_poses_list_.end(); it++)
+    {
+        gtsam::Pose3 pose3 = values.at( Symbol('x', it->first) ).cast<gtsam::Pose3>();
+        it->second = pose3;
+        frames_list_[it->first]->pose_ = pose3ToTF( pose3 );
+    }
+    for( std::map<int, gtsam::OrientedPlane3>::iterator it = optimized_landmarks_list_.begin();
+            it != optimized_landmarks_list_.end(); it++)
+    {
+        gtsam::OrientedPlane3 plane = values.at( Symbol('l', it->first) ).cast<gtsam::OrientedPlane3>();
+        it->second = plane;
+        landmarks_list_[it->first]->coefficients = plane.planeCoefficients();
+    }
+    for( std::map<int, gtsam::Point3>::iterator it = optimized_keypoints_list_.begin();
+            it != optimized_keypoints_list_.end(); it++)
+    {
+        gtsam::Point3 point = values.at( Symbol('p', it->first) ).cast<gtsam::Point3>();
+        it->second = point;
+        keypoints_list_.at(it->first)->translation = point;
+        keypoints_vector_[it->first] = Eigen::Vector4f( point.x(), point.y(), point.z(), 1.0 );
+    }
+}
+
 void GTMapping::updateOptimizedResult()
 {
     //
@@ -1411,6 +1610,146 @@ void GTMapping::publishOctoMap()
     }
 }
 
+void GTMapping::publishKeypointCloud()
+{
+    if( !publish_keypoint_cloud_ )
+        return;
+
+    if( keypoint_cloud_publisher_.getNumSubscribers() )
+    {
+        PointCloudTypePtr cloud = getKeypointCloud();
+
+        sensor_msgs::PointCloud2 cloud2;
+        pcl::toROSMsg( *cloud, cloud2);
+        cloud2.header.frame_id = map_frame_;
+        cloud2.header.stamp = ros::Time::now();
+        cloud2.is_dense = false;
+
+        keypoint_cloud_publisher_.publish( cloud2 );
+        cout << GREEN << " Publisher keypoints as sensor_msgs/PointCloud2." << RESET << endl;
+    }
+}
+
+void GTMapping::publishPredictedKeypoints( const std::map<int, gtsam::Point3> &predicted_keypoints )
+{
+    PointCloudTypePtr cloud( new PointCloudType );
+    cloud->is_dense = false;
+    cloud->height = 1;
+    PointType pt;
+    RGBValue color;
+    color.Red = 0;
+    color.Green = 255;
+    color.Blue = 0;
+    color.Alpha = 255;
+    pt.rgb = color.float_value;
+    for( std::map<int, gtsam::Point3>::const_iterator it = predicted_keypoints.begin();
+         it != predicted_keypoints.end(); it++)
+    {
+        const gtsam::Point3 &point = it->second;
+        pt.x = point.x();
+        pt.y = point.y();
+        pt.z = point.z();
+        cloud->points.push_back( pt );
+    }
+    cloud->width = cloud->points.size();
+
+    // To ROS message
+    sensor_msgs::PointCloud2 cloud2;
+    pcl::toROSMsg( *cloud, cloud2 );
+    cloud2.header.frame_id = map_frame_;
+    cloud2.header.stamp = ros::Time::now();
+
+    // Publish
+    predicted_keypoint_publisher_.publish( cloud2 );
+}
+
+void GTMapping::publishFrameKeypoints( const std_vector_of_eigen_vector4f &feature_3d )
+{
+    PointCloudXYZRGBAPtr cloud( new PointCloudXYZRGBA );
+    cloud->is_dense = false;
+    cloud->height = 1;
+    PointType pt;
+    RGBValue color;
+    color.Red = 0;
+    color.Green = 255;
+    color.Blue = 0;
+    color.Alpha = 255;
+    pt.rgb = color.float_value;
+    for( int i = 0; i < feature_3d.size(); i++ )
+    {
+        const Eigen::Vector4f &p3d = feature_3d[i];
+        if( p3d(2) == 0 )
+            continue;
+        pt.x = p3d(0);
+        pt.y = p3d(1);
+        pt.z = p3d(2);
+        cloud->points.push_back( pt );
+    }
+    cloud->width = cloud->points.size();
+
+    // To ROS message
+    sensor_msgs::PointCloud2 cloud2;
+    pcl::toROSMsg( *cloud, cloud2 );
+    cloud2.header.frame_id = map_frame_;
+    cloud2.header.stamp = ros::Time::now();
+
+    // Publish
+    frame_keypoint_publisher_.publish( cloud2 );
+}
+
+void GTMapping::publishMatchedKeypoints( const std_vector_of_eigen_vector4f &feature_3d,
+                                         const std::map<int, gtsam::Point3> &predicted_keypoints,
+                                         const std::vector<cv::DMatch> &matches )
+{
+    cv::RNG rng(12345);
+    PointCloudXYZRGBAPtr cloud( new PointCloudXYZRGBA ), cloud_global( new PointCloudXYZRGBA );
+    cloud->is_dense = false;
+    cloud->height = 1;
+    cloud_global->is_dense = false;
+    cloud_global->height = 1;
+    pcl::PointXYZRGBA pt1, pt2;
+    RGBValue color;
+    for( int i = 0; i < matches.size(); i++ )
+    {
+        const cv::DMatch &m = matches[i];
+        const Eigen::Vector4f &p3d = feature_3d[m.queryIdx];
+        const gtsam::Point3 &pp = predicted_keypoints.at(m.trainIdx);
+        color.Red = rng.uniform(0, 255);
+        color.Green = rng.uniform(0, 255);
+        color.Blue = rng.uniform(0, 255);
+        //
+        pt1.x = p3d(0);
+        pt1.y = p3d(1);
+        pt1.z = p3d(2);
+        color.Alpha = 255;
+        pt1.rgb = color.float_value;
+        pt2.x = pp(0);
+        pt2.y = pp(1);
+        pt2.z = pp(2);
+        color.Alpha = 64;
+        pt2.rgb = color.float_value;
+        //
+        cloud->points.push_back( pt1 );
+        cloud_global->points.push_back( pt2 );
+    }
+    cloud->width = cloud->points.size();
+    cloud_global->width = cloud_global->points.size();
+
+    // To ROS message
+    sensor_msgs::PointCloud2 cloud2, cloud2_global;
+    pcl::toROSMsg( *cloud, cloud2 );
+    cloud2.header.frame_id = map_frame_;
+    cloud2.header.stamp = ros::Time::now();
+    //
+    pcl::toROSMsg( *cloud_global, cloud2_global );
+    cloud2_global.header.frame_id = map_frame_;
+    cloud2_global.header.stamp = ros::Time::now();
+
+    // Publish
+    matched_keypoint_frame_publisher_.publish( cloud2 );
+    matched_keypoint_global_publisher_.publish( cloud2_global );
+}
+
 void GTMapping::updateMapViewer()
 {
     // Pose, Path, MapCloud, Octomap
@@ -1418,9 +1757,11 @@ void GTMapping::updateMapViewer()
     publishOptimizedPath();
     publishMapCloud();
     publishOctoMap();
+    publishKeypointCloud();
     // Map in pcl visualization
     viewer_->removeMap();
-    viewer_->displayMapLandmarks( landmarks_list_, "Map" );
+    viewer_->displayMapLandmarks( landmarks_list_, "MapPlane" );
+    viewer_->displayMapLandmarks( keypoints_list_, "MapPoint");
     viewer_->spinMapOnce();
 }
 
@@ -1443,6 +1784,7 @@ void GTMapping::reset()
 
     //
     next_plane_id_ = 0;
+    next_point_id_ = 0;
     next_frame_id_ = 0;
     for( std::map<int, Frame*>::iterator it = frames_list_.begin(); it != frames_list_.end(); it++)
     {
@@ -1452,14 +1794,17 @@ void GTMapping::reset()
     {
         delete (it->second);
     }
+    for( std::map<int, KeyPoint*>::iterator it = keypoints_list_.begin(); it!= keypoints_list_.end(); it++)
+    {
+        delete (it->second);
+    }
     frames_list_.clear();
     landmarks_list_.clear();
-    landmark_ids_.clear();
-    key_frame_ids_.clear();
-    landmarks_related_frames_list_.clear();
+    keypoints_list_.clear();
+    keypoints_vector_.clear();
     optimized_poses_list_.clear();
     optimized_landmarks_list_.clear();
-
+    optimized_keypoints_list_.clear();
 }
 
 PointCloudTypePtr GTMapping::getMapCloud( bool force )
@@ -1575,6 +1920,33 @@ PointCloudTypePtr GTMapping::getStructureCloud()
     return structure_cloud_voxeled;
 }
 
+PointCloudTypePtr GTMapping::getKeypointCloud()
+{
+    PointCloudTypePtr keypoint_cloud( new PointCloudType );
+    keypoint_cloud->is_dense = false;
+    keypoint_cloud->height = 1;
+
+    RGBValue color;
+    color.Blue = 0;
+    color.Green = 0;
+    color.Red = 255;
+    color.Alpha = 255.0;
+    PointType pt;
+    pt.rgb = color.float_value;
+    for( std::map<int, KeyPoint*>::iterator it = keypoints_list_.begin();
+         it != keypoints_list_.end(); it++)
+    {
+        KeyPoint *keypoint = it->second;
+        pt.x = keypoint->translation[0];
+        pt.y = keypoint->translation[1];
+        pt.z = keypoint->translation[2];
+        keypoint_cloud->points.push_back( pt );
+    }
+    keypoint_cloud->width = keypoint_cloud->points.size();
+
+    return keypoint_cloud;
+}
+
 octomap::OcTree * GTMapping::createOctoMap( double resolution )
 {
     ros::Time start_time = ros::Time::now();
@@ -1644,6 +2016,12 @@ void GTMapping::saveStructurePCD( const std::string &filename )
     pcl::io::savePCDFileASCII ( filename, *cloud);
 }
 
+void GTMapping::saveMapKeypointPCD( const std::string &filename )
+{
+    PointCloudTypePtr cloud = getKeypointCloud();
+    pcl::io::savePCDFileASCII ( filename, *cloud);
+}
+
 std::vector<geometry_msgs::PoseStamped> GTMapping::getOptimizedPath()
 {
     std::vector<geometry_msgs::PoseStamped> poses;
@@ -1690,6 +2068,7 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     octomap_max_depth_range_ = config.octomap_max_depth_range;
     publish_map_cloud_ = config.publish_map_cloud;
     publish_octomap_ = config.publish_octomap;
+    publish_keypoint_cloud_ = config.publish_keypoint_cloud;
     publish_optimized_path_ = config.publish_optimized_path;
 
     cout << GREEN <<" GTSAM Mapping Config." << RESET << endl;

@@ -46,6 +46,13 @@ public:
                                              RESULT_OF_MOTION &result,
                                              std::vector<cv::DMatch> &matches );
 
+    bool solveRelativeTransformPointsRansac( const std_vector_of_eigen_vector4f &source_feature_3d,
+                                             const std_vector_of_eigen_vector4f &target_feature_3d,
+                                             const std::vector<cv::DMatch> &good_matches,
+                                             RESULT_OF_MOTION &result,
+                                             std::vector<cv::DMatch> &matches,
+                                             int min_inlier = 3);
+
     bool solveRelativeTransformIcp( const Frame &source,
                                     const Frame &target,
                                     RESULT_OF_MOTION &result);
@@ -70,6 +77,21 @@ public:
                              double good_match_threshold = 4.0,
                              int min_match_size = 0);
 
+    void matchImageFeatures( const cv::Mat &feature_descriptor,
+                             const std::vector<cv::DMatch> &kp_inlier,
+                             const std::map<int, KeyPoint*> &keypoints_list,
+                             const std::map<int, gtsam::Point3> &predicted_keypoints,
+                             vector<cv::DMatch> &good_matches,
+                             double good_match_threshold = 4.0,
+                             int min_match_size = 0);
+
+    void matchImageFeatures( const Frame &frame,
+                             const std::map<int, KeyPoint*> &keypoints_list,
+                             const std::map<int, gtsam::Point3> &predicted_keypoints,
+                             vector<cv::DMatch> &good_matches,
+                             double good_match_threshold = 4.0,
+                             int min_match_size = 0);
+
     void computePairInliersAndError( const Eigen::Matrix4d &transform,
                                      const std::vector<PlanePair>& pairs,
                                      const std::vector<PlaneType>& last_planes,
@@ -88,7 +110,7 @@ public:
                                                double& return_mean_error,//pure output var: rms-mahalanobis-distance
                                                double squared_max_distance) const;
 
-private:
+public:
     bool solveRtIcp( const PointCloudXYZPtr &source,
                      const PointCloudXYZPtr &target,
                      PointCloudXYZPtr &cloud_icp,
@@ -104,6 +126,11 @@ private:
                   const std::vector<Eigen::Vector3d>& from_points,
                   const std::vector<Eigen::Vector3d>& to_points,
                   RESULT_OF_MOTION &result);
+
+    Eigen::Matrix4f solveRt( const std_vector_of_eigen_vector4f &query_points,
+                             const std_vector_of_eigen_vector4f &train_points,
+                             const std::vector<cv::DMatch> &matches,
+                             bool &valid );
 
     void solveRt( const std::vector<Eigen::Vector3d>& from_points,
                   const std::vector<Eigen::Vector3d>& to_points,
@@ -143,6 +170,8 @@ private:
 
     }
 
+
+private:
     // Random pick
     std::vector<PlanePair> randomChoosePlanePairsPreferGood( const std::vector< std::vector<PlanePair> > &sample_pairs );
 

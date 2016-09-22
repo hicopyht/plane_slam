@@ -28,6 +28,7 @@
 //
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/geometry/OrientedPlane3.h>
+#include <gtsam/sam/BearingRangeFactor.h>
 
 #include <plane_from_line/plane_from_line_segment.h>
 
@@ -146,10 +147,16 @@ struct PlanePair
 };
 
 //// Keypoint
-//namespace plane_slam
-//{
-//    class KMatch
-//}
+struct KeyPoint
+{
+    int keypoint_id;
+    uint64_t descriptor[4];
+    gtsam::Point3 translation;
+
+    KeyPoint() : translation(0, 0, 0) { descriptor[0] = random(); descriptor[1] = random(); descriptor[2] = random(); descriptor[3] = random();}
+    void setId( int _id ) { keypoint_id = _id; }
+    int &id() { return keypoint_id;}
+};
 
 // PnP Result
 struct RESULT_OF_MOTION
@@ -235,6 +242,13 @@ void radiusOutlierRemoval( const PointCloudTypePtr &cloud,
                            double radius,
                            int min_neighbors);
 
+Eigen::Matrix3d kinectPointCov( const Eigen::Vector4f &point );
+
+// Transform a point to world
+gtsam::Point3 transformPoint( const gtsam::Point3 &point, const Matrix4d &transform );
+
+Eigen::Vector4f transformPoint ( const Eigen::Vector4f &point, const Eigen::Matrix4f &transform );
+
 template <typename PointT>
 PointT transformPoint (const PointT &point,
                      const Eigen::Matrix4d &transform);
@@ -309,14 +323,14 @@ inline double depth_std_dev(double depth)
 //Functions without dependencies
 inline double depth_covariance(double depth)
 {
-  static double stddev = depth_std_dev(depth);
-  static double cov = stddev * stddev;
+  double stddev = depth_std_dev(depth);
+  double cov = stddev * stddev;
   return cov;
 }
 
 
-void printTransform( const Eigen::Matrix4d &transform);
-void printTransform( const Eigen::Matrix4f &transform);
+void printTransform( const Eigen::Matrix4d &transform, const std::string name = "", const std::string color = "\033[0m" );
+void printTransform( const Eigen::Matrix4f &transform, const std::string name = "", const std::string color = "\033[0m" );
 
 void printPose3( const gtsam::Pose3 &pose3, const std::string name = "Pose3", const std::string color = "\033[0m" );
 
@@ -351,7 +365,8 @@ gtsam::Pose3 motionToPose3( RESULT_OF_MOTION &motion);
 
 
 int bruteForceSearchORB(const uint64_t* v, const uint64_t* search_array, const unsigned int& size, int& result_index);
-
+int bruteForceSearchORB(const uint64_t* v, const std::map<int, KeyPoint*> &keypoints_list,
+                        const std::map<int, gtsam::Point3> &predicted_keypoints, int& result_index);
 
 std::string timeToStr();
 

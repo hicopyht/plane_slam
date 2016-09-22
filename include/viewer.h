@@ -46,7 +46,9 @@ public:
 
     void displayKeypoint( const cv::Mat &visual, const std::vector<cv::KeyPoint> &keypoints );
 
-    void displayMapLandmarks( std::map<int, PlaneType*> &landmarks, const std::string &prefix = "landmark" );
+    void displayMapLandmarks( std::map<int, KeyPoint*> &landmarks, const std::string &prefix = "point_landmark" );
+
+    void displayMapLandmarks( std::map<int, PlaneType*> &landmarks, const std::string &prefix = "plane_landmark" );
 
     void displayMapLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix = "landmark" );
 
@@ -56,6 +58,8 @@ public:
                                  std::vector<PlaneFromLineSegment::LineType> &lines,
                                  std::vector<PlaneFromLineSegment::NormalType> &normals,
                                  int viewport);
+
+    void pclViewerLandmark( const KeyPoint &keypoint, const std::string &id, const int number = -1 );
 
     void pclViewerLandmark( const PlaneType &plane, const std::string &id, const int number = -1);
 
@@ -110,6 +114,7 @@ private:
     bool display_3d_keypoint_matches_;
     // parameter for landmark
     bool display_landmarks_;
+    bool display_point_landmarks_;
     bool display_landmark_inlier_;
     bool display_landmark_arrow_;
     bool display_landmark_number_;

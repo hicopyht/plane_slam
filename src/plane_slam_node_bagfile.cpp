@@ -94,13 +94,13 @@ void saveBagFile( const std::string &file_name, rosbag::View &view )
 
 int main(int argc, char** argv)
 {
-    ros::init(argc, argv, "plane_slam_node_depth");
+    ros::init(argc, argv, "plane_slam_node_bagfile");
 
     ros::NodeHandle nh_;
 
     if( argc < 3)
     {
-        cerr << endl << "Usage: ./plane_slam_node_depth camera_parameter_file bagfile <skip> <duration> <paused>" << endl;
+        cerr << endl << "Usage: ./plane_slam_node_bagfile camera_parameter_file bagfile <skip> <duration> <paused>" << endl;
         return 1;
     }
 

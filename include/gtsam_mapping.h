@@ -17,6 +17,9 @@
 #include <gtsam/slam/PriorFactor.h>
 #include <gtsam/slam/BetweenFactor.h>
 #include <gtsam/slam/OrientedPlane3Factor.h>
+#include <gtsam/slam/ProjectionFactor.h>
+#include <gtsam/sam/RangeFactor.h>
+#include <gtsam/sam/BearingRangeFactor.h>
 #include <gtsam/nonlinear/NonlinearFactorGraph.h>
 #include <gtsam/nonlinear/GaussNewtonOptimizer.h>
 #include <gtsam/nonlinear/Marginals.h>
@@ -70,6 +73,16 @@ public:
 
     void publishOctoMap();
 
+    void publishKeypointCloud();
+
+    void publishPredictedKeypoints( const std::map<int, gtsam::Point3> &predicted_keypoints );
+
+    void publishFrameKeypoints( const std_vector_of_eigen_vector4f &feature_3d );
+
+    void publishMatchedKeypoints( const std_vector_of_eigen_vector4f &feature_3d,
+                                  const std::map<int, gtsam::Point3> &predicted_keypoints,
+                                  const std::vector<cv::DMatch> &matches );
+
     void updateMapViewer();
 
     void reset();
@@ -81,6 +94,7 @@ public:
     void saveMapFullPCD( const std::string &filename = "plane_slam_map_full.pcd");
     void saveMapFullColoredPCD( const std::string &filename = "plane_slam_map_full_colored.pcd");
     void saveStructurePCD( const std::string &filename = "plane_slam_structure.pcd" );
+    void saveMapKeypointPCD( const std::string &filename = "plane_slam_keypoint.pcd");
     // Save graph
     inline void saveGraphDot( const std::string &filename = "plane_slam_graph.dot" ){
         isam2_->saveGraph( filename );
@@ -95,6 +109,7 @@ public:
     PointCloudTypePtr getMapCloud( bool force = false);
     PointCloudTypePtr getMapFullCloud( bool colored = false);
     PointCloudTypePtr getStructureCloud();
+    PointCloudTypePtr getKeypointCloud();
     // Set map frame
     inline void setMapFrame( const std::string &frame_id ) { map_frame_ = frame_id; }
     std::string getMapFrame() const { return map_frame_; }
@@ -114,6 +129,18 @@ protected:
 
     void labelPlane( PlaneType *plane );
 
+    void matchKeypointsWithGlobal( const std::vector<cv::DMatch> &kp_inlier,
+                                   const tf::Transform &pose,
+                                   const CameraParameters &camera_param,
+                                   const cv::Mat &features_descriptor,
+                                   const std_vector_of_eigen_vector4f &feature_3d,
+                                   std::vector<cv::DMatch> &matches);
+    void matchKeypointsWithGlobal( const Frame &frame,
+                                   std::vector<cv::DMatch> &matches);
+    // Get predicted keypoints in FOV
+    std_vector_of_eigen_vector4f getPredictedKeypoints( const tf::Transform &pose,
+                                                        const std_vector_of_eigen_vector4f &feature_3d);
+    std::map<int, gtsam::Point3> getPredictedKeypoints( const gtsam::Pose3 &pose, const CameraParameters &camera_param );
     std::map<int, gtsam::OrientedPlane3> getPredictedObservation( const Pose3 &pose );
 
     void matchObservationWithPredicted( std::map<int, OrientedPlane3> &predicted_observations,
@@ -136,6 +163,8 @@ protected:
     bool removeLandmarksBadInlier();
 
     void removePlaneBadInlier( PointCloudTypePtr &cloud_voxel, double radius = 0, int min_neighbors = 0 );
+
+    void updateOptimizedResultMix();
 
     void updateOptimizedResult();
 
@@ -173,6 +202,11 @@ private:
     ros::Publisher optimized_path_publisher_;
     ros::Publisher map_cloud_publisher_;
     ros::Publisher octomap_publisher_;
+    ros::Publisher keypoint_cloud_publisher_;
+    ros::Publisher predicted_keypoint_publisher_;
+    ros::Publisher frame_keypoint_publisher_;
+    ros::Publisher matched_keypoint_frame_publisher_;
+    ros::Publisher matched_keypoint_global_publisher_;
     ros::Publisher marker_publisher_;
 
     // ISAM2
@@ -187,20 +221,20 @@ private:
 
     //
     int next_plane_id_; // set identical id to plane
+    int next_point_id_; // set identical id to point
     int next_frame_id_; // set identical id to frame
-    std::map<int, Frame*> frames_list_;      // frames list
+    std::map<int, Frame*> frames_list_;     // frames list
     std::map<int, PlaneType*> landmarks_list_;  // landmarks list
+    std::map<int, KeyPoint*> keypoints_list_;   // keypoints list
+    std_vector_of_eigen_vector4f keypoints_vector_; // Assume keypoints_list_ has all keypoints
     std::map<int, gtsam::Pose3> optimized_poses_list_;  // optimized pose list
     std::map<int, gtsam::OrientedPlane3> optimized_landmarks_list_;    // optimized landmarks list
+    std::map<int, gtsam::Point3> optimized_keypoints_list_; // optimized keypoints list
     PointCloudTypePtr map_cloud_;
 //    std::map<int, gtsam::OrientedPlane3> optimized_landmarks_list_last_; // last optimized
     octomap::OcTree *octree_map_;
     //
-    std::set<int> landmark_ids_;  // ids of landmarks
-    std::set<int> key_frame_ids_;  // ids of key frames
-    std::map<int, std::set<int> > landmarks_related_frames_list_;// <lm, set<frames>>
     //
-
 
     //
     std::string map_frame_;
@@ -239,6 +273,7 @@ private:
     double octomap_max_depth_range_;
     bool publish_map_cloud_;
     bool publish_octomap_;
+    bool publish_keypoint_cloud_;
     bool publish_optimized_path_;
 };
 

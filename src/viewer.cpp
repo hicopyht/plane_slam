@@ -38,9 +38,9 @@ Viewer::Viewer( ros::NodeHandle &nh)
     map_viewer_->addCoordinateSystem(0.5);
     map_viewer_->initCameraParameters();
 //    map_viewer_->setCameraPosition(0.0, 0.0, -2.4, 0, 0, 0.6, 0, -1, 0);
-//    map_viewer_->setCameraPosition( 0, 3.0, 3.0, -3.0, 0, 0, -1, -1, 0 );
+    map_viewer_->setCameraPosition( 0, 3.0, 3.0, -3.0, 0, 0, -1, -1, 0 );
 //    7.83553,18.0737/7.98352,-1.33264,5.13725/-1.65863,-6.09147,13.7632/0.253037,0.699241,0.668606/0.8575/683,384/65,52
-    map_viewer_->setCameraPosition( -1.65863,-6.09147,13.7632, 7.98352,-1.33264,5.13725, 0.253037,0.699241,0.668606);
+//    map_viewer_->setCameraPosition( -1.65863,-6.09147,13.7632, 7.98352,-1.33264,5.13725, 0.253037,0.699241,0.668606);
     map_viewer_->setBackgroundColor( 1.0, 1.0, 1.0);
     map_viewer_->setShowFPS(true);
 
@@ -214,6 +214,28 @@ void Viewer::displayKeypoint( const cv::Mat &visual, const std::vector<cv::KeyPo
     cv::waitKey(1);
 }
 
+void Viewer::displayMapLandmarks( std::map<int, KeyPoint*> &landmarks, const std::string &prefix )
+{
+    if( display_landmarks_ )
+    {
+        int invalid_count = 0;
+
+        for( std::map<int, KeyPoint*>::iterator it = landmarks.begin();
+             it != landmarks.end(); it++)
+        {
+            const int id = it->first;
+            KeyPoint *lm = it->second;
+            const KeyPoint &keypoint = *lm;
+            //
+            stringstream ss;
+            ss << prefix << "_" << id;
+            pclViewerLandmark( keypoint, ss.str(), id);
+        }
+
+        cout << GREEN << " Display keypoint landmarks: " << landmarks.size() << ", invalid = " << invalid_count << RESET << endl;
+    }
+}
+
 void Viewer::displayMapLandmarks( std::map<int, PlaneType*> &landmarks, const std::string &prefix )
 {
     if( display_landmarks_ )
@@ -245,7 +267,6 @@ void Viewer::displayMapLandmarks( std::map<int, PlaneType*> &landmarks, const st
         cout << GREEN << " Display landmarks: " << landmarks.size() << ", invalid = " << invalid_count << RESET << endl;
     }
 }
-
 
 void Viewer::displayMapLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix )
 {
@@ -279,6 +300,8 @@ void Viewer::displayMapLandmarks( const std::vector<PlaneType> &landmarks, const
         cout << GREEN << " Display landmarks: " << landmarks.size() << ", invalid = " << invalid_count << RESET << endl;
     }
 }
+
+
 
 void Viewer::displayPlanes( const PointCloudTypePtr &input, const std::vector<PlaneType> &planes, const std::string &prefix, int viewport)
 {
@@ -323,6 +346,35 @@ void Viewer::displayLinesAndNormals( const PointCloudTypePtr &input,
             ss << "normal_" << j;
             pclViewerNormal( input, normals[j], ss.str(), viewport );
         }
+    }
+}
+
+void Viewer::pclViewerLandmark( const KeyPoint &keypoint, const std::string &id, const int number )
+{
+    if( !display_point_landmarks_ )
+        return;
+
+    PointType pt;
+    pt.x = keypoint.translation.x();
+    pt.y = keypoint.translation.y();
+    pt.z = keypoint.translation.z();
+
+    // add point
+    map_viewer_->addSphere( pt, 0.02, 255.0, 0.0, 0.0, id+"_point");
+
+    // add a plane number
+    if( display_landmark_number_ && number >= 0 )
+    {
+        // add a plane number
+        PointType pn;
+        //
+        pn.x = pt.x + 0.05;
+        pn.y = pt.y + 0.05;
+        pn.z = pt.z + 0.05;
+        // add plane number
+        stringstream ss;
+        ss << number;
+        map_viewer_->addText3D( ss.str(), pn, 0.05, 0.0, 0.0, 0.0, id+"_number");
     }
 }
 
@@ -676,6 +728,7 @@ void Viewer::viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t 
     display_3d_keypoint_matches_ = config.display_3d_keypoint_matches;
     // parameter for landmark
     display_landmarks_ = config.display_landmarks;
+    display_point_landmarks_ = config.display_point_landmarks;
     display_landmark_inlier_ = config.display_landmark_inlier;
     display_landmark_arrow_ = config.display_landmark_arrow;
     display_landmark_number_ = config.display_landmark_number;

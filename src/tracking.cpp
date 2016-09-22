@@ -353,7 +353,204 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
                 break;
 
             cout << BOLDBLUE << " - refine = " << refine << ", relative transform: " << RESET << endl;
-            printTransform( transformation );
+            printTransform( transformation, "", BOLDBLUE);
+            cout << BLUE << " - inlier = " << inlier.size() << ", error = " << inlier_error << RESET << endl;
+            cout << endl;
+
+            if( inlier.size() > refined_matches.size() && inlier_error < refined_error )
+            {
+                unsigned int prev_num_inliers = refined_matches.size();
+                assert( inlier_error>=0 );
+                refined_transformation = transformation;
+                refined_matches = inlier;
+                refined_error = inlier_error;
+                if( inlier.size() == prev_num_inliers )
+                    break; //only error improved -> no change would happen next iteration
+            }
+            else
+                break;
+        }
+
+        // Success
+        if( refined_matches.size() > 0 )
+        {
+            if (refined_error <= rmse &&
+                refined_matches.size() >= matches.size() &&
+                refined_matches.size() >= min_inlier_threshold)
+            {
+                rmse = refined_error;
+                resulting_transformation = refined_transformation;
+                matches.assign(refined_matches.begin(), refined_matches.end());
+            }
+        }
+    }
+
+    cout << BLUE << " Point RANSAC real iterations = " << real_iterations
+         << ", valid iterations = " << valid_iterations << RESET << endl;
+
+    result.setTransform4f( resulting_transformation );    // save result
+    result.rmse = rmse;
+    result.inlier = matches.size();
+    result.valid = matches.size() >= min_inlier_threshold;
+    return ( matches.size() >= min_inlier_threshold );
+}
+
+bool Tracking::solveRelativeTransformPointsRansac( const std_vector_of_eigen_vector4f &source_feature_3d,
+                                                   const std_vector_of_eigen_vector4f &target_feature_3d,
+                                                   const std::vector<cv::DMatch> &good_matches,
+                                                   RESULT_OF_MOTION &result,
+                                                   std::vector<cv::DMatch> &matches,
+                                                   int min_inlier)
+{
+//    // match feature
+//    std::vector<cv::DMatch> good_matches;
+//    matchImageFeatures( source, frame, good_matches, feature_good_match_threshold_, feature_min_good_match_size_);
+//
+//    // sort
+//    std::sort(good_matches.begin(), good_matches.end()); //sort by distance, which is the nn_ratio
+
+    int min_inlier_threshold = min_inlier;
+    if( min_inlier_threshold > 0.6*good_matches.size() )
+        min_inlier_threshold = 0.6*good_matches.size();
+
+    matches.clear();
+
+//    std::sort( good_matches.begin(), good_matches.end() );
+
+    //
+    Eigen::Matrix4f resulting_transformation;
+    double rmse = 1e6;
+    //
+    matches.clear();
+    const unsigned int sample_size = ransac_sample_size_;
+    unsigned int valid_iterations = 0;
+    const unsigned int max_iterations = ransac_iterations_;
+    int real_iterations = 0;
+    double inlier_error;
+    double max_dist_m = ransac_inlier_max_mahal_distance_;
+    bool valid_tf;
+    for( int n = 0; n < max_iterations && good_matches.size() >= sample_size; n++)
+    {
+        double refined_error = 1e6;
+        std::vector<cv::DMatch> refined_matches;
+        std::vector<cv::DMatch> inlier = randomChooseMatchesPreferGood( sample_size, good_matches); //initialization with random samples
+//        std::vector<cv::DMatch> inlier = randomChooseMatches( sample_size, good_matches); //initialization with random samples
+        Eigen::Matrix4f refined_transformation = Eigen::Matrix4f::Identity();
+
+        real_iterations++;
+//        cout << "Iteration = " << real_iterations << endl;
+        for( int refine = 0; refine < 20; refine ++)
+        {
+            Eigen::Matrix4f transformation = solveRtPcl( source_feature_3d,
+                                                         target_feature_3d,
+                                                         inlier, valid_tf );
+
+//            for( int mi = 0; mi < inlier.size(); mi++)
+//            {
+//                cv::DMatch &mm = inlier[mi];
+//                cout << BLUE << "  -(" << source_feature_3d[mm.queryIdx](0)
+//                     << "," << source_feature_3d[mm.queryIdx](1)
+//                     << "," << source_feature_3d[mm.queryIdx](2) << ")"
+//                     << " (" << target_feature_3d[mm.trainIdx](0)
+//                     << "," << target_feature_3d[mm.trainIdx](1)
+//                     << "," << target_feature_3d[mm.trainIdx](2) << ")" << RESET << endl;
+//            }
+
+            if( !valid_tf || transformation != transformation )
+            {
+//                cout << BLUE << "- valid = " << (valid_tf?"true":"false") << ", equal = " << (transformation == transformation) << RESET << endl;
+                break;
+            }
+
+            computeCorrespondenceInliersAndError( good_matches, transformation, source_feature_3d, target_feature_3d,
+                                                  min_inlier_threshold, inlier, inlier_error, max_dist_m );
+
+            if( inlier.size() < min_inlier_threshold || inlier_error > max_dist_m)
+                break;
+
+//            cout << BOLDBLUE << " - refine = " << refine << ", relative transform: " << RESET << endl;
+//            printTransform( transformation, "", BOLDBLUE );
+//            cout << BLUE << " - inlier = " << inlier.size() << ", error = " << inlier_error << RESET << endl;
+//            cout << endl;
+
+            if( inlier.size() > refined_matches.size() && inlier_error < refined_error )
+            {
+                unsigned int prev_num_inliers = refined_matches.size();
+                assert( inlier_error>=0 );
+                refined_transformation = transformation;
+                refined_matches = inlier;
+                refined_error = inlier_error;
+                if( inlier.size() == prev_num_inliers )
+                    break; //only error improved -> no change would happen next iteration
+            }
+            else
+                break;
+        }
+        // Success
+        if( refined_matches.size() > 0 )
+        {
+            valid_iterations++;
+
+            //Acceptable && superior to previous iterations?
+            if (refined_error <= rmse &&
+                refined_matches.size() >= matches.size() &&
+                refined_matches.size() >= min_inlier_threshold)
+            {
+                rmse = refined_error;
+                resulting_transformation = refined_transformation;
+                matches.assign(refined_matches.begin(), refined_matches.end());
+                //Performance hacks:
+                if ( refined_matches.size() > good_matches.size()*0.5 ) n+=10;///Iterations with more than half of the initial_matches inlying, count tenfold
+                if ( refined_matches.size() > good_matches.size()*0.75 ) n+=10;///Iterations with more than 3/4 of the initial_matches inlying, count twentyfold
+                if ( refined_matches.size() > good_matches.size()*0.8 ) break; ///Can this get better anyhow?
+            }
+        }
+    }
+
+    if( valid_iterations == 0 ) // maybe no depth. Try identity?
+    {
+        cout << BOLDRED << "No valid iteration, try identity." << RESET << endl;
+        //ransac iteration with identity
+        Eigen::Matrix4f trans = Eigen::Matrix4f::Identity();//hypothesis
+        std::vector<cv::DMatch> inlier; //result
+        double refined_error = 1e6;
+        std::vector<cv::DMatch> refined_matches;
+        Eigen::Matrix4f refined_transformation = Eigen::Matrix4f::Identity();
+
+        //test which samples are inliers
+        computeCorrespondenceInliersAndError( good_matches, Eigen::Matrix4f::Identity(), source_feature_3d, target_feature_3d,
+                                            min_inlier_threshold, inlier, inlier_error, max_dist_m );
+
+        cout << BOLDRED << "inlier = " << inlier.size() << ", error = " << inlier_error << RESET << endl;
+        if( inlier.size() > sample_size && inlier_error < refined_error )
+        {
+            refined_matches = inlier;
+            refined_error = inlier_error;
+        }
+
+        // refine
+        for( int refine = 0; refine < 20; refine ++)
+        {
+            if( inlier.size() < sample_size )
+                break;
+
+            Eigen::Matrix4f transformation = solveRtPcl( source_feature_3d,
+                                                         target_feature_3d,
+                                                         inlier, valid_tf );
+            if( !valid_tf || transformation != transformation )
+            {
+//                cout << BLUE << "- valid = " << (valid_tf?"true":"false") << ", equal = " << (transformation == transformation) << RESET << endl;
+                break;
+            }
+
+            computeCorrespondenceInliersAndError( good_matches, transformation, source_feature_3d, target_feature_3d,
+                                                  min_inlier_threshold, inlier, inlier_error, max_dist_m );
+
+            if( inlier.size() < min_inlier_threshold || inlier_error > max_dist_m)
+                break;
+
+            cout << BOLDBLUE << " - refine = " << refine << ", relative transform: " << RESET << endl;
+            printTransform( transformation, "", BOLDBLUE );
             cout << BLUE << " - inlier = " << inlier.size() << ", error = " << inlier_error << RESET << endl;
             cout << endl;
 
@@ -925,9 +1122,30 @@ void Tracking::solveRt( const std::vector<PlaneCoefficients> &before,
     result.valid = true;
 }
 
+Eigen::Matrix4f Tracking::solveRt( const std_vector_of_eigen_vector4f &query_points,
+                                   const std_vector_of_eigen_vector4f &train_points,
+                                   const std::vector<cv::DMatch> &matches,
+                                   bool &valid )
+{
+    if( matches.size() < 3 )
+    {
+        valid = false;
+        return Eigen::Matrix4f();
+    }
+    Eigen::MatrixXf src(3,3), dst(3,3);
+    for( int i = 0; i < 3; i++)
+    {
+        const cv::DMatch &m = matches[i];
+        src.col(i) = query_points[m.queryIdx].head<3>();
+        dst.col(i) = train_points[m.trainIdx].head<3>();
+    }
+    Eigen::Matrix4f transform = Eigen::umeyama(src, dst, false);
+    return transform;
+}
+
 void Tracking::solveRt( const std::vector<Eigen::Vector3d>& from_points,
-                              const std::vector<Eigen::Vector3d>& to_points,
-                              RESULT_OF_MOTION &result)
+                        const std::vector<Eigen::Vector3d>& to_points,
+                        RESULT_OF_MOTION &result)
 {
     ROS_ASSERT( from_points.size() >= 3 && to_points.size() >=3 );
 
@@ -1202,6 +1420,121 @@ void Tracking::matchImageFeatures( const Frame& source,
             {
                 good_matches.push_back( m );
             }
+        }
+
+    }
+
+//    cout << "good matches: " << good_matches.size() << endl;
+}
+
+void Tracking::matchImageFeatures( const cv::Mat &feature_descriptor,
+                                   const std::vector<cv::DMatch> &kp_inlier,
+                                   const std::map<int, KeyPoint*> &keypoints_list,
+                                   const std::map<int, gtsam::Point3> &predicted_keypoints,
+                                   vector<cv::DMatch> &good_matches,
+                                   double good_match_threshold,
+                                   int min_match_size)
+{
+    vector< cv::DMatch > matches;
+
+    uint64_t* query_value =  reinterpret_cast<uint64_t*>(feature_descriptor.data);
+    for(unsigned int i = 0; i < kp_inlier.size(); ++i )
+    {
+        const cv::DMatch &m = kp_inlier[i];
+        uint64_t* query_index = query_value + m.trainIdx * 4;
+        int result_index = -1;
+        int hd = bruteForceSearchORB(query_index, keypoints_list, predicted_keypoints, result_index);
+        if(hd >= 128)
+            continue;//not more than half of the bits matching: Random
+        cv::DMatch match(i, result_index, hd /256.0 + (float)rand()/(1000.0*RAND_MAX));
+        matches.push_back(match);
+    }
+
+//    cout << GREEN << "Kp matches = " << matches.size() << RESET << endl;
+
+    // Sort
+    std::sort( matches.begin(), matches.end() );
+
+    // Get good matches, fixed size
+    if( min_match_size != 0)
+    {
+        int add = 0;
+        BOOST_FOREACH(const cv::DMatch& m, matches)
+        {
+            if( add >= min_match_size )
+                break;
+            good_matches.push_back( m );
+            add ++;
+        }
+    }
+    else
+    {
+        const double minDis = matches[0].distance;
+
+        BOOST_FOREACH(const cv::DMatch& m, matches)
+        {
+            if( m.distance >= good_match_threshold * minDis )
+                break;
+
+            good_matches.push_back( m );
+        }
+
+    }
+
+//    cout << "good matches: " << good_matches.size() << endl;
+}
+
+void Tracking::matchImageFeatures( const Frame &frame,
+                                   const std::map<int, KeyPoint*> &keypoints_list,
+                                   const std::map<int, gtsam::Point3> &predicted_keypoints,
+                                   vector<cv::DMatch> &good_matches,
+                                   double good_match_threshold,
+                                   int min_match_size)
+{
+    vector< cv::DMatch > matches;
+
+    uint64_t* query_value =  reinterpret_cast<uint64_t*>(frame.feature_descriptors_.data);
+    const int size = frame.feature_locations_2d_.size();
+    for(unsigned int i = 0; i < size; ++i, query_value += 4)
+    {
+        int result_index = -1;
+        int hd = bruteForceSearchORB(query_value, keypoints_list, predicted_keypoints, result_index);
+        if(hd >= 128)
+            continue;//not more than half of the bits matching: Random
+        cv::DMatch match(i, result_index, hd /256.0 + (float)rand()/(1000.0*RAND_MAX));
+        matches.push_back(match);
+    }
+
+//    cout << GREEN << "Kp matches = " << matches.size() << RESET << endl;
+
+    // Sort
+    std::sort( matches.begin(), matches.end() );
+
+    // Get good matches, fixed size
+    if( min_match_size != 0)
+    {
+        int add = 0;
+        BOOST_FOREACH(const cv::DMatch& m, matches)
+        {
+            if( add >= min_match_size )
+                break;
+            if( frame.feature_locations_3d_[m.queryIdx](2) != 0 )
+            {
+                good_matches.push_back( m );
+                add ++;
+            }
+        }
+    }
+    else
+    {
+        const double minDis = matches[0].distance;
+
+        BOOST_FOREACH(const cv::DMatch& m, matches)
+        {
+            if( m.distance >= good_match_threshold * minDis )
+                break;
+            if( frame.feature_locations_3d_[m.queryIdx](2) != 0 )
+                good_matches.push_back( m );
         }
 
     }
