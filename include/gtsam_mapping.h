@@ -37,6 +37,7 @@
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl/octree/octree.h>
 #include <pcl/octree/octree_pointcloud_occupancy.h>
+#include <pcl/octree/octree_pointcloud_pointvector.h>
 //
 #include <octomap/OcTree.h>
 #include <octomap_msgs/Octomap.h>
@@ -130,17 +131,32 @@ protected:
 
     void labelPlane( PlaneType *plane );
 
+    void matchKeypointWithMap( const Frame &frame,
+                               std::vector<cv::DMatch>&matches );
+
+    void matchKeypointsWithGlobal( const Frame &frame,
+                                   std::vector<cv::DMatch> &matches);
+
     void matchKeypointsWithGlobal( const std::vector<cv::DMatch> &kp_inlier,
                                    const tf::Transform &pose,
                                    const CameraParameters &camera_param,
                                    const cv::Mat &features_descriptor,
                                    const std_vector_of_eigen_vector4f &feature_3d,
                                    std::vector<cv::DMatch> &matches);
-    void matchKeypointsWithGlobal( const Frame &frame,
-                                   std::vector<cv::DMatch> &matches);
+    void matchImageFeatures( const Frame &frame,
+                             const std::map<int, pcl::PointUV> &predicted_image_points,
+                             const std::map<int, gtsam::Point3> &predicted_keypoints,
+                             std::vector<bool> &matched,
+                             vector<cv::DMatch> &good_matches );
+    static inline int hamming_distance_orb32x8_popcountll(const uint64_t* v1, const uint64_t* v2) {
+      return (__builtin_popcountll(v1[0] ^ v2[0]) + __builtin_popcountll(v1[1] ^ v2[1])) +
+             (__builtin_popcountll(v1[2] ^ v2[2]) + __builtin_popcountll(v1[3] ^ v2[3]));
+    }
     // Get predicted keypoints in FOV
-    std_vector_of_eigen_vector4f getPredictedKeypoints( const tf::Transform &pose,
-                                                        const std_vector_of_eigen_vector4f &feature_3d);
+    void getPredictedKeypoints( const gtsam::Pose3 &pose,
+                                const CameraParameters & camera_param,
+                                std::map<int, pcl::PointUV> &predicted_feature_2d,
+                                std::map<int, gtsam::Point3> &predicted_feature_3d);
     std::map<int, gtsam::Point3> getPredictedKeypoints( const gtsam::Pose3 &pose, const CameraParameters &camera_param );
     std::map<int, gtsam::OrientedPlane3> getPredictedObservation( const Pose3 &pose );
 
@@ -227,7 +243,7 @@ private:
     std::map<int, Frame*> frames_list_;     // frames list
     std::map<int, PlaneType*> landmarks_list_;  // landmarks list
     std::map<int, KeyPoint*> keypoints_list_;   // keypoints list
-    std_vector_of_eigen_vector4f keypoints_vector_; // Assume keypoints_list_ has all keypoints
+//    std_vector_of_eigen_vector4f keypoints_vector_; // Assume keypoints_list_ has all keypoints
     std::map<int, gtsam::Pose3> optimized_poses_list_;  // optimized pose list
     std::map<int, gtsam::OrientedPlane3> optimized_landmarks_list_;    // optimized landmarks list
     std::map<int, gtsam::Point3> optimized_keypoints_list_; // optimized keypoints list
@@ -253,6 +269,10 @@ private:
     int isam2_relinearize_skip_;
     //
     int min_keypoint_correspondences_;
+    double keypoint_match_search_radius_;
+    double keypoint_match_max_mahal_distance_;
+    int keypoint_match_hamming_threshold_;
+    //
     double plane_match_direction_threshold_;
     double plane_match_distance_threshold_;
     bool plane_match_check_overlap_;
