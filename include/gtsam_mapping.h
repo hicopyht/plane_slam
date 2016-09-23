@@ -105,6 +105,7 @@ public:
     std::vector<geometry_msgs::PoseStamped> getOptimizedPath();
     // Get landmarks
     const std::map<int, PlaneType*> &getLandmark() { return landmarks_list_; }
+    const std::map<int, KeyPoint*> &getKeypointLandmark() { return keypoints_list_; }
     // Get map cloud
     PointCloudTypePtr getMapCloud( bool force = false );
     PointCloudTypePtr getMapFullCloud( bool colored = false );

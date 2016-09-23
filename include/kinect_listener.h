@@ -77,6 +77,8 @@ public:
 
     void savePathAndLandmarks( const std::string &filename = "plane_slam_path_landmarks.txt" );
 
+    void saveKeypointLandmarks( const std::string &filename = "plane_slam_keypoints.txt" );
+
     void saveRuntimes( const std::string &filename );
 
     void cvtCameraParameter( const sensor_msgs::CameraInfoConstPtr &cam_info_msg,

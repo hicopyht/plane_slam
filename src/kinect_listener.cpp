@@ -772,6 +772,48 @@ void KinectListener::savePathAndLandmarks( const std::string &filename )
     fclose(yaml);
 }
 
+void KinectListener::saveKeypointLandmarks( const std::string &filename )
+{
+    FILE* yaml = std::fopen( filename.c_str(), "w" );
+    fprintf( yaml, "# keypoints: %s\n", filename.c_str() );
+    fprintf( yaml, "# gtsam::Point3: (x,y,z)\n");
+    fprintf( yaml, "# descriptor: uint64*4 = 256bits = 32bytes\n" );
+
+    // Save location
+    std::map<int, KeyPoint*> keypoints = gt_mapping_->getKeypointLandmark();
+    fprintf( yaml, "# keypoints, size %d\n", keypoints.size() );
+    fprintf( yaml, "# location:\n");
+    for( std::map<int, KeyPoint*>::const_iterator it = keypoints.begin();
+         it != keypoints.end(); it++)
+    {
+        KeyPoint *kp = it->second;
+        if( !kp->valid )
+            continue;
+        fprintf( yaml, "%f %f %f\n", kp->translation.x(), kp->translation.y(), kp->translation.z() );
+    }
+    fprintf( yaml, "\n\n");
+
+    // Save descriptor
+    fprintf( yaml, "# descriptor:\n" );
+    for( std::map<int, KeyPoint*>::const_iterator it = keypoints.begin();
+         it != keypoints.end(); it++)
+    {
+        KeyPoint *kp = it->second;
+        if( !kp->valid )
+            continue;
+        for( int i = 0; i < 4; i++ )
+        {
+            uint8_t *ch = (uint8_t *)(kp->descriptor);
+            fprintf( yaml, "%d %d %d %d %d %d %d %d ", *ch, *(ch+1), *(ch+2), *(ch+3), *(ch+4), *(ch+5), *(ch+6), *(ch+7));
+        }
+        fprintf( yaml, "\n" );
+    }
+    fprintf( yaml, "\n");
+
+    // close
+    fclose(yaml);
+}
+
 void KinectListener::saveRuntimes( const std::string &filename )
 {
     FILE* yaml = std::fopen( filename.c_str(), "w" );
@@ -1005,6 +1047,7 @@ bool KinectListener::saveSlamResultCallback(std_srvs::Trigger::Request &req, std
         prefix = "/home/lizhi/bags/result/"+time_str+"/";
     //
     savePathAndLandmarks( prefix + "landmarks_path.txt");  // save path and landmarks
+    saveKeypointLandmarks( prefix + "keypoints.txt");   // save keypoints
     saveRuntimes( prefix + "runtimes.txt" );   // save runtimes
     gt_mapping_->saveGraphDot( prefix + "graph.dot");      // save grapy
     gt_mapping_->saveMapPCD( prefix + "map.pcd");          // save map
