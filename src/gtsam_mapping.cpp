@@ -212,6 +212,7 @@ bool GTMapping::doMappingMix( Frame *frame )
     }
 
     /// 2: point features
+    std::vector<int> lost_landmarks;
     // inlier for tracking of frame with previous
     if( frame->kp_inlier_.size() < 5 )
     {
@@ -266,7 +267,6 @@ bool GTMapping::doMappingMix( Frame *frame )
             next_point_id_++;
             keypoints_list_[keypoint->id()] = keypoint;
             optimized_keypoints_list_[keypoint->id()] = keypoint->translation;
-//            keypoints_vector_.push_back( transformPoint(last_point, toWorld) );
             if( i == 0) // Add a prior on landmark p0
             {
                 noiseModel::Isotropic::shared_ptr pointNoise = noiseModel::Isotropic::Sigma(3, 0.01);
@@ -300,72 +300,70 @@ bool GTMapping::doMappingMix( Frame *frame )
 //        matchKeypointsWithGlobal( frame->kp_inlier_, frame->pose_, frame->camera_params_,
 //                                  frame->feature_descriptors_, frame->feature_locations_3d_, matches );
 
+        /// Remove lost_landmarks
+        lost_landmarks = unmatched_landmarks;
 
-        if( matches.size() >= min_keypoint_correspondences_)
+        /// Add factor to existed landmark
+        std::map<int, bool> matched_obs;    // frame->kp_inlier's element is matched or not
+        // Construct matched map, initially set all: false
+        for( int i = 0; i < frame->kp_inlier_.size(); i++)
         {
-            /// Add factor to existed landmark
-            std::map<int, bool> matched_obs;    // frame->kp_inlier's element is matched or not
-            // Construct matched map, initially set all: false
-            for( int i = 0; i < frame->kp_inlier_.size(); i++)
+            matched_obs[frame->kp_inlier_[i].trainIdx] = false;
+        }
+        std::map<int, bool>::iterator matched_it;
+        for( int i = 0; i < matches.size(); i++)
+        {
+            cv::DMatch &m = matches[i];
+            // Set observation matched: true
+            matched_it = matched_obs.find( m.queryIdx );
+            if( matched_it != matched_obs.end() )
+                matched_obs.at( m.queryIdx ) = true;
+            // Add factor
+            const Eigen::Vector4f& point = frame->feature_locations_3d_[m.queryIdx];
+            gtsam::Point3 gp3(point[0], point[1], point[2]);
+            Eigen::Matrix3d cov = kinectBearingRangeCov( gp3 );
+            noiseModel::Gaussian::shared_ptr m_noise = noiseModel::Gaussian::Covariance( cov );
+            Key kp_key = Symbol('p', m.trainIdx);
+            factor_graph_.push_back(BearingRangeFactor<Pose3, Point3>(pose_key, kp_key, (gtsam::Unit3)gp3, gp3.norm(), m_noise));
+            factor_graph_buffer_.push_back(BearingRangeFactor<Pose3, Point3>(pose_key, kp_key, (gtsam::Unit3)gp3, gp3.norm(), m_noise));
+        }
+
+        /// Add new factor to unpaired landmark
+        Eigen::Matrix4d toWorld = transformTFToMatrix4d( frame->pose_ );
+        uint64_t* descriptor_value =  reinterpret_cast<uint64_t*>( frame->feature_descriptors_.data );
+        for( std::map<int,bool>::iterator it= matched_obs.begin(); it != matched_obs.end(); it++)
+        {
+            if( it->second == false )   // not matched with global, add as new factor
             {
-                matched_obs[frame->kp_inlier_[i].trainIdx] = false;
-            }
-            std::map<int, bool>::iterator matched_it;
-            for( int i = 0; i < matches.size(); i++)
-            {
-                cv::DMatch &m = matches[i];
-                // Set observation matched: true
-                matched_it = matched_obs.find( m.queryIdx );
-                if( matched_it != matched_obs.end() )
-                    matched_obs.at( m.queryIdx ) = true;
-                // Add factor
-                const Eigen::Vector4f& point = frame->feature_locations_3d_[m.queryIdx];
-                gtsam::Point3 gp3(point[0], point[1], point[2]);
+                const int idx = it->first;
+                const Eigen::Vector4f &point = frame->feature_locations_3d_[idx];
+                gtsam::Point3 gp3( point[0], point[1], point[2] );
+                gtsam::Point3 gp3_w = transformPoint( gp3, toWorld );
                 Eigen::Matrix3d cov = kinectBearingRangeCov( gp3 );
                 noiseModel::Gaussian::shared_ptr m_noise = noiseModel::Gaussian::Covariance( cov );
-                Key kp_key = Symbol('p', m.trainIdx);
+                // Add new keypoint landmark
+                KeyPoint *keypoint( new KeyPoint() );
+                Key kp_key = Symbol('p', next_point_id_ );
+                keypoint->setId( next_point_id_ );
+                keypoint->translation = gp3_w;
+                uint64_t* des_idx = descriptor_value + idx*4;
+                keypoint->descriptor[0] = *des_idx++;
+                keypoint->descriptor[1] = *des_idx++;
+                keypoint->descriptor[2] = *des_idx++;
+                keypoint->descriptor[3] = *des_idx++;
+                keypoint->color.Red = rng_.uniform(0, (int)255);
+                keypoint->color.Green = rng_.uniform(0, (int)255);
+                keypoint->color.Blue = rng_.uniform(0, (int)255);
+                keypoint->color.Alpha = 255;
+                next_point_id_++;
+                keypoints_list_[keypoint->id()] = keypoint;
+                optimized_keypoints_list_[keypoint->id()] = keypoint->translation;
+                // add factor
                 factor_graph_.push_back(BearingRangeFactor<Pose3, Point3>(pose_key, kp_key, (gtsam::Unit3)gp3, gp3.norm(), m_noise));
                 factor_graph_buffer_.push_back(BearingRangeFactor<Pose3, Point3>(pose_key, kp_key, (gtsam::Unit3)gp3, gp3.norm(), m_noise));
-            }
-
-            /// Add new factor to unpaired landmark
-            Eigen::Matrix4d toWorld = transformTFToMatrix4d( frame->pose_ );
-            uint64_t* descriptor_value =  reinterpret_cast<uint64_t*>( frame->feature_descriptors_.data );
-            for( std::map<int,bool>::iterator it= matched_obs.begin(); it != matched_obs.end(); it++)
-            {
-                if( it->second == false )   // not matched with global, add as new factor
-                {
-                    const int idx = it->first;
-                    const Eigen::Vector4f &point = frame->feature_locations_3d_[idx];
-                    gtsam::Point3 gp3( point[0], point[1], point[2] );
-                    gtsam::Point3 gp3_w = transformPoint( gp3, toWorld );
-                    Eigen::Matrix3d cov = kinectBearingRangeCov( gp3 );
-                    noiseModel::Gaussian::shared_ptr m_noise = noiseModel::Gaussian::Covariance( cov );
-                    // Add new keypoint landmark
-                    KeyPoint *keypoint( new KeyPoint() );
-                    Key kp_key = Symbol('p', next_point_id_ );
-                    keypoint->setId( next_point_id_ );
-                    keypoint->translation = gp3_w;
-                    uint64_t* des_idx = descriptor_value + idx*4;
-                    keypoint->descriptor[0] = *des_idx++;
-                    keypoint->descriptor[1] = *des_idx++;
-                    keypoint->descriptor[2] = *des_idx++;
-                    keypoint->descriptor[3] = *des_idx++;
-                    keypoint->color.Red = rng_.uniform(0, (int)255);
-                    keypoint->color.Green = rng_.uniform(0, (int)255);
-                    keypoint->color.Blue = rng_.uniform(0, (int)255);
-                    keypoint->color.Alpha = 255;
-                    next_point_id_++;
-                    keypoints_list_[keypoint->id()] = keypoint;
-                    optimized_keypoints_list_[keypoint->id()] = keypoint->translation;
-//                    keypoints_vector_.push_back( transformPoint(point, toWorld) );
-                    // add factor
-                    factor_graph_.push_back(BearingRangeFactor<Pose3, Point3>(pose_key, kp_key, (gtsam::Unit3)gp3, gp3.norm(), m_noise));
-                    factor_graph_buffer_.push_back(BearingRangeFactor<Pose3, Point3>(pose_key, kp_key, (gtsam::Unit3)gp3, gp3.norm(), m_noise));
-                    // add initial guess
-                    initial_estimate_.insert<Point3>( kp_key, gp3_w );
-                    initial_estimate_buffer_.insert<Point3>( kp_key, gp3_w );
-                }
+                // add initial guess
+                initial_estimate_.insert<Point3>( kp_key, gp3_w );
+                initial_estimate_buffer_.insert<Point3>( kp_key, gp3_w );
             }
         }
 
@@ -382,6 +380,10 @@ bool GTMapping::doMappingMix( Frame *frame )
     isam2_->update(factor_graph_, initial_estimate_);
     isam2_->update(); // call additionally
 
+    // Delete lost keypoint landmarks
+    removeLostLandmarks( lost_landmarks );
+
+    cout << "  Update optimized result ..." << endl;
     // Update optimized poses, planes, keypoints
     updateOptimizedResultMix();
 
@@ -1569,6 +1571,97 @@ bool GTMapping::refinePlanarMap()
     return find_coplanar;
 }
 
+// Remove variables and factors from graph
+void GTMapping::removeLostLandmarks( std::vector<int> &lost_landmarks )
+{
+    cout << YELLOW << " Remove lost landmarks: " << lost_landmarks.size() << RESET << endl;
+    if( lost_landmarks.size() <= 0 )
+        return;
+
+    cout << MAGENTA << "  Lost landmarks:";
+    for( int i = 0; i < lost_landmarks.size(); i++ )
+    {
+        cout << " " << lost_landmarks[i];
+    }
+    cout << RESET << endl;
+
+    std::vector<int>::iterator itl = std::find( lost_landmarks.begin(), lost_landmarks.end(), 0 );
+    if( itl != lost_landmarks.end() )
+        lost_landmarks.erase( itl );
+
+    if( lost_landmarks.size() <= 0 )
+        return;
+
+    cout << BLUE << "  Remove values(" << lost_landmarks.size() << "):" << RESET << endl;
+    FastVector<Key> remove_keys;
+    // Remove variable from graph
+    Values isam2_values = isam2_->calculateBestEstimate();
+    for( int i = 0; i < lost_landmarks.size(); i++ )
+    {
+        const int &idx = lost_landmarks[i];
+
+        // Delete id == 'idx' in the 'keypoints_list_'
+        std::map<int, KeyPoint*>::iterator kpitem = keypoints_list_.find( idx );
+        if( kpitem != keypoints_list_.end() )
+        {
+            keypoints_list_.erase( kpitem );
+//            cout << MAGENTA << "\t" << idx;
+        }
+
+        // Delete id == 'idx' in the 'keypoints_list_'
+        std::map<int, gtsam::Point3>::iterator okpitem = optimized_keypoints_list_.find( idx );
+        if( okpitem != optimized_keypoints_list_.end() )
+        {
+            optimized_keypoints_list_.erase( okpitem );
+//            cout << YELLOW << "\t" << idx;
+        }
+
+        // delete gtsam::Point3 variable from values
+        Key key_kp = Symbol( 'p', idx );
+//        if( isam2_values.exists( key_kp ) )
+//        {
+//            isam2_values.erase( key_kp );
+//            cout << BLUE << "\t" << idx;
+//        }
+
+//        cout << RESET << endl;
+        // Construct keys
+        remove_keys.push_back( key_kp );
+    }
+
+    cout << BLUE << "  Remove factor(" << remove_keys.size() << "):" << RESET << endl;
+
+    // Remove factor in the graph
+    for( NonlinearFactorGraph::iterator factor_iter = factor_graph_buffer_.begin();
+         factor_iter != factor_graph_buffer_.end(); factor_iter++)
+    {
+        // BearingRangeFactor
+        boost::shared_ptr< BearingRangeFactor<Pose3, Point3> > br_factor =
+                boost::dynamic_pointer_cast< BearingRangeFactor<Pose3, Point3> >(*factor_iter);
+        if( br_factor )
+        {
+            FastVector<Key> &keys = br_factor->keys();
+            for( FastVector<Key>::iterator kit = keys.begin(); kit != keys.end(); kit++)
+            {
+//                cout << MAGENTA << " " << *kit;
+                FastVector<Key>::iterator lost_it = std::find(remove_keys.begin(), remove_keys.end(), *kit);
+                if ( lost_it != remove_keys.end() )
+                {
+//                    cout << BLUE << "/Remove(" << lost_landmarks[lost_it - remove_keys.begin()] << ")";
+                    factor_graph_buffer_.erase( factor_iter );
+                    break;
+                }
+            }
+//            cout << RESET << endl;
+        }
+    }
+
+    cout << BLUE << "  Update graph." << RESET << endl;
+    delete isam2_;
+    isam2_ = new ISAM2( isam2_parameters_ );
+    isam2_->update( factor_graph_buffer_, isam2_values );
+}
+
 void GTMapping::mergeCoplanarLandmarks( std::map<int, std::set<int> > merge_list )
 {
     // print merge list
@@ -1728,7 +1821,6 @@ void GTMapping::updateOptimizedResultMix()
         gtsam::Point3 point = values.at( Symbol('p', it->first) ).cast<gtsam::Point3>();
         it->second = point;
         keypoints_list_.at(it->first)->translation = point;
-//        keypoints_vector_[it->first] = Eigen::Vector4f( point.x(), point.y(), point.z(), 1.0 );
     }
 }
 
@@ -1869,10 +1961,13 @@ void GTMapping::optimizeGraph( int n )
 
 void GTMapping::publishOptimizedPose()
 {
-    geometry_msgs::PoseStamped msg = pose3ToGeometryPose( last_estimated_pose_ );
-    msg.header.frame_id = map_frame_;
-    msg.header.stamp = ros::Time::now();
-    optimized_pose_publisher_.publish( msg );
+    if( optimized_pose_publisher_.getNumSubscribers() )
+    {
+        geometry_msgs::PoseStamped msg = pose3ToGeometryPose( last_estimated_pose_ );
+        msg.header.frame_id = map_frame_;
+        msg.header.stamp = ros::Time::now();
+        optimized_pose_publisher_.publish( msg );
+    }
 }
 
 void GTMapping::publishOptimizedPath()
@@ -1956,6 +2051,9 @@ void GTMapping::publishKeypointCloud()
 
 void GTMapping::publishPredictedKeypoints( const std::map<int, gtsam::Point3> &predicted_keypoints )
 {
+    if( predicted_keypoint_publisher_.getNumSubscribers() <= 0 )
+        return;
+
     PointCloudTypePtr cloud( new PointCloudType );
     cloud->is_dense = false;
     cloud->height = 1;
@@ -1985,6 +2083,9 @@ void GTMapping::publishPredictedKeypoints( const std::map<int, gtsam::Point3> &p
 
 void GTMapping::publishFrameKeypoints( const std_vector_of_eigen_vector4f &feature_3d )
 {
+    if( frame_keypoint_publisher_.getNumSubscribers() <= 0 )
+        return;
+
     PointCloudXYZRGBAPtr cloud( new PointCloudXYZRGBA );
     cloud->is_dense = false;
     cloud->height = 1;
@@ -2021,6 +2122,10 @@ void GTMapping::publishMatchedKeypoints( const std_vector_of_eigen_vector4f &fea
                                          const std::map<int, gtsam::Point3> &predicted_keypoints,
                                          const std::vector<cv::DMatch> &matches )
 {
+    if( matched_keypoint_frame_publisher_.getNumSubscribers() <= 0
+            || matched_keypoint_global_publisher_.getNumSubscribers() <= 0)
+        return;
+
     PointCloudXYZRGBAPtr cloud( new PointCloudXYZRGBA ), cloud_global( new PointCloudXYZRGBA );
     cloud->is_dense = false;
     cloud->height = 1;

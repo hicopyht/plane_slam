@@ -176,6 +176,8 @@ protected:
 
     bool refinePlanarMap();
 
+    void removeLostLandmarks( std::vector<int> &lost_landmarks );
+
     void mergeCoplanarLandmarks( std::map<int, std::set<int> > merge_list );
 
     bool removeLandmarksBadInlier();
