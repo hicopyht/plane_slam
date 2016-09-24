@@ -132,7 +132,8 @@ protected:
     void labelPlane( PlaneType *plane );
 
     void matchKeypointWithMap( const Frame &frame,
-                               std::vector<cv::DMatch>&matches );
+                               std::vector<cv::DMatch> &matches,
+                               std::vector<int> &unmatched_landmarks );
 
     void matchKeypointsWithGlobal( const Frame &frame,
                                    std::vector<cv::DMatch> &matches);
@@ -146,7 +147,7 @@ protected:
     void matchImageFeatures( const Frame &frame,
                              const std::map<int, pcl::PointUV> &predicted_image_points,
                              const std::map<int, gtsam::Point3> &predicted_keypoints,
-                             std::vector<bool> &matched,
+                             std::vector<int> &unmatched_landmarks,
                              vector<cv::DMatch> &good_matches );
     static inline int hamming_distance_orb32x8_popcountll(const uint64_t* v1, const uint64_t* v2) {
       return (__builtin_popcountll(v1[0] ^ v2[0]) + __builtin_popcountll(v1[1] ^ v2[1])) +
