@@ -178,6 +178,8 @@ private:
     std::vector<geometry_msgs::PoseStamped> true_poses_;
     std::vector<geometry_msgs::PoseStamped> odometry_poses_;
 
+    // Runtimes and frame count
+    int frame_count_;
     std::vector<Runtime> runtimes_;
 
     //

@@ -373,6 +373,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     static bool last_frame_valid = false;
     static tf::Transform last_tf;
 
+    frame_count_++;
     cout << RESET << "----------------------------------------------------------------------" << endl;
     cout << BOLDMAGENTA << "no cloud msg: " << depth_img_msg->header.seq << RESET << endl;
 
@@ -438,6 +439,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     }
     else
     {
+        frame_count_ = 1;
         if( frame->segment_planes_.size() > 0)
         {
             frame->valid_ = true;   // first frame, set valid, add to mapper as first frame
@@ -556,6 +558,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     static bool last_frame_valid = false;
     static tf::Transform last_tf;
 
+    frame_count_++;
     cout << RESET << "----------------------------------------------------------------------" << endl;
     cout << BOLDMAGENTA << "no cloud msg: " << depth_img_msg->header.seq << RESET << endl;
 
@@ -614,6 +617,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     // Publish visual odometry path
     if( !last_frame_valid && frame->valid_ ) // First frame, valid, set initial pose
     {
+        frame_count_ = 1;
         // first frame
         if( !true_poses_.size() )   // No true pose, set first frame pose to identity.
         {
@@ -818,8 +822,9 @@ void KinectListener::saveRuntimes( const std::string &filename )
 {
     FILE* yaml = std::fopen( filename.c_str(), "w" );
     fprintf( yaml, "# runtimes file: %s\n", filename.c_str() );
-    fprintf( yaml, "# format: frame tracking mapping total\n");
-    fprintf( yaml, "# key frame size: %d\n\n", runtimes_.size());
+    fprintf( yaml, "# format: frame tracking mapping total\n" );
+    fprintf( yaml, "# frame size: %d\n", frame_count_ );
+    fprintf( yaml, "# key frame size: %d\n\n", runtimes_.size() );
 
     Runtime avg_time;
     Runtime max_time(true, 0, 0, 0, 0);
@@ -852,16 +857,19 @@ void KinectListener::saveRuntimes( const std::string &filename )
              avg_time.tracking,
              avg_time.mapping,
              avg_time.total);
+    fprintf( yaml, "\n");
 
     // Maximum
     fprintf( yaml, "# maximum time:\n");
     fprintf( yaml, "%f %f %f %f\n", max_time.frame,
              max_time.tracking, max_time.mapping, max_time.total);
+    fprintf( yaml, "\n");
 
     // Minimum
     fprintf( yaml, "# minimum time:\n");
     fprintf( yaml, "%f %f %f %f\n", min_time.frame,
              min_time.tracking, min_time.mapping, min_time.total);
+    fprintf( yaml, "\n");
 
     //
     Runtime error_time;
@@ -871,6 +879,7 @@ void KinectListener::saveRuntimes( const std::string &filename )
     fprintf( yaml, "# (max+min)/2.0 time:\n");
     fprintf( yaml, "%f %f %f %f\n", error_time.frame,
              error_time.tracking, error_time.mapping, error_time.total);
+    fprintf( yaml, "\n");
     //
     error_time = max_time;
     error_time -= min_time;
@@ -878,20 +887,22 @@ void KinectListener::saveRuntimes( const std::string &filename )
     fprintf( yaml, "# (max-min)/2.0 time:\n");
     fprintf( yaml, "%f %f %f %f\n", error_time.frame,
              error_time.tracking, error_time.mapping, error_time.total);
+    fprintf( yaml, "\n");
     //
     error_time = max_time;
     error_time -= avg_time;
     fprintf( yaml, "# (max-avg) time:\n");
     fprintf( yaml, "%f %f %f %f\n", error_time.frame,
              error_time.tracking, error_time.mapping, error_time.total);
+    fprintf( yaml, "\n");
     //
     error_time = avg_time;
     error_time -= min_time;
     fprintf( yaml, "# (avg-min) time:\n");
     fprintf( yaml, "%f %f %f %f\n", error_time.frame,
              error_time.tracking, error_time.mapping, error_time.total);
-
     fprintf( yaml, "\n");
+
     // close
     fclose(yaml);
 }

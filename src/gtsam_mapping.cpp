@@ -872,11 +872,11 @@ void GTMapping::labelPlane( PlaneType *plane )
     double d = plane->coefficients[3];
     int size = plane->cloud_voxel->size();
 
-    // Print info
-    cout << GREEN << "  Label: " << plane->landmark_id
-         << " - angle(z): " << (theta*RAD_TO_DEG)
-         << ", d: " << d
-         << ", indices:" << size << RESET << endl;
+//    // Print info
+//    cout << GREEN << "  Label: " << plane->landmark_id
+//         << " - angle(z): " << (theta*RAD_TO_DEG)
+//         << ", d: " << d
+//         << ", indices:" << size << RESET << endl;
 
     // Labelling "FLOOR"
     if( theta < (5.0*DEG_TO_RAD) && (d < 0.1) ) // theta < 5deg, d < 0.1m
