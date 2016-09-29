@@ -144,6 +144,7 @@ int main(int argc, char** argv)
     camera.height = fsp["camera.height"];
     std::string depth_topic = fsp["depth_topic"];
     std::string rgb_topic = fsp["rgb_topic"];
+    std::string use_odom = fsp["use_odom"];
     float init_pose_x = fsp["initPose.x"];
     float init_pose_y = fsp["initPose.y"];
     float init_pose_z = fsp["initPose.z"];
@@ -177,6 +178,11 @@ int main(int argc, char** argv)
     std::vector<std::string> topics;
     topics.push_back( depth_topic );
     topics.push_back( rgb_topic );
+
+    // Force odom or not
+    bool force_odom = false;
+    if( !use_odom.compare("true"))
+        force_odom = true;
 
     // Valid duration
     rosbag::View full_view;

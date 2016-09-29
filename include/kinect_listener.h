@@ -101,6 +101,8 @@ protected:
 
     bool savePathLandmarksCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
 
+    bool saveSlamResultSimpleCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
+
     bool saveSlamResultCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
 
     void publishTfTimerCallback( const ros::TimerEvent& event );
@@ -108,13 +110,13 @@ protected:
 private:
     bool getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time &t = ros::Time(0) );
 
-    void publishTruePose();
+    void publishOdomPose();
 
-    void publishTruePath();
+    void publishOdomPath();
 
-    void publishOdometryPose();
+    void publishVisualOdometryPose();
 
-    void publishOdometryPath();
+    void publishVisualOdometryPath();
 
 private:
     ros::NodeHandle nh_;
@@ -143,11 +145,12 @@ private:
     message_filters::Synchronizer<CloudSyncPolicy>* cloud_sync_;
     message_filters::Synchronizer<NoCloudSyncPolicy>* no_cloud_sync_;
     //
-    ros::Publisher true_pose_publisher_;
-    ros::Publisher true_path_publisher_;
-    ros::Publisher odometry_pose_publisher_;
-    ros::Publisher odometry_path_publisher_;
+    ros::Publisher odom_pose_publisher_;
+    ros::Publisher odom_path_publisher_;
+    ros::Publisher visual_odometry_pose_publisher_;
+    ros::Publisher visual_odometry_path_publisher_;
     ros::ServiceServer save_path_landmarks_service_server_;
+    ros::ServiceServer save_slam_result_simple_;
     ros::ServiceServer save_slam_result_all_;
 
     //
@@ -175,8 +178,8 @@ private:
     // Camera Parameters
     CameraParameters camera_parameters_;
     // Path
-    std::vector<geometry_msgs::PoseStamped> true_poses_;
-    std::vector<geometry_msgs::PoseStamped> odometry_poses_;
+    std::vector<geometry_msgs::PoseStamped> odom_poses_;
+    std::vector<geometry_msgs::PoseStamped> visual_odometry_poses_;
 
     // Runtimes and frame count
     int frame_count_;

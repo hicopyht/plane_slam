@@ -26,7 +26,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: PlanarMap
+    SyncSource: ""
 Visualization Manager:
   Class: ""
   Displays:
@@ -34,7 +34,7 @@ Visualization Manager:
       Cell Size: 1
       Class: rviz/Grid
       Color: 160; 160; 164
-      Enabled: false
+      Enabled: true
       Line Style:
         Line Width: 0.03
         Value: Lines
@@ -47,14 +47,14 @@ Visualization Manager:
       Plane: XY
       Plane Cell Count: 10
       Reference Frame: <Fixed Frame>
-      Value: false
+      Value: true
     - Class: rviz/Axes
-      Enabled: false
+      Enabled: true
       Length: 0.2
       Name: Axes
       Radius: 0.01
       Reference Frame: <Fixed Frame>
-      Value: false
+      Value: true
     - Class: rviz/TF
       Enabled: false
       Frame Timeout: 15
@@ -86,20 +86,20 @@ Visualization Manager:
       Value: false
       Visual Enabled: true
     - Alpha: 1
-      Axes Length: 1
-      Axes Radius: 0.1
-      Class: rviz/Pose
-      Color: 255; 25; 0
-      Enabled: false
-      Head Length: 0.3
-      Head Radius: 0.1
-      Name: OdometryPose
-      Shaft Length: 1
-      Shaft Radius: 0.05
-      Shape: Arrow
-      Topic: /odometry_pose
+      Buffer Length: 1
+      Class: rviz/Path
+      Color: 25; 255; 0
+      Enabled: true
+      Line Style: Lines
+      Line Width: 0.03
+      Name: OdomPath
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Topic: /odom_path
       Unreliable: false
-      Value: false
+      Value: true
     - Alpha: 1
       Buffer Length: 1
       Class: rviz/Path
@@ -107,59 +107,14 @@ Visualization Manager:
       Enabled: true
       Line Style: Lines
       Line Width: 0.03
-      Name: OdometryPath
+      Name: VisualOdometryPath
       Offset:
         X: 0
         Y: 0
         Z: 0
-      Topic: /odometry_path
+      Topic: /visual_odometry_path
       Unreliable: false
       Value: true
-    - Alpha: 1
-      Axes Length: 1
-      Axes Radius: 0.1
-      Class: rviz/Pose
-      Color: 255; 25; 0
-      Enabled: false
-      Head Length: 0.3
-      Head Radius: 0.1
-      Name: TruePose
-      Shaft Length: 1
-      Shaft Radius: 0.05
-      Shape: Arrow
-      Topic: /true_pose
-      Unreliable: false
-      Value: false
-    - Alpha: 1
-      Buffer Length: 1
-      Class: rviz/Path
-      Color: 25; 255; 0
-      Enabled: true
-      Line Style: Lines
-      Line Width: 0.03
-      Name: TruePath
-      Offset:
-        X: 0
-        Y: 0
-        Z: 0
-      Topic: /true_path
-      Unreliable: false
-      Value: true
-    - Alpha: 1
-      Axes Length: 1
-      Axes Radius: 0.1
-      Class: rviz/Pose
-      Color: 255; 25; 0
-      Enabled: false
-      Head Length: 0.2
-      Head Radius: 0.1
-      Name: OptimizedPose
-      Shaft Length: 0.4
-      Shaft Radius: 0.04
-      Shape: Arrow
-      Topic: /optimized_pose
-      Unreliable: false
-      Value: false
     - Alpha: 1
       Buffer Length: 1
       Class: rviz/Path
@@ -175,6 +130,51 @@ Visualization Manager:
       Topic: /optimized_path
       Unreliable: false
       Value: true
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.1
+      Class: rviz/Pose
+      Color: 255; 25; 0
+      Enabled: false
+      Head Length: 0.3
+      Head Radius: 0.1
+      Name: OdometryPose
+      Shaft Length: 1
+      Shaft Radius: 0.05
+      Shape: Arrow
+      Topic: /odom_pose
+      Unreliable: false
+      Value: false
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.1
+      Class: rviz/Pose
+      Color: 255; 25; 0
+      Enabled: false
+      Head Length: 0.3
+      Head Radius: 0.1
+      Name: VisualOdomPose
+      Shaft Length: 1
+      Shaft Radius: 0.05
+      Shape: Arrow
+      Topic: /visual_odometry_pose
+      Unreliable: false
+      Value: false
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.1
+      Class: rviz/Pose
+      Color: 255; 25; 0
+      Enabled: false
+      Head Length: 0.2
+      Head Radius: 0.1
+      Name: OptimizedPose
+      Shaft Length: 0.4
+      Shaft Radius: 0.04
+      Shape: Arrow
+      Topic: /optimized_pose
+      Unreliable: false
+      Value: false
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
@@ -418,22 +418,22 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 5.91445
+      Distance: 11.6425
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.06
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -3.13553
-        Y: -1.11935
-        Z: 0.31898
+        X: 0.588468
+        Y: -0.0312306
+        Z: 0.549812
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.474796
+      Pitch: 0.449801
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.85485
+      Yaw: 4.18984
     Saved: ~
 Window Geometry:
   Displays:
