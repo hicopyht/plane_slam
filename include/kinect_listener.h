@@ -33,6 +33,7 @@
 #include "viewer.h"
 #include "tracking.h"
 #include "gtsam_mapping.h"
+#include "feature_adjuster.h"
 //
 #include <yaml-cpp/yaml.h>
 
@@ -154,6 +155,9 @@ private:
     ros::ServiceServer save_slam_result_all_;
 
     //
+    std::string keypoint_type_;
+    cv::FeatureDetector* surf_detector_;
+    cv::DescriptorExtractor* surf_extractor_;
     ORBextractor* orb_extractor_;
     LineBasedPlaneSegmentor* plane_segmentor_;
     Viewer *viewer_;

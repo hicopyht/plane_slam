@@ -26,7 +26,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: ""
+    SyncSource: PlanarMap
 Visualization Manager:
   Class: ""
   Displays:
@@ -418,22 +418,22 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 11.6425
+      Distance: 23.2753
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.06
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.588468
-        Y: -0.0312306
-        Z: 0.549812
+        X: 7.83879
+        Y: 1.45452
+        Z: -0.411984
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.449801
+      Pitch: 0.564801
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 4.18984
+      Yaw: 3.97983
     Saved: ~
 Window Geometry:
   Displays:

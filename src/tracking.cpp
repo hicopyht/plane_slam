@@ -86,10 +86,19 @@ bool Tracking::track(const Frame &source, Frame &target,
 
     // matches keypoint features
     std::vector<cv::DMatch> good_matches;
-    matchImageFeatures( source, target, good_matches,
-                        feature_good_match_threshold_, feature_min_good_match_size_ );
+    if( !source.keypoint_type_.compare("ORB") && !target.keypoint_type_.compare("ORB") )
+    {
+        matchImageFeatures( source, target, good_matches,
+                            feature_good_match_threshold_, feature_min_good_match_size_ );
+    }
+    else if( !source.keypoint_type_.compare("SURF") && !target.keypoint_type_.compare("SURF") )
+    {
+        matchSurfFeatures( source, target, good_matches,
+                           feature_good_match_threshold_, feature_min_good_match_size_ );
+    }
+
     // Assign good matches to Frame
-    target.good_matches_ = good_matches;
+//    target.good_matches_ = good_matches;
     //
     cout << GREEN << " Matches features, good_matches = " << good_matches.size() << RESET << endl;
     //
@@ -106,7 +115,7 @@ bool Tracking::track(const Frame &source, Frame &target,
     bool valid = solveRelativeTransform( source, target, pairs, good_matches,
                                          motion, pl_inlier, kp_inlier );
     // Assign keypoint inlier to Frame
-    target.kp_inlier_ = kp_inlier;
+//    target.kp_inlier_ = kp_inlier;
 
     m_e_dura = (ros::Time::now() - start_time).toSec() * 1000;
     start_time = ros::Time::now();
@@ -410,8 +419,8 @@ bool Tracking::solveRelativeTransformPointsRansac( const std_vector_of_eigen_vec
 //    std::sort(good_matches.begin(), good_matches.end()); //sort by distance, which is the nn_ratio
 
     int min_inlier_threshold = min_inlier;
-    if( min_inlier_threshold > 0.6*good_matches.size() )
-        min_inlier_threshold = 0.6*good_matches.size();
+//    if( min_inlier_threshold > 0.8*good_matches.size() )
+//        min_inlier_threshold = 0.8*good_matches.size();
 
     matches.clear();
 
@@ -784,6 +793,14 @@ bool Tracking::solveRelativeTransformPnP( const Frame& source,
 
 //    cout << " Trans: " << endl << result.translation << endl;
 //    cout << " Rot: " << endl << result.rotation << endl;
+
+//    target.kp_inlier_.clear();
+//    for( int i = 0; i < inlier.rows; i++)
+//    {
+//        target.kp_inlier_.push_back( );
+//    }
+
+    cout << MAGENTA << " inlier Mat: " << inlier << endl;
 
     return ( result.inlier >= min_inlier_threshold );
 }
@@ -1363,12 +1380,32 @@ Eigen::Matrix4f Tracking::solveRtPlanesPoints( const std::vector<PlaneType> &las
 }
 
 
+void Tracking::matchSurfFeatures( const Frame& source,
+                                  const Frame& target,
+                                  vector< cv::DMatch > &good_matches,
+                                  double good_match_threshold,
+                                  int min_match_size )
+{
+    // Match: FLANN
+    const int knn = 2; // Find two neighbours
+    cv::flann::Index* flann_index_;
+    flann_index_ = new cv::flann::Index(target.feature_descriptors_, cv::flann::KDTreeIndexParams(4)); // SURF
+//    flann_index_ = new cv::flann::Index(target.feature_descriptors_, cv::flann::LshIndexParams(10, 10, 2)); // ORB
+    const int num_of_query = source.feature_descriptors_.rows;
+    cv::Mat indices( num_of_query, knn, CV_32F); // indices
+    cv::Mat dists( num_of_query, knn, CV_32F);   // distance
+    flann_index_->knnSearch(source.feature_descriptors_, indices, dists, knn, cv::flann::SearchParams(16));
+
+    //
+
+}
+
 
 void Tracking::matchImageFeatures( const Frame& source,
                                    const Frame& target,
                                    vector< cv::DMatch > &good_matches,
                                    double good_match_threshold,
-                                   int min_match_size)
+                                   int min_match_size )
 {
     vector< cv::DMatch > matches;
 
@@ -1426,6 +1463,7 @@ void Tracking::matchImageFeatures( const Frame& source,
 
 //    cout << "good matches: " << good_matches.size() << endl;
 }
+
 
 void Tracking::matchImageFeatures( const cv::Mat &feature_descriptor,
                                    const std::vector<cv::DMatch> &kp_inlier,

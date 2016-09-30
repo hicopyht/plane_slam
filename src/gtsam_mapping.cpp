@@ -214,21 +214,37 @@ bool GTMapping::doMappingMix( Frame *frame )
     /// 2: point features
     std::vector<int> lost_landmarks;
     // inlier for tracking of frame with previous
-    if( frame->kp_inlier_.size() < 5 )
+    if( frame->id() > 0 )
     {
 
         Frame* frame_last = frames_list_[frame->id()-1];
-        unsigned int min_inlier_threshold = 10;
-        double inlier_error = 1e6;
-        double max_dist_m = 3.0;
-        Eigen::Matrix4f transformation = transformTFToMatrix4f( frame_last->pose_.inverse() * frame->pose_);
-        tracker_->computeCorrespondenceInliersAndError( frame->good_matches_, transformation, frame_last->feature_locations_3d_, frame->feature_locations_3d_,
-                                                        min_inlier_threshold, frame->kp_inlier_, inlier_error, max_dist_m );
-//        cout << GREEN << " compute matches with previous: " << frame_last->id()
-//             << ", good_matches_ = " << frame->good_matches_.size()
-//             << ", kp_inlier = " << frame->kp_inlier_.size() << RESET << endl;
-//        printTransform( transformation, "  Relative TF", WHITE);
-//        printPose3( rel_pose, "  Relative Pose:", BLUE );
+        RESULT_OF_MOTION motion;
+        if( !frame->keypoint_type_.compare("ORB") )
+            tracker_->matchImageFeatures( *frame_last, *frame, frame->good_matches_, 4.0, 100 );
+        else if( !frame->keypoint_type_.compare("SURF") )
+            tracker_->matchSurfFeatures( *frame_last, *frame, frame->good_matches_, 4.0, 100 );
+        else{
+            ROS_ERROR_STREAM("Undefined keypoint type.");
+            exit(1);
+        }
+//        tracker_->solveRelativeTransformPnP( *frame_last, *frame, frame->good_matches_, frame->camera_params_, motion );
+        tracker_->solveRelativeTransformPointsRansac( frame->feature_locations_3d_, frame->feature_locations_3d_, frame->good_matches_,
+                                                      motion, frame->kp_inlier_, 3);
+
+
+//        Frame* frame_last = frames_list_[frame->id()-1];
+//        unsigned int min_inlier_threshold = 10;
+//        double inlier_error = 1e6;
+//        double max_dist_m = 3.0;
+//        Eigen::Matrix4f transformation = transformTFToMatrix4f( frame_last->pose_.inverse() * frame->pose_);
+//        tracker_->computeCorrespondenceInliersAndError( frame->good_matches_, transformation, frame_last->feature_locations_3d_, frame->feature_locations_3d_,
+//                                                        min_inlier_threshold, frame->kp_inlier_, inlier_error, max_dist_m );
+
+        cout << GREEN << " compute matches with previous: " << frame_last->id()
+             << ", good_matches_ = " << frame->good_matches_.size()
+             << ", kp_inlier = " << frame->kp_inlier_.size() << RESET << endl;
+        printTransform( motion.transform4d(), "  Relative TF", WHITE);
+        printPose3( rel_pose, "  Relative Pose:", BLUE );
     }
     //
     if( frame->id() == 1 ) // first two frames, add bwtween factors

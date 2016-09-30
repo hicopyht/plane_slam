@@ -8,7 +8,8 @@ Frame::Frame()
       key_frame_(false),
       camera_params_(),
       cloud_downsampled_( new PointCloudType ),
-      feature_cloud_( new PointCloudXYZ )
+      feature_cloud_( new PointCloudXYZ ),
+      keypoint_type_("")
 {
 
 }
@@ -20,6 +21,7 @@ Frame::Frame( PointCloudTypePtr &input, CameraParameters &camera_params,
       camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
+      keypoint_type_(""),
       plane_segmentor_(plane_segmentor)
 {
     // Observation
@@ -40,6 +42,7 @@ Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camer
       camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
+      keypoint_type_( "ORB" ),
       orb_extractor_(orb_extractor),
       plane_segmentor_(plane_segmentor)
 {
@@ -59,14 +62,49 @@ Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camer
 }
 
 Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
+              cv::FeatureDetector* surf_detector, cv::DescriptorExtractor* surf_extractor,
+              LineBasedPlaneSegmentor* plane_segmentor )
+    : valid_(false),
+      key_frame_(false),
+      camera_params_(),
+      cloud_downsampled_( new PointCloudType ),
+      feature_cloud_( new PointCloudXYZ ),
+      keypoint_type_( "SURF" ),
+      surf_detector_( surf_detector ),
+      surf_extractor_( surf_extractor ),
+      plane_segmentor_(plane_segmentor)
+{
+    // Construct organized pointcloud
+    PointCloudTypePtr input = image2PointCloud( visual, depth, camera_params );
+
+    // Observation
+    visual_image_ = visual;
+    depth_image_ = depth;
+    cloud_ = input;
+    camera_params_ = camera_params;
+
+    // Downsample cloud
+    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
+
+    // Spin 2 threads, one for plane segmentation, another for keypoint extraction.
+//    extractORB();
+//    segmentPlane();
+    thread threadSegment( &Frame::segmentPlane, this );
+    thread threadExtract( &Frame::extractSurf, this );
+    threadSegment.join();
+    threadExtract.join();
+}
+
+Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
               ORBextractor* orb_extractor, LineBasedPlaneSegmentor* plane_segmentor)
     : valid_(false),
       key_frame_(false),
       camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
-      orb_extractor_(orb_extractor),
-      plane_segmentor_(plane_segmentor)
+      keypoint_type_( "ORB" ),
+      orb_extractor_( orb_extractor ),
+      plane_segmentor_( plane_segmentor )
 {
     // Construct organized pointcloud
     PointCloudTypePtr input = image2PointCloud( visual, depth, camera_params );
@@ -88,6 +126,41 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
     threadExtract.join();
 }
 
+void Frame::throttleMemory()
+{
+    //
+    visual_image_.release();
+    gray_image_.release();
+    depth_image_.release();
+    depth_mono8_image_.release();
+    visual_image_downsampled_.release();
+    //
+
+}
+
+// Feature extraction, using visual image and cloud in VGA resolution
+void Frame::extractSurf()
+{
+    // Get gray image
+    if(visual_image_.type() == CV_8UC3)
+        cv::cvtColor( visual_image_, gray_image_, CV_RGB2GRAY );
+    else
+        gray_image_ = visual_image_;
+
+    // Build mask
+    depthToCV8UC1(depth_image_, depth_mono8_image_);
+    /// TODO:
+    /// 1: detect
+    /// 2: project
+    /// 3: extract
+    // Extract features
+    surf_detector_->detect( gray_image_, feature_locations_2d_, depth_mono8_image_ ); // fill 2d locations
+    surf_extractor_->compute( gray_image_, feature_locations_2d_, feature_descriptors_ ); //fill feature_descriptors_ with information
+
+    // Project Keypoint to 3D
+    projectKeypointTo3D( cloud_, feature_locations_2d_, feature_locations_3d_, feature_cloud_);
+}
+
 // Feature Extraction, using visual image and cloud in VGA resolution.
 void Frame::extractORB()
 {
@@ -95,7 +168,7 @@ void Frame::extractORB()
     if(visual_image_.type() == CV_8UC3)
         cv::cvtColor( visual_image_, gray_image_, CV_RGB2GRAY );
     else
-        visual_image_ = gray_image_;
+        gray_image_ = visual_image_;
     // Extract features
     (*orb_extractor_)( gray_image_, cv::Mat(), feature_locations_2d_, feature_descriptors_);
 

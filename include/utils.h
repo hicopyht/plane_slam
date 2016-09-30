@@ -7,6 +7,8 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/nonfree/features2d.hpp>
+#include <opencv2/flann.hpp>
+#include <opencv2/flann/kdtree_index.h>
 #include <opencv2/calib3d/calib3d.hpp>
 //#include <opencv2/core/eigen.hpp>
 #include <pcl/point_cloud.h>

@@ -71,6 +71,12 @@ public:
                                  std::vector<PlanePair> &pl_inlier,
                                  std::vector<cv::DMatch> &kp_inlier );
 
+    void matchSurfFeatures( const Frame& source,
+                            const Frame& target,
+                            vector< cv::DMatch > &good_matches,
+                            double good_match_threshold,
+                            int min_match_size );
+
     void matchImageFeatures( const Frame& source,
                              const Frame& target,
                              vector< cv::DMatch > &good_matches,

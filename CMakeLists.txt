@@ -47,6 +47,9 @@ find_package(Eigen3 REQUIRED)
 find_package(OpenCV 2.4.8 REQUIRED)
 find_package(PCL 1.7 REQUIRED)
 
+link_libraries(${OpenCV_LIBS})
+include_directories(SYSTEM ${OpenCV_INCLUDE_DIRS})
+
 find_package(octomap REQUIRED)
 include_directories(${OCTOMAP_INCLUDE_DIRS})
 link_libraries(${OCTOMAP_LIBRARIES})
@@ -117,13 +120,13 @@ catkin_package(
 include_directories(
   ${PROJECT_SOURCE_DIR}
   ${PROJECT_SOURCE_DIR}/include
-  ${catkin_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
   ${EIGEN3_INCLUDE_DIR}
   ${PCL_INCLUDE_DIRS}
   ${Wrap_INCLUDE_DIR}
   ${CppUnitLite_INCLUDE_DIR}
   ${GTSAM_INCLUDE_DIRS}
+  ${catkin_INCLUDE_DIRS}
 )
 
 #Declare a C++ library
@@ -137,16 +140,16 @@ add_library( ${PROJECT_NAME}
     src/orb_extractor.cpp
     src/utils.cpp
     src/itree.cpp
+    src/feature_adjuster.cpp
 )
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries( ${PROJECT_NAME}
-    ${catkin_LIBRARIES}
-    ${EIGEN3_LIBS}
     ${OpenCV_LIBS}
-    ${OpenCV_LIBRARIES}
+    ${EIGEN3_LIBS}
     ${PCL_LIBRARIES}
     ${CppUnitLite_LIBS}
+    ${catkin_LIBRARIES}
     gtsam
 )
 add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_gencfg)

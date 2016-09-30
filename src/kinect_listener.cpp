@@ -27,6 +27,9 @@ KinectListener::KinectListener() :
     private_nh_.param<bool>("publish_map_tf", publish_map_tf_, true );
     private_nh_.param<double>("map_tf_freq", map_tf_freq_, 50.0 );
     //
+    private_nh_.param<string>("keypoint_type", keypoint_type_, "ORB");
+    surf_detector_ = new DetectorAdjuster("SURF", 200);
+    surf_extractor_ = new cv::SurfDescriptorExtractor();
     orb_extractor_ = new ORBextractor( 1000, 1.2, 8, 20, 7);
     plane_segmentor_ = new LineBasedPlaneSegmentor(nh_);
     viewer_ = new Viewer(nh_);
@@ -398,7 +401,15 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     double total_dura;
 
     // Compute Frame
-    Frame *frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_);
+    Frame *frame;
+    if( !keypoint_type_.compare("ORB") )
+        frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_);
+    else if( !keypoint_type_.compare("SURF") )
+        frame = new Frame( visual_image, depth_image, camera_parameters_, surf_detector_, surf_extractor_, plane_segmentor_);
+    else{
+        ROS_ERROR_STREAM("keypoint_type_ undefined.");
+        return;
+    }
     frame->stamp_ = visual_img_msg->header.stamp;
     frame->valid_ = false;
     //
@@ -454,6 +465,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     else
     {
         frame_count_ = 1;
+        // check number of planes ???
         if( frame->segment_planes_.size() > 0)
         {
             frame->valid_ = true;   // first frame, set valid, add to mapper as first frame
@@ -484,10 +496,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
         publishVisualOdometryPose();
         publishVisualOdometryPath();
     }
-    else
-    {
 
-    }
 
     // Mapping
     if( frame->valid_ ) // always valid
@@ -515,7 +524,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
 
     // Display frame
     viewer_->removeFrames();
-    if( last_frame_valid )
+    if( last_frame_valid && last_frame->valid_ )
         viewer_->displayFrame( *last_frame, "last_frame", viewer_->vp1() );
     if( frame->valid_ )
         viewer_->displayFrame( *frame, "frame", viewer_->vp2() );
@@ -544,13 +553,18 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
         cout << GREEN << " Runtimes size: " << runtimes_.size() << RESET << endl;
     }
 
-    if( frame->valid_ )
+    if( frame->valid_ )    // store key frame
     {
-        last_frame_valid = true;
+        if( !last_frame_valid )
+            last_frame_valid = true;    // set last frame valid
+        else if( !(last_frame->key_frame_) ) // delete last frame if not keyframe
+            delete last_frame;
         last_frame = frame;
     }
     else
-        delete frame;
+    {
+        delete frame;   // delete invalid frame
+    }
 }
 
 void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visual_img_msg,
@@ -577,7 +591,15 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     double total_dura;
 
     // Compute Frame
-    Frame *frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_);
+    Frame *frame;
+    if( !keypoint_type_.compare("ORB") )
+        frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_);
+    else if( !keypoint_type_.compare("SURF") )
+        frame = new Frame( visual_image, depth_image, camera_parameters_, surf_detector_, surf_extractor_, plane_segmentor_);
+    else{
+        ROS_ERROR_STREAM("keypoint_type_ undefined.");
+        return;
+    }
     frame->stamp_ = visual_img_msg->header.stamp;
     frame->valid_ = false;
     //
@@ -609,6 +631,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     }
     else
     {
+        // check number of planes for 1st frame ???
         if( frame->segment_planes_.size() > 0)
             frame->valid_ = true;   // first frame, set valid, add to mapper as first frame
     }
@@ -661,10 +684,6 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
         publishVisualOdometryPose();
         publishVisualOdometryPath();
     }
-    else if( !motion.valid )    // Not first frame, motion is invalid, return.
-    {
-        return;
-    }
 
     // Mapping
     if( frame->valid_ )
@@ -692,7 +711,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
 
     // Display frame
     viewer_->removeFrames();
-    if( last_frame_valid )
+    if( last_frame_valid && last_frame->valid_ )
         viewer_->displayFrame( *last_frame, "last_frame", viewer_->vp1() );
     if( frame->valid_ )
         viewer_->displayFrame( *frame, "frame", viewer_->vp2() );
@@ -721,13 +740,19 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
         cout << GREEN << " Runtimes size: " << runtimes_.size() << RESET << endl;
     }
 
+
     if( frame->valid_ )    // store key frame
     {
-        last_frame_valid = true;    // set last frame valid
+        if( !last_frame_valid )
+            last_frame_valid = true;    // set last frame valid
+        else if( !(last_frame->key_frame_) ) // delete last frame if not keyframe
+            delete last_frame;
         last_frame = frame;
     }
     else
-        delete frame;   // delete
+    {
+        delete frame;   // delete invalid frame
+    }
 }
 
 void KinectListener::savePathAndLandmarks( const std::string &filename )

@@ -25,11 +25,16 @@ public:
            ORBextractor *orb_extractor, LineBasedPlaneSegmentor *plane_segmentor );
     Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
            ORBextractor* orb_extractor, LineBasedPlaneSegmentor* plane_segmentor );
+    Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
+           cv::FeatureDetector* surf_detector, cv::DescriptorExtractor* surf_extractor,
+           LineBasedPlaneSegmentor* plane_segmentor );
 
+    void extractSurf();
     void extractORB();
     void segmentPlane();
     inline void setId( int id ) { id_ = id; }
     int &id() {return id_;}
+    void throttleMemory();
 
     enum { VGA = 0, QVGA = 1, QQVGA = 2};
     //
@@ -50,10 +55,13 @@ public:
                                         const CameraParameters& camera );
 
 private:
-
-
+    cv::FeatureDetector* surf_detector_;
+    cv::DescriptorExtractor* surf_extractor_;
     ORBextractor *orb_extractor_;
     LineBasedPlaneSegmentor *plane_segmentor_;
+    // Surf detector/extractor
+
+
 
 public:
     // Key frame
@@ -61,6 +69,7 @@ public:
     // Valid
     bool valid_;    // for first frame, valid is under the condition that the number of planes is not zero,
                     // for other frame, valid is under the condition that relative motion respect to previous frame is valid.
+    std::string keypoint_type_;
     // Id
     int id_;
     // Time Stamp
@@ -70,6 +79,8 @@ public:
     // Sensor data
     cv::Mat visual_image_;  // visual image
     cv::Mat gray_image_;    // gray image
+    cv::Mat depth_image_;   // depth image
+    cv::Mat depth_mono8_image_; // depth mono8 image
     PointCloudTypePtr cloud_;   // organized point cloud
     // Camera parameters
     CameraParameters camera_params_;
