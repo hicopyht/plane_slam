@@ -1,0 +1,2 @@
+freiburg1_floor: -s 10.0 -u 38.0
+freiburg1_floor: -s 16.0 -u 32.0
