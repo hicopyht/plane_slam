@@ -85,6 +85,9 @@ bool GTMapping::mappingMix( Frame *frame )
         }
     }
 
+    // Throttle memory
+    if( success )
+        frame->throttleMemory();
 
 //    // Map visualization
 //    if( success )
@@ -1933,7 +1936,8 @@ void GTMapping::updateOctoMap()
             number ++;
             const int id = itf->first;
             const Frame *frame = itf->second;
-            const PointCloudTypePtr &cloud = frame->cloud_;
+//            const PointCloudTypePtr &cloud = frame->cloud_;
+            const PointCloudTypePtr &cloud = frame->cloud_downsampled_;
             const tf::Transform &pose = frame->pose_;
 
             // Construct a octomap::Pointcloud type
@@ -2197,6 +2201,7 @@ void GTMapping::updateMapViewer()
     publishKeypointCloud();
     // Map in pcl visualization
     viewer_->removeMap();
+    viewer_->displayPath( optimized_poses_list_, "optimized_path" );
     viewer_->displayMapLandmarks( landmarks_list_, "MapPlane" );
     if( viewer_->isDisplayKeypointLandmarks() )
         viewer_->displayMapLandmarks( getKeypointCloud(!publish_keypoint_cloud_), "MapPoint");
@@ -2342,7 +2347,8 @@ PointCloudTypePtr GTMapping::getStructureCloud()
         Frame *frame = it->second;
         Eigen::Matrix4d trans = transformTFToMatrix4d( frame->pose_ );
         PointCloudTypePtr cloud_voxeled( new PointCloudType );
-        voxelGridFilter( frame->cloud_, cloud_voxeled, construct_full_leaf_size_ );
+//        voxelGridFilter( frame->cloud_, cloud_voxeled, construct_full_leaf_size_ );
+        voxelGridFilter( frame->cloud_downsampled_, cloud_voxeled, construct_full_leaf_size_ );
 //        PointCloudTypePtr cloud_filtered( new PointCloudType );
 //        radiusOutlierRemoval( cloud_voxeled, cloud_filtered, radius, min_neighbors );  // remove bad inlier
         *structure_cloud += transformPointCloud( *(cloud_voxeled), trans );
@@ -2395,7 +2401,8 @@ octomap::OcTree * GTMapping::createOctoMap( double resolution )
         number ++;
         const int id = itf->first;
         const Frame *frame = itf->second;
-        const PointCloudTypePtr &cloud = frame->cloud_;
+//        const PointCloudTypePtr &cloud = frame->cloud_;
+        const PointCloudTypePtr &cloud = frame->cloud_downsampled_;
         const tf::Transform &pose = frame->pose_;
 
         // Construct a octomap::Pointcloud type

@@ -94,7 +94,7 @@ void Viewer::displayFrame(const Frame &frame, const std::string &prefix, int vie
     pcl_viewer_->addText(prefix, 100, 3, 0.0, 0.0, 0.0, prefix+"_text", viewport);
 
     // Input cloud
-    if( display_input_cloud_ )
+    if( display_input_cloud_ && frame.cloud_ )
     {
         pcl_viewer_->addPointCloud( frame.cloud_, prefix+"_"+"rgba_cloud", viewport );
         pcl_viewer_->setPointCloudRenderingProperties ( pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, prefix+"_"+"rgba_cloud", viewport );
@@ -290,7 +290,60 @@ void Viewer::displayMapLandmarks( const std::vector<PlaneType> &landmarks, const
     }
 }
 
+void Viewer::displayPath( const std::vector<geometry_msgs::PoseStamped> &poses, const std::string &prefix, double r, double g, double b )
+{
+    if( !display_pathes_ )
+        return;
 
+    for( int i = 1; i < poses.size(); i++)
+    {
+        const geometry_msgs::PoseStamped &pose1 = poses[i-1];
+        const geometry_msgs::PoseStamped &pose2 = poses[i];
+        // id
+        stringstream ss;
+        ss << prefix << "_line_" << i;
+        // add line
+        pcl::PointXYZ p1(pose1.pose.position.x, pose1.pose.position.y, pose1.pose.position.z),
+                p2(pose2.pose.position.x, pose2.pose.position.y, pose2.pose.position.z);
+        map_viewer_->addLine( p1, p2, r, g, b, ss.str() );
+    }
+}
+
+void Viewer::displayPath( const std::map<int, gtsam::Pose3> &optimized_poses, const std::string &prefix )
+{
+    if(!display_pathes_ || !display_optimized_path_)
+        return;
+
+    bool last_valid = false;
+    pcl::PointXYZ p1, p2;
+    for( std::map<int, gtsam::Pose3>::const_iterator it = optimized_poses.begin();
+            it != optimized_poses.end(); it++)
+    {
+        const gtsam::Pose3 &pose = it->second;
+        //
+        if( !last_valid )
+        {
+            p1.x = pose.x();
+            p1.y = pose.y();
+            p1.z = pose.z();
+            last_valid = true;
+            continue;
+        }
+
+        // id
+        stringstream ss;
+        ss << prefix << "_line_" << it->first;
+        // add line
+        p2.x = pose.x();
+        p2.y = pose.y();
+        p2.z = pose.z();
+        map_viewer_->addLine( p1, p2, 0, 255, 0, ss.str() );
+        //
+        p1 = p2;
+    }
+
+//    cout << GREEN << " Viewer optimized path in map viewer, pose = " << optimized_poses.size() << RESET << endl;
+}
 
 void Viewer::displayPlanes( const PointCloudTypePtr &input, const std::vector<PlaneType> &planes, const std::string &prefix, int viewport)
 {
@@ -724,6 +777,9 @@ void Viewer::viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t 
     display_landmark_boundary_ = config.display_landmark_boundary;
     display_landmark_hull_ = config.display_landmark_hull;
     display_landmark_label_ = config.display_landmark_label;
+    //
+    display_optimized_path_ = config.display_optimized_path;
+    display_pathes_ = config.display_pathes;
 
     cout << GREEN <<" Viewer Config." << RESET << endl;
 }

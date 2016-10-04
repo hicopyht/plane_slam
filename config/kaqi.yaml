@@ -1,0 +1,29 @@
+%YAML:1.0
+
+#--------------------------------------------------------------------------------------------
+# Camera Parameters. Adjust them!
+#--------------------------------------------------------------------------------------------
+camera.fx: 525.0
+camera.fy: 525.0
+camera.cx: 319.5
+camera.cy: 239.5
+camera.scale: 1.0
+camera.width: 640
+camera.height: 480
+
+# Topic name
+depth_topic: /head_kinect/depth_registered/image
+rgb_topic: /head_kinect/rgb/image_rect_color
+
+# Initial pose
+# kaqi
+# Init pose: ()
+# - R(rpy): -0.174, 0, 0.714
+# - T:      -1.5708, 0, -1.5708
+initPose.x: -0.174
+initPose.y: 0
+initPose.z: 0.714
+initPose.roll: -1.5708
+initPose.pitch: 0
+initPose.yaw: -1.5708
+

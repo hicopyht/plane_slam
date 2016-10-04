@@ -135,7 +135,7 @@ void Frame::throttleMemory()
     depth_mono8_image_.release();
     visual_image_downsampled_.release();
     //
-
+    cloud_->clear();
 }
 
 // Feature extraction, using visual image and cloud in VGA resolution

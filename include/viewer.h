@@ -52,6 +52,10 @@ public:
 
     void displayMapLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix = "landmark" );
 
+    void displayPath( const std::vector<geometry_msgs::PoseStamped> &poses, const std::string &prefix = "path", double r = 255, double g = 0, double b = 0 );
+
+    void displayPath( const std::map<int, gtsam::Pose3> &optimized_poses, const std::string &prefix = "optimized_path" );
+
     void displayPlanes( const PointCloudTypePtr &input, const std::vector<PlaneType> &planes, const std::string &prefix, int viewport);
 
     void displayLinesAndNormals( const PointCloudTypePtr &input,
@@ -124,6 +128,9 @@ private:
     bool display_landmark_boundary_;
     bool display_landmark_hull_;
     bool display_landmark_label_;
+    //
+    bool display_optimized_path_;
+    bool display_pathes_;
 
 };
 

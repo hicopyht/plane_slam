@@ -267,7 +267,7 @@ Visualization Manager:
       Queue Size: 10
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.02
+      Size (m): 0.05
       Style: Spheres
       Topic: /keypoints_cloud
       Unreliable: false
@@ -418,7 +418,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 23.2753
+      Distance: 14.5001
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.06
         Stereo Focal Distance: 1
@@ -430,10 +430,10 @@ Visualization Manager:
         Z: -0.411984
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.564801
+      Pitch: 0.709801
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.97983
+      Yaw: 3.81983
     Saved: ~
 Window Geometry:
   Displays:
