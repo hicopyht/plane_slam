@@ -25,7 +25,7 @@ Frame::Frame( PointCloudTypePtr &input, CameraParameters &camera_params,
       plane_segmentor_(plane_segmentor)
 {
     // Observation
-    cloud_ = input;
+    cloud_ = input; // no copy
     camera_params_ = camera_params;
 
     // Downsample cloud
@@ -47,8 +47,8 @@ Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camer
       plane_segmentor_(plane_segmentor)
 {
     // Observation
-    visual_image_ = visual;
-    cloud_ = input;
+    visual_image_ = visual; // no copy
+    cloud_ = input; // no copy
     camera_params_ = camera_params;
 
     // Downsample cloud
@@ -78,9 +78,9 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
     PointCloudTypePtr input = image2PointCloud( visual, depth, camera_params );
 
     // Observation
-    visual_image_ = visual;
-    depth_image_ = depth;
-    cloud_ = input;
+    visual_image_ = visual; // no copy
+    depth_image_ = depth;   // no copy
+    cloud_ = input; // no copy
     camera_params_ = camera_params;
 
     // Downsample cloud
@@ -110,8 +110,9 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
     PointCloudTypePtr input = image2PointCloud( visual, depth, camera_params );
 
     // Observation
-    visual_image_ = visual;
-    cloud_ = input;
+    visual_image_ = visual; // no copy
+    depth_image_ = depth;
+    cloud_ = input; // no copy
     camera_params_ = camera_params;
 
     // Downsample cloud

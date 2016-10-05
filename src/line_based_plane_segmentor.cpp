@@ -35,6 +35,8 @@ void LineBasedPlaneSegmentor::operator()(PointCloudTypePtr &input, std::vector<P
         cout << "Initialize line base segment." << endl;
     }
 
+
+
     // Do segment
     std::vector<PlaneFromLineSegment::NormalType> line_based_planes;
     plane_from_line_segment_.setInputCloud( cloud_in );

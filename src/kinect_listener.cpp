@@ -120,6 +120,21 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
         return;
     }
 
+//    // skip, 2184,2194,2979,2980,3007,3012,3592,3593,3607
+//    if( depth_img_msg->header.seq == 2184
+//            || depth_img_msg->header.seq == 2194
+//            || depth_img_msg->header.seq == 2979
+//            || depth_img_msg->header.seq == 2980
+//            || depth_img_msg->header.seq == 3007
+//            || depth_img_msg->header.seq == 3012
+//            || depth_img_msg->header.seq == 3592
+//            || depth_img_msg->header.seq == 3593
+//            || depth_img_msg->header.seq == 3607 )
+//    {
+//        cout << BLUE << " Skip bad message." << RESET << endl;
+//        return;
+//    }
+
     cout << RESET << "----------------------------------------------------------------------" << endl;
     // Get odom pose
     tf::Transform odom_pose;
@@ -308,7 +323,7 @@ void KinectListener::trackPointCloud( const sensor_msgs::PointCloud2ConstPtr &po
     step_time = ros::Time::now();
 
     // Store last odom
-    if( frame->key_frame_ )
+    if( frame->key_frame_ && do_slam_ )
     {
         last_odom_pose = odom_pose;
     }
@@ -499,7 +514,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
 
 
     // Mapping
-    if( frame->valid_ ) // always valid
+    if( frame->valid_ && do_slam_ ) // always valid
     {
         if( mapping_keypoint_ )
             frame->key_frame_ = gt_mapping_->mappingMix( frame );
@@ -592,10 +607,12 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
 
     // Compute Frame
     Frame *frame;
-    if( !keypoint_type_.compare("ORB") )
+    if( !keypoint_type_.compare("ORB") ){
         frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_);
-    else if( !keypoint_type_.compare("SURF") )
+    }
+    else if( !keypoint_type_.compare("SURF") ){
         frame = new Frame( visual_image, depth_image, camera_parameters_, surf_detector_, surf_extractor_, plane_segmentor_);
+    }
     else{
         ROS_ERROR_STREAM("keypoint_type_ undefined.");
         return;
@@ -686,7 +703,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     }
 
     // Mapping
-    if( frame->valid_ )
+    if( frame->valid_ && do_slam_ )
     {
         if( mapping_keypoint_ )
             frame->key_frame_ = gt_mapping_->mappingMix( frame );
@@ -1007,7 +1024,7 @@ bool KinectListener::getOdomPose( tf::Transform &odom_pose, const std::string &c
     }
     catch(tf::TransformException e)
     {
-        ROS_WARN("Failed to compute odom pose, skipping.", e.what());
+        ROS_WARN("Failed to compute odom pose.", e.what());
         return false;
     }
 
@@ -1103,11 +1120,11 @@ bool KinectListener::saveSlamResultSimpleCallback(std_srvs::Trigger::Request &re
     saveKeypointLandmarks( prefix + "keypoints.txt");   // save keypoints
     saveRuntimes( prefix + "runtimes.txt" );   // save runtimes
     gt_mapping_->saveGraphDot( prefix + "graph.dot");      // save grapy
+    gt_mapping_->saveMapKeypointPCD( prefix + "map_keypoints.pcd"); // save keypoint cloud
     gt_mapping_->saveMapPCD( prefix + "map.pcd");          // save map
     gt_mapping_->saveMapFullPCD( prefix + "map_full.pcd"); // save map full
     gt_mapping_->saveMapFullColoredPCD( prefix + "map_full_colored.pcd"); // save map full colored
 //    gt_mapping_->saveStructurePCD( prefix + "structure.pcd"); // save structure cloud
-    gt_mapping_->saveMapKeypointPCD( prefix + "map_keypoints.pcd"); // save keypoint cloud
     res.success = true;
     res.message = " Save slam result(landmarks&path, map(simplied, keypoints, full, full colored, structure), graph) to directory: " + dir + ".";
     cout << GREEN << res.message << RESET << endl;
@@ -1128,11 +1145,11 @@ bool KinectListener::saveSlamResultCallback(std_srvs::Trigger::Request &req, std
     saveKeypointLandmarks( prefix + "keypoints.txt");   // save keypoints
     saveRuntimes( prefix + "runtimes.txt" );   // save runtimes
     gt_mapping_->saveGraphDot( prefix + "graph.dot");      // save grapy
+    gt_mapping_->saveMapKeypointPCD( prefix + "map_keypoints.pcd"); // save keypoint cloud
     gt_mapping_->saveMapPCD( prefix + "map.pcd");          // save map
     gt_mapping_->saveMapFullPCD( prefix + "map_full.pcd"); // save map full
     gt_mapping_->saveMapFullColoredPCD( prefix + "map_full_colored.pcd"); // save map full colored
     gt_mapping_->saveStructurePCD( prefix + "structure.pcd"); // save structure cloud
-    gt_mapping_->saveMapKeypointPCD( prefix + "map_keypoints.pcd"); // save keypoint cloud
     res.success = true;
     res.message = " Save slam result(landmarks&path, map(simplied, keypoints, full, full colored, structure), graph) to directory: " + dir + ".";
     cout << GREEN << res.message << RESET << endl;
