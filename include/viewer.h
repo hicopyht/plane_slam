@@ -134,6 +134,7 @@ private:
     bool display_landmark_hull_;
     bool display_landmark_label_;
     //
+    bool display_camera_fov_;
     bool display_optimized_path_;
     bool display_pathes_;
 

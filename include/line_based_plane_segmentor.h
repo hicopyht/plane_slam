@@ -58,6 +58,7 @@ private:
     float k_curvature_;
     float k_inlier_;
     unsigned min_inliers_;
+    float max_curvature_;
     float distance_threshold_;
     float neighbor_threshold_;
     bool optimize_coefficients_;

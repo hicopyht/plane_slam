@@ -259,7 +259,7 @@ private:
 
     //
     std::string map_frame_;
-    Pose3 last_estimated_pose_;
+    gtsam::Pose3 last_estimated_pose_;
     tf::Transform last_estimated_pose_tf_;
     cv::RNG rng_;
 

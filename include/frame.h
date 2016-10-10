@@ -9,6 +9,7 @@
 #include <plane_from_line/plane_from_line_segment.h>
 #include "orb_extractor.h"
 #include "line_based_plane_segmentor.h"
+#include "organized_multi_plane_segmentor.h"
 #include "utils.h"
 
 namespace plane_slam
@@ -28,10 +29,21 @@ public:
     Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
            cv::FeatureDetector* surf_detector, cv::DescriptorExtractor* surf_extractor,
            LineBasedPlaneSegmentor* plane_segmentor );
+    //
+    Frame( PointCloudTypePtr &input, CameraParameters &camera_params,
+           OrganizedPlaneSegmentor* organized_plane_segmentor);
+    Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camera_params,
+           ORBextractor *orb_extractor, OrganizedPlaneSegmentor* organized_plane_segmentor );
+    Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
+           ORBextractor* orb_extractor, OrganizedPlaneSegmentor* organized_plane_segmentor );
+    Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
+           cv::FeatureDetector* surf_detector, cv::DescriptorExtractor* surf_extractor,
+           OrganizedPlaneSegmentor* organized_plane_segmentor );
 
     void extractSurf();
     void extractORB();
-    void segmentPlane();
+    void lineBasedPlaneSegment();
+    void organizedPlaneSegment();
     inline void setId( int id ) { id_ = id; }
     int &id() {return id_;}
     void throttleMemory();
@@ -58,7 +70,8 @@ private:
     cv::FeatureDetector* surf_detector_;
     cv::DescriptorExtractor* surf_extractor_;
     ORBextractor *orb_extractor_;
-    LineBasedPlaneSegmentor *plane_segmentor_;
+    LineBasedPlaneSegmentor *line_based_plane_segmentor_;
+    OrganizedPlaneSegmentor *organized_plane_segmentor_;
     // Surf detector/extractor
 
 

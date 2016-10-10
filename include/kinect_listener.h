@@ -59,6 +59,9 @@ class KinectListener
 {
 
 public:
+    enum{ LineBased = 0, OMPS = 1}; // define segment method
+
+public:
     KinectListener();
 
     ~KinectListener();
@@ -159,12 +162,14 @@ private:
     cv::FeatureDetector* surf_detector_;
     cv::DescriptorExtractor* surf_extractor_;
     ORBextractor* orb_extractor_;
-    LineBasedPlaneSegmentor* plane_segmentor_;
+    LineBasedPlaneSegmentor* line_based_plane_segmentor_;
+    OrganizedPlaneSegmentor* organized_plane_segmentor_;
     Viewer *viewer_;
     Tracking *tracker_;
     GTMapping *gt_mapping_;
 
     // Plane slam common parameters
+    int plane_segment_method_;
     bool do_visual_odometry_;
     bool do_mapping_;
     bool do_slam_;

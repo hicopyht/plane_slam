@@ -98,6 +98,7 @@ void LineBasedPlaneSegmentor::updateLineBasedPlaneSegmentParameters()
     plane_from_line_segment_.setPlaneSegmentCriterion( plane_segment_criterion_ );
     plane_from_line_segment_.setCriterionBothParameters( k_curvature_, k_inlier_ );
     plane_from_line_segment_.setMinInliers( min_inliers_ );
+    plane_from_line_segment_.setMaxCurvature( max_curvature_ );
     plane_from_line_segment_.setDistanceThreshold( distance_threshold_ );
     plane_from_line_segment_.setNeighborThreshold( neighbor_threshold_ );
     plane_from_line_segment_.setOptimizeCoefficients( optimize_coefficients_ );
@@ -137,6 +138,7 @@ void LineBasedPlaneSegmentor::lineBasedSegmentReconfigCallback( plane_slam::Line
     k_curvature_ = config.k_curvature;
     k_inlier_ = config.k_inlier;
     min_inliers_ = config.min_inliers;
+    max_curvature_ = config.max_curvature;
     distance_threshold_ = config.distance_threshold;
     neighbor_threshold_ = config.neighbor_threshold;
     optimize_coefficients_ = config.optimize_coefficients;

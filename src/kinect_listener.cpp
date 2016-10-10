@@ -31,7 +31,8 @@ KinectListener::KinectListener() :
     surf_detector_ = new DetectorAdjuster("SURF", 200);
     surf_extractor_ = new cv::SurfDescriptorExtractor();
     orb_extractor_ = new ORBextractor( 1000, 1.2, 8, 20, 7);
-    plane_segmentor_ = new LineBasedPlaneSegmentor(nh_);
+    line_based_plane_segmentor_ = new LineBasedPlaneSegmentor(nh_);
+    organized_plane_segmentor_ = new OrganizedPlaneSegmentor(nh_);
     viewer_ = new Viewer(nh_);
     tracker_ = new Tracking(nh_, viewer_ );
     gt_mapping_ = new GTMapping(nh_, viewer_, tracker_);
@@ -228,7 +229,11 @@ void KinectListener::trackPointCloud( const sensor_msgs::PointCloud2ConstPtr &po
     double total_dura;
 
     // Compute Frame
-    Frame *frame = new Frame( input, camera_parameters_, plane_segmentor_);
+    Frame *frame;
+    if( plane_segment_method_ == LineBased )
+        frame = new Frame( input, camera_parameters_, line_based_plane_segmentor_);
+    else
+        frame = new Frame( input, camera_parameters_, organized_plane_segmentor_);
     frame->stamp_ = point_cloud->header.stamp;
     frame->valid_ = false;
     //
@@ -418,10 +423,22 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     // Compute Frame
     Frame *frame;
     if( !keypoint_type_.compare("ORB") )
-        frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_);
+    {
+        if( plane_segment_method_ == LineBased )
+            frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, line_based_plane_segmentor_);
+        else
+            frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, organized_plane_segmentor_);
+
+    }
     else if( !keypoint_type_.compare("SURF") )
-        frame = new Frame( visual_image, depth_image, camera_parameters_, surf_detector_, surf_extractor_, plane_segmentor_);
-    else{
+    {
+        if( plane_segment_method_ == LineBased )
+            frame = new Frame( visual_image, depth_image, camera_parameters_, surf_detector_, surf_extractor_, line_based_plane_segmentor_);
+        else
+            frame = new Frame( visual_image, depth_image, camera_parameters_, surf_detector_, surf_extractor_, organized_plane_segmentor_);
+
+    }else
+    {
         ROS_ERROR_STREAM("keypoint_type_ undefined.");
         return;
     }
@@ -430,6 +447,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     //
     frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
+    //
 
     // Guess motion from odom
     if( !last_frame_valid )
@@ -551,6 +569,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     //
     total_dura = (step_time - start_time).toSec() * 1000.0f;
     // Print time
+    cout << GREEN << "Segment planes = " << frame->segment_planes_.size() << RESET << endl;
     cout << GREEN << "Processing total time: " << total_dura << endl;
     cout << "Time:"
          << " frame: " << frame_dura
@@ -607,13 +626,23 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
 
     // Compute Frame
     Frame *frame;
-    if( !keypoint_type_.compare("ORB") ){
-        frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, plane_segmentor_);
+    if( !keypoint_type_.compare("ORB") )
+    {
+        if( plane_segment_method_ == LineBased )
+            frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, line_based_plane_segmentor_);
+        else
+            frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, organized_plane_segmentor_);
+
     }
-    else if( !keypoint_type_.compare("SURF") ){
-        frame = new Frame( visual_image, depth_image, camera_parameters_, surf_detector_, surf_extractor_, plane_segmentor_);
-    }
-    else{
+    else if( !keypoint_type_.compare("SURF") )
+    {
+        if( plane_segment_method_ == LineBased )
+            frame = new Frame( visual_image, depth_image, camera_parameters_, surf_detector_, surf_extractor_, line_based_plane_segmentor_);
+        else
+            frame = new Frame( visual_image, depth_image, camera_parameters_, surf_detector_, surf_extractor_, organized_plane_segmentor_);
+
+    }else
+    {
         ROS_ERROR_STREAM("keypoint_type_ undefined.");
         return;
     }
@@ -1071,6 +1100,7 @@ void KinectListener::publishVisualOdometryPath()
 
 void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &config, uint32_t level)
 {
+    plane_segment_method_ = config.plane_segment_method;
     do_visual_odometry_ = config.do_visual_odometry;
     do_mapping_ = config.do_mapping;
     do_slam_ = config.do_slam;

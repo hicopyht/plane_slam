@@ -90,6 +90,7 @@ generate_dynamic_reconfigure_options(
   cfg/G2OMapping.cfg
   cfg/GTMapping.cfg
   cfg/LineBasedSegment.cfg
+  cfg/OrganizedSegment.cfg
   cfg/Viewer.cfg
   cfg/Tracking.cfg
 )
@@ -137,6 +138,7 @@ add_library( ${PROJECT_NAME}
     src/tracking.cpp
     src/frame.cpp
     src/line_based_plane_segmentor.cpp
+    src/organized_multi_plane_segmentor.cpp
     src/orb_extractor.cpp
     src/utils.cpp
     src/itree.cpp

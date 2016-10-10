@@ -35,12 +35,16 @@ Viewer::Viewer( ros::NodeHandle &nh)
     pcl_viewer_->setBackgroundColor( 1.0, 1.0, 1.0);
     pcl_viewer_->setShowFPS(true);
 
-    map_viewer_->addCoordinateSystem(0.5);
+    map_viewer_->addCoordinateSystem(1.0);
     map_viewer_->initCameraParameters();
 //    map_viewer_->setCameraPosition(0.0, 0.0, -2.4, 0, 0, 0.6, 0, -1, 0);
-    map_viewer_->setCameraPosition( 0, 3.0, 3.0, -3.0, 0, 0, -1, -1, 0 );
+//    map_viewer_->setCameraPosition( 0, 3.0, 3.0, -3.0, 0, 0, -1, -1, 0 );
 //    7.83553,18.0737/7.98352,-1.33264,5.13725/-1.65863,-6.09147,13.7632/0.253037,0.699241,0.668606/0.8575/683,384/65,52
 //    map_viewer_->setCameraPosition( -1.65863,-6.09147,13.7632, 7.98352,-1.33264,5.13725, 0.253037,0.699241,0.668606);
+    // x,x/view(xyz)/pos(xyz)/up(xyz>)/x/x/x
+    // Building A floor 5th
+    // 10.2436,27.831/9.25224,-10.2127,2.00293/17.1809,7.87367,15.4227/-0.458753,-0.390949,0.797938/0.8575/683,384/65,52
+    map_viewer_->setCameraPosition(17.1809,7.87367,15.4227,9.25224,-10.2127,2.00293,-0.458753,-0.390949,0.797938);
     map_viewer_->setBackgroundColor( 1.0, 1.0, 1.0);
     map_viewer_->setShowFPS(true);
     map_viewer_->setRepresentationToSurfaceForAllActors();
@@ -322,20 +326,28 @@ vtkSmartPointer<vtkPolyData> Viewer::createCameraFOVPolygon( const gtsam::Pose3 
     polygon2->GetPointIds()->SetId(0, 0);
     polygon2->GetPointIds()->SetId(1, 1);
     polygon2->GetPointIds()->SetId(2, 2);
+
     //
     vtkSmartPointer<vtkPolygon> polygon3 = vtkSmartPointer<vtkPolygon>::New();
-    polygon3->GetPointIds()->SetNumberOfIds(5);
+    polygon3->GetPointIds()->SetNumberOfIds(3);
     polygon3->GetPointIds()->SetId(0, 0);
-    polygon3->GetPointIds()->SetId(1, 6);
-    polygon3->GetPointIds()->SetId(2, 4);
-    polygon3->GetPointIds()->SetId(3, 3);
-    polygon3->GetPointIds()->SetId(4, 5);
+    polygon3->GetPointIds()->SetId(1, 5);
+    polygon3->GetPointIds()->SetId(2, 6);
+
+    //
+    vtkSmartPointer<vtkPolygon> polygon4 = vtkSmartPointer<vtkPolygon>::New();
+    polygon4->GetPointIds()->SetNumberOfIds(4);
+    polygon4->GetPointIds()->SetId(0, 3);
+    polygon4->GetPointIds()->SetId(1, 4);
+    polygon4->GetPointIds()->SetId(2, 6);
+    polygon4->GetPointIds()->SetId(3, 5);
 
     // Add the polygon to a list of polygons
     vtkSmartPointer<vtkCellArray> polygons = vtkSmartPointer<vtkCellArray>::New();
     polygons->InsertNextCell(polygon1);
     polygons->InsertNextCell(polygon2);
     polygons->InsertNextCell(polygon3);
+    polygons->InsertNextCell(polygon4);
 
     // Create a PolyData
     vtkSmartPointer<vtkPolyData> polygonPolyData = vtkSmartPointer<vtkPolyData>::New();
@@ -349,20 +361,23 @@ void Viewer::displayCameraFOV(  const gtsam::Pose3 pose )
 {
     static vtkSmartPointer<vtkPolyData> polygonPolyData = createCameraFOVPolygon( pose );
 
-    // Add camera pose
-    gtsam::Point3 translation = pose.translation();
-    gtsam::Vector3 xyz = pose.rotation().xyz();
+    if( display_camera_fov_ )
+    {
+        // Add camera pose
+        gtsam::Point3 translation = pose.translation();
+        gtsam::Vector3 xyz = pose.rotation().xyz();
 
-    // Set up the transform filter
-    vtkSmartPointer<vtkTransform> transform = vtkSmartPointer<vtkTransform>::New();
-    transform->PostMultiply();
-    transform->RotateX( xyz[0] * RAD_TO_DEG );
-    transform->RotateY( xyz[1] * RAD_TO_DEG );
-    transform->RotateZ( xyz[2] * RAD_TO_DEG );
-    transform->Translate( translation.x(), translation.y(), translation.z());
+        // Set up the transform filter
+        vtkSmartPointer<vtkTransform> transform = vtkSmartPointer<vtkTransform>::New();
+        transform->PostMultiply();
+        transform->RotateX( xyz[0] * RAD_TO_DEG );
+        transform->RotateY( xyz[1] * RAD_TO_DEG );
+        transform->RotateZ( xyz[2] * RAD_TO_DEG );
+        transform->Translate( translation.x(), translation.y(), translation.z());
 
-    //
-    map_viewer_->addModelFromPolyData( polygonPolyData, transform );
+        //
+        map_viewer_->addModelFromPolyData( polygonPolyData, transform, "camera_fov");
+    }
 }
 
 void Viewer::displayPath( const std::vector<geometry_msgs::PoseStamped> &poses, const std::string &prefix, double r, double g, double b )
@@ -394,12 +409,12 @@ void Viewer::displayPath( const std::map<int, gtsam::Pose3> &optimized_poses, co
 
     bool last_valid = false;
     pcl::PointXYZ p1, p2;
-    int last_index = 0;
+//    int last_index = 0;
     for( std::map<int, gtsam::Pose3>::const_iterator it = optimized_poses.begin();
             it != optimized_poses.end(); it++)
     {
         const gtsam::Pose3 &pose = it->second;
-        last_index = it->first;
+//        last_index = it->first;
         //
         if( !last_valid )
         {
@@ -422,7 +437,7 @@ void Viewer::displayPath( const std::map<int, gtsam::Pose3> &optimized_poses, co
         p1 = p2;
     }
 
-    displayCameraFOV( optimized_poses.at(last_index) );
+//    displayCameraFOV( optimized_poses.at(last_index) );
 
 //    cout << GREEN << " Viewer optimized path in map viewer, pose = " << optimized_poses.size() << RESET << endl;
 }
@@ -860,6 +875,7 @@ void Viewer::viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t 
     display_landmark_hull_ = config.display_landmark_hull;
     display_landmark_label_ = config.display_landmark_label;
     //
+    display_camera_fov_ = config.display_camera_fov;
     display_optimized_path_ = config.display_optimized_path;
     display_pathes_ = config.display_pathes;
 

@@ -2201,6 +2201,7 @@ void GTMapping::updateMapViewer()
     publishKeypointCloud();
     // Map in pcl visualization
     viewer_->removeMap();
+    viewer_->displayCameraFOV( last_estimated_pose_ );
     viewer_->displayPath( optimized_poses_list_, "optimized_path" );
     viewer_->displayMapLandmarks( landmarks_list_, "MapPlane" );
     if( viewer_->isDisplayKeypointLandmarks() )

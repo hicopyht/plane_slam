@@ -15,14 +15,14 @@ Frame::Frame()
 }
 
 Frame::Frame( PointCloudTypePtr &input, CameraParameters &camera_params,
-              LineBasedPlaneSegmentor* plane_segmentor)
+              LineBasedPlaneSegmentor* line_based_plane_segmentor)
     : valid_(false),
       key_frame_(false),
       camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
       keypoint_type_(""),
-      plane_segmentor_(plane_segmentor)
+      line_based_plane_segmentor_(line_based_plane_segmentor)
 {
     // Observation
     cloud_ = input; // no copy
@@ -32,11 +32,11 @@ Frame::Frame( PointCloudTypePtr &input, CameraParameters &camera_params,
     downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
 
     // Only segment planes
-    segmentPlane();
+    lineBasedPlaneSegment();
 }
 
 Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camera_params,
-              ORBextractor* orb_extractor, LineBasedPlaneSegmentor* plane_segmentor)
+              ORBextractor* orb_extractor, LineBasedPlaneSegmentor* line_based_plane_segmentor)
     : valid_(false),
       key_frame_(false),
       camera_params_(),
@@ -44,7 +44,7 @@ Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camer
       feature_cloud_( new PointCloudXYZ ),
       keypoint_type_( "ORB" ),
       orb_extractor_(orb_extractor),
-      plane_segmentor_(plane_segmentor)
+      line_based_plane_segmentor_(line_based_plane_segmentor)
 {
     // Observation
     visual_image_ = visual; // no copy
@@ -55,7 +55,7 @@ Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camer
     downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
 
     // Spin 2 threads, one for plane segmentation, another for keypoint extraction.
-    thread threadSegment( &Frame::segmentPlane, this );
+    thread threadSegment( &Frame::lineBasedPlaneSegment, this );
     thread threadExtract( &Frame::extractORB, this );
     threadSegment.join();
     threadExtract.join();
@@ -63,7 +63,7 @@ Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camer
 
 Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
               cv::FeatureDetector* surf_detector, cv::DescriptorExtractor* surf_extractor,
-              LineBasedPlaneSegmentor* plane_segmentor )
+              LineBasedPlaneSegmentor* line_based_plane_segmentor )
     : valid_(false),
       key_frame_(false),
       camera_params_(),
@@ -72,7 +72,7 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
       keypoint_type_( "SURF" ),
       surf_detector_( surf_detector ),
       surf_extractor_( surf_extractor ),
-      plane_segmentor_(plane_segmentor)
+      line_based_plane_segmentor_(line_based_plane_segmentor)
 {
     // Construct organized pointcloud
     PointCloudTypePtr input = image2PointCloud( visual, depth, camera_params );
@@ -89,14 +89,14 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
     // Spin 2 threads, one for plane segmentation, another for keypoint extraction.
 //    extractORB();
 //    segmentPlane();
-    thread threadSegment( &Frame::segmentPlane, this );
+    thread threadSegment( &Frame::lineBasedPlaneSegment, this );
     thread threadExtract( &Frame::extractSurf, this );
     threadSegment.join();
     threadExtract.join();
 }
 
 Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
-              ORBextractor* orb_extractor, LineBasedPlaneSegmentor* plane_segmentor)
+              ORBextractor* orb_extractor, LineBasedPlaneSegmentor* line_based_plane_segmentor )
     : valid_(false),
       key_frame_(false),
       camera_params_(),
@@ -104,7 +104,7 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
       feature_cloud_( new PointCloudXYZ ),
       keypoint_type_( "ORB" ),
       orb_extractor_( orb_extractor ),
-      plane_segmentor_( plane_segmentor )
+      line_based_plane_segmentor_( line_based_plane_segmentor )
 {
     // Construct organized pointcloud
     PointCloudTypePtr input = image2PointCloud( visual, depth, camera_params );
@@ -121,7 +121,121 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
     // Spin 2 threads, one for plane segmentation, another for keypoint extraction.
 //    extractORB();
 //    segmentPlane();
-    thread threadSegment( &Frame::segmentPlane, this );
+    thread threadSegment( &Frame::lineBasedPlaneSegment, this );
+    thread threadExtract( &Frame::extractORB, this );
+    threadSegment.join();
+    threadExtract.join();
+}
+
+
+Frame::Frame( PointCloudTypePtr &input, CameraParameters &camera_params,
+              OrganizedPlaneSegmentor* organized_plane_segmentor)
+    : valid_(false),
+      key_frame_(false),
+      camera_params_(),
+      cloud_downsampled_( new PointCloudType ),
+      feature_cloud_( new PointCloudXYZ ),
+      keypoint_type_(""),
+      organized_plane_segmentor_(organized_plane_segmentor)
+{
+    // Observation
+    cloud_ = input; // no copy
+    camera_params_ = camera_params;
+
+    // Downsample cloud
+    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
+
+    // Only segment planes
+    organizedPlaneSegment();
+}
+
+Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camera_params,
+              ORBextractor* orb_extractor, OrganizedPlaneSegmentor* organized_plane_segmentor)
+    : valid_(false),
+      key_frame_(false),
+      camera_params_(),
+      cloud_downsampled_( new PointCloudType ),
+      feature_cloud_( new PointCloudXYZ ),
+      keypoint_type_( "ORB" ),
+      orb_extractor_(orb_extractor),
+      organized_plane_segmentor_(organized_plane_segmentor)
+{
+    // Observation
+    visual_image_ = visual; // no copy
+    cloud_ = input; // no copy
+    camera_params_ = camera_params;
+
+    // Downsample cloud
+    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
+
+    // Spin 2 threads, one for plane segmentation, another for keypoint extraction.
+    thread threadSegment( &Frame::organizedPlaneSegment, this );
+    thread threadExtract( &Frame::extractORB, this );
+    threadSegment.join();
+    threadExtract.join();
+}
+
+Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
+              cv::FeatureDetector* surf_detector, cv::DescriptorExtractor* surf_extractor,
+              OrganizedPlaneSegmentor* organized_plane_segmentor )
+    : valid_(false),
+      key_frame_(false),
+      camera_params_(),
+      cloud_downsampled_( new PointCloudType ),
+      feature_cloud_( new PointCloudXYZ ),
+      keypoint_type_( "SURF" ),
+      surf_detector_( surf_detector ),
+      surf_extractor_( surf_extractor ),
+      organized_plane_segmentor_(organized_plane_segmentor)
+{
+    // Construct organized pointcloud
+    PointCloudTypePtr input = image2PointCloud( visual, depth, camera_params );
+
+    // Observation
+    visual_image_ = visual; // no copy
+    depth_image_ = depth;   // no copy
+    cloud_ = input; // no copy
+    camera_params_ = camera_params;
+
+    // Downsample cloud
+    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
+
+    // Spin 2 threads, one for plane segmentation, another for keypoint extraction.
+//    extractORB();
+//    segmentPlane();
+    thread threadSegment( &Frame::organizedPlaneSegment, this );
+    thread threadExtract( &Frame::extractSurf, this );
+    threadSegment.join();
+    threadExtract.join();
+}
+
+Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
+              ORBextractor* orb_extractor, OrganizedPlaneSegmentor* organized_plane_segmentor)
+    : valid_(false),
+      key_frame_(false),
+      camera_params_(),
+      cloud_downsampled_( new PointCloudType ),
+      feature_cloud_( new PointCloudXYZ ),
+      keypoint_type_( "ORB" ),
+      orb_extractor_( orb_extractor ),
+      organized_plane_segmentor_( organized_plane_segmentor )
+{
+    // Construct organized pointcloud
+    PointCloudTypePtr input = image2PointCloud( visual, depth, camera_params );
+
+    // Observation
+    visual_image_ = visual; // no copy
+    depth_image_ = depth;
+    cloud_ = input; // no copy
+    camera_params_ = camera_params;
+
+    // Downsample cloud
+    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
+
+    // Spin 2 threads, one for plane segmentation, another for keypoint extraction.
+//    extractORB();
+//    segmentPlane();
+    thread threadSegment( &Frame::organizedPlaneSegment, this );
     thread threadExtract( &Frame::extractORB, this );
     threadSegment.join();
     threadExtract.join();
@@ -178,9 +292,14 @@ void Frame::extractORB()
 }
 
 // Plane segmentation, using downsampled pointcloud in QVGA resolution.
-void Frame::segmentPlane()
+void Frame::lineBasedPlaneSegment()
 {
-    (*plane_segmentor_)( cloud_downsampled_, segment_planes_, camera_params_downsampled_ );
+    (*line_based_plane_segmentor_)( cloud_downsampled_, segment_planes_, camera_params_downsampled_ );
+}
+
+void Frame::organizedPlaneSegment()
+{
+    (*organized_plane_segmentor_)( cloud_downsampled_, segment_planes_ );
 }
 
 void Frame::downsampleOrganizedCloud( const PointCloudTypePtr &input, CameraParameters &in_camera,
