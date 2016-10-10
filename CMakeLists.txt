@@ -176,22 +176,22 @@ target_link_libraries(plane_slam_node_bagfile
     ${PROJECT_NAME}
 )
 
-#add_executable(pcd_publisher tools/pcd_publisher.cpp)
-#target_link_libraries(pcd_publisher
-#    ${catkin_LIBRARIES}
-#    ${PCL_LIBRARIES}
-#)
+add_executable(pcd_publisher tools/pcd_publisher.cpp)
+target_link_libraries(pcd_publisher
+    ${catkin_LIBRARIES}
+    ${PCL_LIBRARIES}
+)
 
-#add_executable(pcd_visualizer tools/pcd_visualizer.cpp)
-#target_link_libraries(pcd_visualizer
-#    ${catkin_LIBRARIES}
-#    ${PCL_LIBRARIES}
-#)
+add_executable(pcd_visualizer tools/pcd_visualizer.cpp)
+target_link_libraries(pcd_visualizer
+    ${catkin_LIBRARIES}
+    ${PCL_LIBRARIES}
+)
 
-#add_executable(path_publisher tools/path_publisher.cpp)
-#target_link_libraries(path_publisher
-#    ${catkin_LIBRARIES}
-#)
+add_executable(path_publisher tools/path_publisher.cpp)
+target_link_libraries(path_publisher
+    ${catkin_LIBRARIES}
+)
 
 add_executable(map_visualizer tools/map_visualizer.cpp)
 target_link_libraries(map_visualizer

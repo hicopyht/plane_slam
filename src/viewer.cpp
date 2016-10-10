@@ -290,6 +290,81 @@ void Viewer::displayMapLandmarks( const std::vector<PlaneType> &landmarks, const
     }
 }
 
+vtkSmartPointer<vtkPolyData> Viewer::createCameraFOVPolygon( const gtsam::Pose3 &pose )
+{
+    double yg = pose.translation().z();
+    double zg = yg / tan(DEG_TO_RAD*45.0/2.0);
+    double xg = tan(DEG_TO_RAD*58.0/2.0) * zg;
+    double z = 3.5; // meter
+    double y = tan(DEG_TO_RAD*45.0/2.0) * z;
+    double x = tan(DEG_TO_RAD*58.0/2.0) * z;
+
+    /// Setup four points
+    vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
+    points->InsertNextPoint(0.0, 0.0, 0.0);
+    points->InsertNextPoint(-x, -y, z);
+    points->InsertNextPoint(x, -y, z);
+    points->InsertNextPoint(x, yg, z);
+    points->InsertNextPoint(-x, yg, z);
+    points->InsertNextPoint(xg, yg, zg);
+    points->InsertNextPoint(-xg, yg, zg);
+
+    // Create the polygon
+    vtkSmartPointer<vtkPolygon> polygon1 = vtkSmartPointer<vtkPolygon>::New();
+    polygon1->GetPointIds()->SetNumberOfIds(4);
+    polygon1->GetPointIds()->SetId(0, 1);
+    polygon1->GetPointIds()->SetId(1, 2);
+    polygon1->GetPointIds()->SetId(2, 3);
+    polygon1->GetPointIds()->SetId(3, 4);
+    //
+    vtkSmartPointer<vtkPolygon> polygon2 = vtkSmartPointer<vtkPolygon>::New();
+    polygon2->GetPointIds()->SetNumberOfIds(3);
+    polygon2->GetPointIds()->SetId(0, 0);
+    polygon2->GetPointIds()->SetId(1, 1);
+    polygon2->GetPointIds()->SetId(2, 2);
+    //
+    vtkSmartPointer<vtkPolygon> polygon3 = vtkSmartPointer<vtkPolygon>::New();
+    polygon3->GetPointIds()->SetNumberOfIds(5);
+    polygon3->GetPointIds()->SetId(0, 0);
+    polygon3->GetPointIds()->SetId(1, 6);
+    polygon3->GetPointIds()->SetId(2, 4);
+    polygon3->GetPointIds()->SetId(3, 3);
+    polygon3->GetPointIds()->SetId(4, 5);
+
+    // Add the polygon to a list of polygons
+    vtkSmartPointer<vtkCellArray> polygons = vtkSmartPointer<vtkCellArray>::New();
+    polygons->InsertNextCell(polygon1);
+    polygons->InsertNextCell(polygon2);
+    polygons->InsertNextCell(polygon3);
+
+    // Create a PolyData
+    vtkSmartPointer<vtkPolyData> polygonPolyData = vtkSmartPointer<vtkPolyData>::New();
+    polygonPolyData->SetPoints(points);
+    polygonPolyData->SetPolys(polygons);
+
+    return polygonPolyData;
+}
+
+void Viewer::displayCameraFOV(  const gtsam::Pose3 pose )
+{
+    static vtkSmartPointer<vtkPolyData> polygonPolyData = createCameraFOVPolygon( pose );
+
+    // Add camera pose
+    gtsam::Point3 translation = pose.translation();
+    gtsam::Vector3 xyz = pose.rotation().xyz();
+
+    // Set up the transform filter
+    vtkSmartPointer<vtkTransform> transform = vtkSmartPointer<vtkTransform>::New();
+    transform->PostMultiply();
+    transform->RotateX( xyz[0] * RAD_TO_DEG );
+    transform->RotateY( xyz[1] * RAD_TO_DEG );
+    transform->RotateZ( xyz[2] * RAD_TO_DEG );
+    transform->Translate( translation.x(), translation.y(), translation.z());
+
+    //
+    map_viewer_->addModelFromPolyData( polygonPolyData, transform );
+}
+
 void Viewer::displayPath( const std::vector<geometry_msgs::PoseStamped> &poses, const std::string &prefix, double r, double g, double b )
 {
     if( !display_pathes_ )
@@ -314,12 +389,17 @@ void Viewer::displayPath( const std::map<int, gtsam::Pose3> &optimized_poses, co
     if(!display_pathes_ || !display_optimized_path_)
         return;
 
+    if( optimized_poses.size() == 0 )
+        return;
+
     bool last_valid = false;
     pcl::PointXYZ p1, p2;
+    int last_index = 0;
     for( std::map<int, gtsam::Pose3>::const_iterator it = optimized_poses.begin();
             it != optimized_poses.end(); it++)
     {
         const gtsam::Pose3 &pose = it->second;
+        last_index = it->first;
         //
         if( !last_valid )
         {
@@ -341,6 +421,8 @@ void Viewer::displayPath( const std::map<int, gtsam::Pose3> &optimized_poses, co
         //
         p1 = p2;
     }
+
+    displayCameraFOV( optimized_poses.at(last_index) );
 
 //    cout << GREEN << " Viewer optimized path in map viewer, pose = " << optimized_poses.size() << RESET << endl;
 }

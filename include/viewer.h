@@ -8,6 +8,7 @@
 #include <std_srvs/Trigger.h>
 #include "utils.h"
 #include "frame.h"
+#include <vtkTransform.h>
 
 namespace plane_slam
 {
@@ -51,6 +52,10 @@ public:
     void displayMapLandmarks( std::map<int, PlaneType*> &landmarks, const std::string &prefix = "plane_landmark" );
 
     void displayMapLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix = "landmark" );
+
+    vtkSmartPointer<vtkPolyData> createCameraFOVPolygon( const gtsam::Pose3 &pose );
+
+    void displayCameraFOV(  const gtsam::Pose3 pose );
 
     void displayPath( const std::vector<geometry_msgs::PoseStamped> &poses, const std::string &prefix = "path", double r = 255, double g = 0, double b = 0 );
 
