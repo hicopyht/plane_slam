@@ -19,7 +19,7 @@ Viewer::Viewer( ros::NodeHandle &nh)
 {
     viewer_config_callback_ = boost::bind(&Viewer::viewerReconfigCallback, this, _1, _2);
     viewer_config_server_.setCallback(viewer_config_callback_);
-    auto_spin_map_viewer_ss_ = nh_.advertiseService("auto_spin_map_viewer", &Viewer::autoSpinMapViewerCallback, this);
+    spin_map_viewer_ss_ = nh_.advertiseService("spin_map_viewer", &Viewer::autoSpinMapViewerCallback, this);
 
     pcl_viewer_->createViewPort(0, 0.5, 0.5, 1.0, viewer_v1_);
     pcl_viewer_->addText("RansacPlanes", 100, 3, "v3_text", viewer_v1_);
@@ -43,8 +43,8 @@ Viewer::Viewer( ros::NodeHandle &nh)
 //    map_viewer_->setCameraPosition( -1.65863,-6.09147,13.7632, 7.98352,-1.33264,5.13725, 0.253037,0.699241,0.668606);
     // x,x/view(xyz)/pos(xyz)/up(xyz>)/x/x/x
     // Building A floor 5th
-    // 10.2436,27.831/9.25224,-10.2127,2.00293/17.1809,7.87367,15.4227/-0.458753,-0.390949,0.797938/0.8575/683,384/65,52
-    map_viewer_->setCameraPosition(17.1809,7.87367,15.4227,9.25224,-10.2127,2.00293,-0.458753,-0.390949,0.797938);
+    // 18.4838,39.0089/-8.40921,-12.0519,4.25967/-8.33769,-18.6937,27.1933/-0.00491748,0.960514,0.278188/0.8575/683,384/64,79
+    map_viewer_->setCameraPosition(-8.33769,-18.6937,27.1933,-8.40921,-12.0519,4.25967,-0.00491748,0.960514,0.278188);
     map_viewer_->setBackgroundColor( 1.0, 1.0, 1.0);
     map_viewer_->setShowFPS(true);
     map_viewer_->setRepresentationToSurfaceForAllActors();
@@ -886,7 +886,7 @@ bool Viewer::autoSpinMapViewerCallback( std_srvs::Trigger::Request &req, std_srv
 {
     bool added = false;
     auto_spin_map_viewer_ = true;
-    ROS_INFO("Auto spin map viewer for 30 seconds.");
+    ROS_INFO("Spin map viewer for 30 seconds.");
     double dura = 30.0;
     int sec = 0;
     ros::Time time = ros::Time::now();
@@ -906,7 +906,8 @@ bool Viewer::autoSpinMapViewerCallback( std_srvs::Trigger::Request &req, std_srv
         {
             time += ros::Duration(1.0);
             sec ++;
-            ROS_INFO("Spinning time %d of %d seconds...", sec, (int)dura);
+            cout << WHITE << "\rSpinning " << sec << " of " << (int)dura << " seconds...";
+            flush(std::cout);
             //
             stringstream ss;
             ss << "Spinning " << sec << "/" << ((int)dura) << " seconds";
@@ -925,6 +926,7 @@ bool Viewer::autoSpinMapViewerCallback( std_srvs::Trigger::Request &req, std_srv
         if( ros::Time::now() > finish_time )
             auto_spin_map_viewer_ = false;
     }
+    cout << endl;
 
     map_viewer_->updateText( " ", 100, 20, 0.0, 0.0, 0.0, "spinning_text" );
     map_viewer_->spinOnce( 20 );

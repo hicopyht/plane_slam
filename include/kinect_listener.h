@@ -79,11 +79,14 @@ public:
                              const sensor_msgs::ImageConstPtr &depth_img_msg,
                              CameraParameters &camera);
 
-    void savePathAndLandmarks( const std::string &filename = "plane_slam_path_landmarks.txt" );
+    void savePlaneLandmarks( const std::string &filename = "plane_slam_plane_landmarks.txt" );
 
-    void saveKeypointLandmarks( const std::string &filename = "plane_slam_keypoints.txt" );
+    void saveKeypointLandmarks( const std::string &filename = "plane_slam_keypoint_landmarks.txt" );
 
-    void saveRuntimes( const std::string &filename );
+    void savePathToFile( const std::vector<geometry_msgs::PoseStamped> &poses,
+                         const std::string &filename = "plane_slam_pathes.txt");
+
+    void saveRuntimes( const std::string &filename = "runtimes.txt" );
 
     void cvtCameraParameter( const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
                              CameraParameters &camera);
@@ -103,7 +106,7 @@ protected:
 
     void planeSlamReconfigCallback( plane_slam::PlaneSlamConfig &config, uint32_t level);
 
-    bool savePathLandmarksCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
+    bool updateViewerOnceCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
 
     bool saveSlamResultSimpleCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );
 
@@ -153,9 +156,9 @@ private:
     ros::Publisher odom_path_publisher_;
     ros::Publisher visual_odometry_pose_publisher_;
     ros::Publisher visual_odometry_path_publisher_;
-    ros::ServiceServer save_path_landmarks_service_server_;
-    ros::ServiceServer save_slam_result_simple_;
-    ros::ServiceServer save_slam_result_all_;
+    ros::ServiceServer update_viewer_once_ss_;
+    ros::ServiceServer save_slam_result_simple_ss_;
+    ros::ServiceServer save_slam_result_all_ss_;
 
     //
     std::string keypoint_type_;

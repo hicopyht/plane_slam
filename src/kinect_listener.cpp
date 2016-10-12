@@ -59,9 +59,9 @@ KinectListener::KinectListener() :
     odom_path_publisher_ = nh_.advertise<nav_msgs::Path>("odom_path", 10);
     visual_odometry_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("visual_odometry_pose", 10);
     visual_odometry_path_publisher_ = nh_.advertise<nav_msgs::Path>("visual_odometry_path", 10);
-    save_path_landmarks_service_server_ = nh_.advertiseService("save_path_landmarks", &KinectListener::savePathLandmarksCallback, this );
-    save_slam_result_simple_ = nh_.advertiseService("save_slam_result_simple", &KinectListener::saveSlamResultSimpleCallback, this );
-    save_slam_result_all_ = nh_.advertiseService("save_slam_result", &KinectListener::saveSlamResultCallback, this );
+    update_viewer_once_ss_ = nh_.advertiseService("update_viewer_once", &KinectListener::updateViewerOnceCallback, this );
+    save_slam_result_simple_ss_ = nh_.advertiseService("save_slam_result_simple", &KinectListener::saveSlamResultSimpleCallback, this );
+    save_slam_result_all_ss_ = nh_.advertiseService("save_slam_result", &KinectListener::saveSlamResultCallback, this );
 
     // config subscribers
     if( !topic_point_cloud_.empty() && !topic_image_visual_.empty() && !topic_camera_info_.empty() ) // pointcloud2
@@ -801,16 +801,15 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     }
 }
 
-void KinectListener::savePathAndLandmarks( const std::string &filename )
+void KinectListener::savePlaneLandmarks( const std::string &filename )
 {
     FILE* yaml = std::fopen( filename.c_str(), "w" );
-    fprintf( yaml, "# landmarks and path file: %s\n", filename.c_str() );
+    fprintf( yaml, "# landmarks file: %s\n", filename.c_str() );
     fprintf( yaml, "# landmarks format: ax+by+cz+d = 0, (n,d), (a,b,c,d)\n");
-    fprintf( yaml, "# pose format: T(xyz) Q(xyzw)\n\n" );
 
     // Save Landmarks
     std::map<int, PlaneType*> landmarks = gt_mapping_->getLandmark();
-    fprintf( yaml, "# landmarks, size %d\n", landmarks.size() );
+    fprintf( yaml, "# landmarks, size %d\n\n", landmarks.size() );
     for( std::map<int, PlaneType*>::const_iterator it = landmarks.begin();
          it != landmarks.end(); it++)
     {
@@ -820,39 +819,28 @@ void KinectListener::savePathAndLandmarks( const std::string &filename )
         fprintf( yaml, "%f %f %f %f\n", lm->coefficients[0], lm->coefficients[1],
                 lm->coefficients[2], lm->coefficients[3] );
     }
-    fprintf( yaml, "\n\n");
+    fprintf( yaml, "\n");
 
-    // Save Optimized Path
-    std::vector<geometry_msgs::PoseStamped> optimized_poses = gt_mapping_->getOptimizedPath();
-    fprintf( yaml, "# optimized path, size %d\n", optimized_poses.size() );
-    for( int i = 0; i < optimized_poses.size(); i++)
+    // close
+    fclose(yaml);
+}
+
+void KinectListener::savePathToFile( const std::vector<geometry_msgs::PoseStamped> &poses,
+                                     const std::string &filename )
+{
+    FILE* yaml = std::fopen( filename.c_str(), "w" );
+    fprintf( yaml, "# %s\n", filename.c_str() );
+    fprintf( yaml, "# pose format: T(xyz) Q(xyzw)\n" );
+    fprintf( yaml, "# poses: %d\n\n", poses.size() );
+    // Save Path
+    for( int i = 0; i < poses.size(); i++)
     {
-        geometry_msgs::PoseStamped &pose = optimized_poses[i];
+        const geometry_msgs::PoseStamped &pose = poses[i];
         fprintf( yaml, "%f %f %f %f %f %f %f\n", pose.pose.position.x, pose.pose.position.y, pose.pose.position.z,
                  pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w );
 
     }
-    fprintf( yaml, "\n\n");
-
-    // Save Odom Path
-    fprintf( yaml, "# odom path, size %d\n", odom_poses_.size() );
-    for( int i = 0; i < odom_poses_.size(); i++)
-    {
-        geometry_msgs::PoseStamped &pose = odom_poses_[i];
-        fprintf( yaml, "%f %f %f %f %f %f %f\n", pose.pose.position.x, pose.pose.position.y, pose.pose.position.z,
-                 pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w );
-    }
-    fprintf( yaml, "\n\n");
-
-    // Save Visual Odometry Path
-    fprintf( yaml, "# visual odometry path, size %d\n", visual_odometry_poses_.size() );
-    for( int i = 0; i < visual_odometry_poses_.size(); i++)
-    {
-        geometry_msgs::PoseStamped &pose = visual_odometry_poses_[i];
-        fprintf( yaml, "%f %f %f %f %f %f %f\n", pose.pose.position.x, pose.pose.position.y, pose.pose.position.z,
-                 pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w );
-    }
-    fprintf( yaml, "\n\n");
+    fprintf( yaml, "\n");
 
     // close
     fclose(yaml);
@@ -1126,12 +1114,12 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     cout << GREEN <<" PlaneSlam Config." << RESET << endl;
 }
 
-bool KinectListener::savePathLandmarksCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res )
+bool KinectListener::updateViewerOnceCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res )
 {
-    std::string filename = "/home/lizhi/bags/result/" + timeToStr() + "_landmarks_path.txt";
-    savePathAndLandmarks( filename );
+    //
+    gt_mapping_->updateMapViewer();
     res.success = true;
-    res.message = " Save landmarks and path file: " + filename + ".";
+    res.message = " Update viewer once";
     cout << GREEN << res.message << RESET << endl;
     return true;
 }
@@ -1146,7 +1134,10 @@ bool KinectListener::saveSlamResultSimpleCallback(std_srvs::Trigger::Request &re
     else
         prefix = "/home/lizhi/bags/result/"+time_str+"/";
     //
-    savePathAndLandmarks( prefix + "landmarks_path.txt");  // save path and landmarks
+    savePlaneLandmarks( prefix + "planes.txt");  // save path and landmarks
+    savePathToFile( gt_mapping_->getOptimizedPath(), prefix + "optimized_path.txt");
+    savePathToFile( odom_poses_, prefix + "odom_path.txt");
+    savePathToFile( visual_odometry_poses_, prefix + "visual_odometry_path.txt");
     saveKeypointLandmarks( prefix + "keypoints.txt");   // save keypoints
     saveRuntimes( prefix + "runtimes.txt" );   // save runtimes
     gt_mapping_->saveGraphDot( prefix + "graph.dot");      // save grapy
@@ -1171,7 +1162,10 @@ bool KinectListener::saveSlamResultCallback(std_srvs::Trigger::Request &req, std
     else
         prefix = "/home/lizhi/bags/result/"+time_str+"/";
     //
-    savePathAndLandmarks( prefix + "landmarks_path.txt");  // save path and landmarks
+    savePlaneLandmarks( prefix + "planes.txt");  // save path and landmarks
+    savePathToFile( gt_mapping_->getOptimizedPath(), prefix + "optimized_path.txt");
+    savePathToFile( odom_poses_, prefix + "odom_path.txt");
+    savePathToFile( visual_odometry_poses_, prefix + "visual_odometry_path.txt");
     saveKeypointLandmarks( prefix + "keypoints.txt");   // save keypoints
     saveRuntimes( prefix + "runtimes.txt" );   // save runtimes
     gt_mapping_->saveGraphDot( prefix + "graph.dot");      // save grapy

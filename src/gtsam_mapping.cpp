@@ -576,6 +576,9 @@ bool GTMapping::mapping( Frame *frame )
         }
     }
 
+    // Throttle memory
+    if( success )
+        frame->throttleMemory();
 
 //    // Map visualization
 //    if( success )
@@ -2437,31 +2440,46 @@ octomap::OcTree * GTMapping::createOctoMap( double resolution )
 void GTMapping::saveMapPCD( const std::string &filename )
 {
     PointCloudTypePtr cloud = getMapCloud( true );
-    pcl::io::savePCDFileASCII ( filename, *cloud);
+    if( cloud->size() > 0 )
+        pcl::io::savePCDFileASCII ( filename, *cloud);
+    else
+        ROS_WARN_STREAM("Empty map cloud.");
 }
 
 void GTMapping::saveMapFullPCD( const std::string &filename )
 {
     PointCloudTypePtr cloud = getMapFullCloud();
-    pcl::io::savePCDFileASCII ( filename, *cloud);
+    if( cloud->size() > 0 )
+        pcl::io::savePCDFileASCII ( filename, *cloud);
+    else
+        ROS_WARN_STREAM("Empty map full cloud.");
 }
 
 void GTMapping::saveMapFullColoredPCD( const std::string &filename )
 {
     PointCloudTypePtr cloud = getMapFullCloud(true);
-    pcl::io::savePCDFileASCII ( filename, *cloud);
+    if( cloud->size() )
+        pcl::io::savePCDFileASCII ( filename, *cloud);
+    else
+        ROS_WARN_STREAM("Empty map full colored cloud.");
 }
 
 void GTMapping::saveStructurePCD( const std::string &filename )
 {
     PointCloudTypePtr cloud = getStructureCloud();
-    pcl::io::savePCDFileASCII ( filename, *cloud);
+    if( cloud->size() > 0 )
+        pcl::io::savePCDFileASCII ( filename, *cloud);
+    else
+        ROS_WARN_STREAM("Empty struct cloud.");
 }
 
 void GTMapping::saveMapKeypointPCD( const std::string &filename )
 {
     PointCloudTypePtr cloud = getKeypointCloud();
-    pcl::io::savePCDFileASCII ( filename, *cloud);
+    if( cloud->size() > 0 )
+        pcl::io::savePCDFileASCII ( filename, *cloud);
+    else
+        ROS_WARN_STREAM("Empty keypoint cloud.");
 }
 
 std::vector<geometry_msgs::PoseStamped> GTMapping::getOptimizedPath()

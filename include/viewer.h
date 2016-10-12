@@ -104,7 +104,7 @@ private:
     cv::RNG rng;
     //
     pcl::visualization::PCLVisualizer* map_viewer_;
-    ros::ServiceServer auto_spin_map_viewer_ss_;
+    ros::ServiceServer spin_map_viewer_ss_;
     bool auto_spin_map_viewer_;
 
     // parameter frame
