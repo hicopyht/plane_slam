@@ -29,6 +29,8 @@ find_package(catkin REQUIRED COMPONENTS
   cv_bridge
   dynamic_reconfigure
   message_filters
+  octomap_ros
+  octomap
   pcl_ros
   plane_from_line
   roscpp

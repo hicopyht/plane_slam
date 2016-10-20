@@ -158,7 +158,12 @@ struct KeyPoint
     RGBValue color;
     bool valid;
 
-    KeyPoint() : valid(true), translation(0, 0, 0) {
+    //
+    bool initialized;
+    int predicted_count;
+    int unmatched_count;
+
+    KeyPoint() : valid(true), initialized(false), predicted_count(0), unmatched_count(0), translation(0, 0, 0) {
         descriptor[0] = random(); descriptor[1] = random(); descriptor[2] = random(); descriptor[3] = random();
         color.long_value = 0xFFFFFFFF;
     }

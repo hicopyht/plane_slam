@@ -185,8 +185,14 @@ private:
     string odom_frame_;
     bool set_init_pose_;
     int skip_message_;
-    tf::Transform init_pose_;
+    //
+    bool save_map_full_pcd_;
+    bool save_map_full_colored_pcd_;
+    bool save_octomap_;
+    bool save_structure_pcd_;
 
+    //
+    tf::Transform init_pose_;
     // Camera Parameters
     CameraParameters camera_parameters_;
     // Path

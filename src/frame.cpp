@@ -251,6 +251,7 @@ void Frame::throttleMemory()
     visual_image_downsampled_.release();
     //
     cloud_->clear();
+//    cloud_downsampled_->clear();
 }
 
 // Feature extraction, using visual image and cloud in VGA resolution

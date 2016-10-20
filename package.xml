@@ -61,6 +61,7 @@
   <run_depend>tf</run_depend>
   <run_depend>libg2o</run_depend>
   <run_depend>octomap</run_depend>
+  <run_depend>octomap_ros</run_depend>
 
 
   <!-- The export tag contains other, unspecified, tags -->

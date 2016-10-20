@@ -85,6 +85,7 @@ public:
                                   const std::vector<cv::DMatch> &matches );
 
     void updateMapViewer();
+    void updateLandmarksInlierAll();
 
     void reset();
 
@@ -96,6 +97,9 @@ public:
     void saveMapFullColoredPCD( const std::string &filename = "plane_slam_map_full_colored.pcd");
     void saveStructurePCD( const std::string &filename = "plane_slam_structure.pcd" );
     void saveMapKeypointPCD( const std::string &filename = "plane_slam_keypoint.pcd");
+    void saveMapPlanePCD( const std::string &prefix = "plane");
+    // Save Octomap
+    void saveOctomap( const std::string &filename = "octomap" );
     // Save graph
     inline void saveGraphDot( const std::string &filename = "plane_slam_graph.dot" ){
         isam2_->saveGraph( filename );
@@ -115,6 +119,7 @@ public:
     // Set map frame
     inline void setMapFrame( const std::string &frame_id ) { map_frame_ = frame_id; }
     std::string getMapFrame() const { return map_frame_; }
+    // Throttle memory
 
 protected:
     bool addFirstFrameMix( Frame *frame );
@@ -176,6 +181,9 @@ protected:
 
     bool refinePlanarMap();
 
+    void computeLostKeypoints( std::vector<int> &unmatched_landmarks,
+                               std::vector<int> &lost_landmarks );
+
     void removeLostLandmarks( std::vector<int> &lost_landmarks );
 
     void mergeCoplanarLandmarks( std::map<int, std::set<int> > merge_list );
@@ -188,7 +196,7 @@ protected:
 
     void updateOptimizedResult();
 
-    void updateLandmarksInlier();
+    void updateLandmarksInlier( int index = -1 );
 
     void updateOctoMap();
 
@@ -250,6 +258,10 @@ private:
     std::map<int, gtsam::Pose3> optimized_poses_list_;  // optimized pose list
     std::map<int, gtsam::OrientedPlane3> optimized_landmarks_list_;    // optimized landmarks list
     std::map<int, gtsam::Point3> optimized_keypoints_list_; // optimized keypoints list
+    //
+    std::set<int> frames_optimized_;    // frames of which poses are optimized after optimization
+    std::set<int> planes_optimized_;    // planes are optimized
+    //
     PointCloudTypePtr map_cloud_;
     PointCloudTypePtr keypoints_cloud_; // keypoints cloud for visualization
 //    std::map<int, gtsam::OrientedPlane3> optimized_landmarks_list_last_; // last optimized
@@ -264,6 +276,7 @@ private:
     cv::RNG rng_;
 
     // Parameters
+    bool throttle_memory_;
     bool use_keyframe_;
     double keyframe_linear_threshold_;
     double keyframe_angular_threshold_;
@@ -275,6 +288,9 @@ private:
     double keypoint_match_search_radius_;
     double keypoint_match_max_mahal_distance_;
     int keypoint_match_hamming_threshold_;
+    //
+    int keypoint_initialize_count_;
+    int keypoint_unmatched_count_;
     //
     double plane_match_direction_threshold_;
     double plane_match_distance_threshold_;

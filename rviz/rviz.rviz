@@ -6,6 +6,7 @@ Panels:
       Expanded:
         - /Global Options1
         - /TF1/Frames1
+        - /OccupancyGrid1
       Splitter Ratio: 0.736677
     Tree Height: 463
   - Class: rviz/Selection
@@ -394,6 +395,15 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: false
+    - Class: octomap_rviz_plugin/OccupancyGrid
+      Enabled: true
+      Max. Octree Depth: 16
+      Name: OccupancyGrid
+      Octomap Topic: /octomap_full
+      Queue Size: 5
+      Value: true
+      Voxel Coloring: Z-Axis
+      Voxel Rendering: Occupied Voxels
   Enabled: true
   Global Options:
     Background Color: 255; 255; 255
@@ -417,23 +427,23 @@ Visualization Manager:
   Value: true
   Views:
     Current:
-      Class: rviz/Orbit
-      Distance: 14.5001
+      Class: rviz/XYOrbit
+      Distance: 4.01593
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.06
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 7.83879
-        Y: 1.45452
-        Z: -0.411984
+        X: -1.28548
+        Y: -0.794571
+        Z: 1.19209e-07
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.709801
+      Pitch: 0.954796
       Target Frame: <Fixed Frame>
-      Value: Orbit (rviz)
-      Yaw: 3.81983
+      Value: XYOrbit (rviz)
+      Yaw: 6.20484
     Saved: ~
 Window Geometry:
   Displays:

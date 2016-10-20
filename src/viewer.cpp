@@ -98,7 +98,7 @@ void Viewer::displayFrame(const Frame &frame, const std::string &prefix, int vie
     pcl_viewer_->addText(prefix, 100, 3, 0.0, 0.0, 0.0, prefix+"_text", viewport);
 
     // Input cloud
-    if( display_input_cloud_ && frame.cloud_ )
+    if( display_input_cloud_ && frame.cloud_ && frame.cloud_->size() > 0 )
     {
         pcl_viewer_->addPointCloud( frame.cloud_, prefix+"_"+"rgba_cloud", viewport );
         pcl_viewer_->setPointCloudRenderingProperties ( pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, prefix+"_"+"rgba_cloud", viewport );
@@ -109,6 +109,9 @@ void Viewer::displayFrame(const Frame &frame, const std::string &prefix, int vie
     {
         display3DKeypoint( frame.feature_locations_3d_, prefix+"_"+"3d_keypoint", viewport );
     }
+
+    // Keypoints on image
+//    displayKeypoint( frame.visual_image_, frame.feature_locations_2d_ );
 
     // planes
     displayPlanes( frame.cloud_downsampled_, frame.segment_planes_, prefix+"_"+"planes", viewport );
@@ -724,7 +727,7 @@ void Viewer::pclViewerPlane( const PointCloudTypePtr &input, const PlaneType &pl
             pcl_viewer_->addText3D( ss.str(), p2, 0.05, 0.0, 0.0, 0.0, id+"_number", viewport+1);
         }
     }
-    else if( display_plane_inlier_ )
+    else if( display_plane_inlier_ && input && input->size() > 0 )
     {
         PointCloudTypePtr cloud = getPointCloudFromIndices( input, plane.inlier );
 
@@ -783,7 +786,7 @@ void Viewer::pclViewerPlane( const PointCloudTypePtr &input, const PlaneType &pl
         pcl_viewer_->addPointCloud( plane.cloud_boundary, color_boundary, id+"_boundary", viewport );
         pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_boundary", viewport);
     }
-    else if( display_plane_boundary_ )
+    else if( display_plane_boundary_ && input && input->size() > 0 )
     {
         PointCloudTypePtr cloud_boundary = getPointCloudFromIndices( input, plane.boundary_inlier );
         r = rng.uniform(0.0, 255.0);
@@ -822,7 +825,7 @@ void Viewer::pclViewerPlane( const PointCloudTypePtr &input, const PlaneType &pl
 //        pcl_viewer_->setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, id+"_hull", viewport );
 
     }
-    else if( display_plane_hull_ )
+    else if( display_plane_hull_ && input && input->size() > 0 )
     {
         PointCloudTypePtr cloud_hull = getPointCloudFromIndices( input, plane.hull_inlier );
         r = rng.uniform(0.0, 1.0);

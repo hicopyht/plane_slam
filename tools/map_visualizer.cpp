@@ -59,17 +59,17 @@ int main(int argc, char** argv)
     pcl_viewer->setPointCloudRenderingProperties ( pcl::visualization::PCL_VISUALIZER_POINT_SIZE, plane_point_size, "plane_cloud" );
     pcl_viewer->addPointCloud( keypoint_cloud, "keypoint_cloud" );
     pcl_viewer->setPointCloudRenderingProperties ( pcl::visualization::PCL_VISUALIZER_POINT_SIZE, keypoint_point_size, "keypoint_cloud" );
-    pcl_viewer->spin();
+//    pcl_viewer->spin();
 
-//    // Spin in loop
-//    ros::Rate loop_rate( 20 );
-//    while( ros::ok() && !pcl_viewer->wasStopped() )
-//    {
-//        pcl_viewer->spinOnce(40);
-//        ros::spinOnce();
-//        loop_rate.sleep();
-//    }
-//    pcl_viewer->close();
+    // Spin in loop
+    ros::Rate loop_rate( 10 );
+    while( ros::ok() && !pcl_viewer->wasStopped() )
+    {
+        pcl_viewer->spinOnce(10);
+        ros::spinOnce();
+        loop_rate.sleep();
+    }
+    pcl_viewer->close();
 
     ros::shutdown();
 }

@@ -28,6 +28,8 @@ KinectListener::KinectListener() :
     private_nh_.param<double>("map_tf_freq", map_tf_freq_, 50.0 );
     //
     private_nh_.param<string>("keypoint_type", keypoint_type_, "ORB");
+    cout << WHITE << "  keypoint_type = " << keypoint_type_ << RESET << endl;
+    //
     surf_detector_ = new DetectorAdjuster("SURF", 200);
     surf_extractor_ = new cv::SurfDescriptorExtractor();
     orb_extractor_ = new ORBextractor( 1000, 1.2, 8, 20, 7);
@@ -60,8 +62,8 @@ KinectListener::KinectListener() :
     visual_odometry_pose_publisher_ = nh_.advertise<geometry_msgs::PoseStamped>("visual_odometry_pose", 10);
     visual_odometry_path_publisher_ = nh_.advertise<nav_msgs::Path>("visual_odometry_path", 10);
     update_viewer_once_ss_ = nh_.advertiseService("update_viewer_once", &KinectListener::updateViewerOnceCallback, this );
-    save_slam_result_simple_ss_ = nh_.advertiseService("save_slam_result_simple", &KinectListener::saveSlamResultSimpleCallback, this );
-    save_slam_result_all_ss_ = nh_.advertiseService("save_slam_result", &KinectListener::saveSlamResultCallback, this );
+    save_slam_result_simple_ss_ = nh_.advertiseService("save_slam_result", &KinectListener::saveSlamResultSimpleCallback, this );
+    save_slam_result_all_ss_ = nh_.advertiseService("save_slam_result_all", &KinectListener::saveSlamResultCallback, this );
 
     // config subscribers
     if( !topic_point_cloud_.empty() && !topic_image_visual_.empty() && !topic_camera_info_.empty() ) // pointcloud2
@@ -420,6 +422,8 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     double frame_dura, track_dura, map_dura, display_dura;
     double total_dura;
 
+    cout << BLUE << "  construct frame " << RESET << endl;
+
     // Compute Frame
     Frame *frame;
     if( !keypoint_type_.compare("ORB") )
@@ -444,6 +448,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     }
     frame->stamp_ = visual_img_msg->header.stamp;
     frame->valid_ = false;
+    cout << GREEN << "  Done constructing frame. " << RESET << endl;
     //
     frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
@@ -760,7 +765,10 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     if( last_frame_valid && last_frame->valid_ )
         viewer_->displayFrame( *last_frame, "last_frame", viewer_->vp1() );
     if( frame->valid_ )
+    {
         viewer_->displayFrame( *frame, "frame", viewer_->vp2() );
+        viewer_->displayKeypoint( frame->visual_image_, frame->feature_locations_2d_ );
+    }
     viewer_->spinFramesOnce();
     //
     display_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
@@ -803,9 +811,12 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
 
 void KinectListener::savePlaneLandmarks( const std::string &filename )
 {
+    cout << WHITE << "Save planes landmarks: " << filename << "..." << RESET << endl;
+
     FILE* yaml = std::fopen( filename.c_str(), "w" );
     fprintf( yaml, "# landmarks file: %s\n", filename.c_str() );
-    fprintf( yaml, "# landmarks format: ax+by+cz+d = 0, (n,d), (a,b,c,d)\n");
+    fprintf( yaml, "# landmarks format: ax+by+cz+d = 0");
+    fprintf( yaml, "# lm(a,b,c,d,numOfPoints, semantic_label)");
 
     // Save Landmarks
     std::map<int, PlaneType*> landmarks = gt_mapping_->getLandmark();
@@ -816,8 +827,8 @@ void KinectListener::savePlaneLandmarks( const std::string &filename )
         PlaneType *lm = it->second;
         if( !lm->valid )
             continue;
-        fprintf( yaml, "%f %f %f %f\n", lm->coefficients[0], lm->coefficients[1],
-                lm->coefficients[2], lm->coefficients[3] );
+        fprintf( yaml, "%f %f %f %f %d %s\n", lm->coefficients[0], lm->coefficients[1],
+                lm->coefficients[2], lm->coefficients[3], lm->cloud->size(), lm->semantic_label.c_str() );
     }
     fprintf( yaml, "\n");
 
@@ -828,6 +839,8 @@ void KinectListener::savePlaneLandmarks( const std::string &filename )
 void KinectListener::savePathToFile( const std::vector<geometry_msgs::PoseStamped> &poses,
                                      const std::string &filename )
 {
+    cout << WHITE << "Save path: " << filename << "..." << RESET << endl;
+
     FILE* yaml = std::fopen( filename.c_str(), "w" );
     fprintf( yaml, "# %s\n", filename.c_str() );
     fprintf( yaml, "# pose format: T(xyz) Q(xyzw)\n" );
@@ -848,9 +861,11 @@ void KinectListener::savePathToFile( const std::vector<geometry_msgs::PoseStampe
 
 void KinectListener::saveKeypointLandmarks( const std::string &filename )
 {
+    cout << WHITE << "Save keypoints landmarks: " << filename << "..." << RESET << endl;
+
     FILE* yaml = std::fopen( filename.c_str(), "w" );
     fprintf( yaml, "# keypoints: %s\n", filename.c_str() );
-    fprintf( yaml, "# gtsam::Point3: (x,y,z)\n");
+    fprintf( yaml, "# gtsam::Point3: (x,y,z), key\n");
     fprintf( yaml, "# descriptor: uint64*4 = 256bits = 32bytes\n" );
 
     // Save location
@@ -861,9 +876,9 @@ void KinectListener::saveKeypointLandmarks( const std::string &filename )
          it != keypoints.end(); it++)
     {
         KeyPoint *kp = it->second;
-        if( !kp->valid )
+        if( !kp->initialized )
             continue;
-        fprintf( yaml, "%f %f %f\n", kp->translation.x(), kp->translation.y(), kp->translation.z() );
+        fprintf( yaml, "%f %f %f %d\n", kp->translation.x(), kp->translation.y(), kp->translation.z(), it->first );
     }
     fprintf( yaml, "\n\n");
 
@@ -873,7 +888,7 @@ void KinectListener::saveKeypointLandmarks( const std::string &filename )
          it != keypoints.end(); it++)
     {
         KeyPoint *kp = it->second;
-        if( !kp->valid )
+        if( !kp->initialized )
             continue;
         for( int i = 0; i < 4; i++ )
         {
@@ -890,6 +905,8 @@ void KinectListener::saveKeypointLandmarks( const std::string &filename )
 
 void KinectListener::saveRuntimes( const std::string &filename )
 {
+    cout << WHITE << "Save runtimes: " << filename << "..." << RESET << endl;
+
     FILE* yaml = std::fopen( filename.c_str(), "w" );
     fprintf( yaml, "# runtimes file: %s\n", filename.c_str() );
     fprintf( yaml, "# format: frame tracking mapping total\n" );
@@ -1060,6 +1077,9 @@ void KinectListener::publishOdomPose()
 
 void KinectListener::publishOdomPath()
 {
+    if( odom_path_publisher_.getNumSubscribers() <= 0 )
+        return;
+
     nav_msgs::Path path;
     path.header.frame_id = map_frame_;
     path.header.stamp = ros::Time::now();
@@ -1069,7 +1089,7 @@ void KinectListener::publishOdomPath()
 }
 
 void KinectListener::publishVisualOdometryPose()
-{
+{   
     geometry_msgs::PoseStamped msg = visual_odometry_poses_.back();
     msg.header.frame_id = map_frame_;
     msg.header.stamp = ros::Time::now();
@@ -1078,6 +1098,9 @@ void KinectListener::publishVisualOdometryPose()
 
 void KinectListener::publishVisualOdometryPath()
 {
+    if( visual_odometry_path_publisher_.getNumSubscribers() <= 0 )
+        return;
+
     nav_msgs::Path path;
     path.header.frame_id = map_frame_;
     path.header.stamp = ros::Time::now();
@@ -1107,6 +1130,12 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     skip_message_ = config.skip_message;
     set_init_pose_ = config.set_init_pose_ || set_init_pose_;
 
+    //
+    save_map_full_pcd_ = config.save_map_full_pcd;
+    save_map_full_colored_pcd_ = config.save_map_full_colored_pcd;
+    save_structure_pcd_ = config.save_structure_pcd;
+    save_octomap_ = config.save_octomap;
+
     // Set map frame for mapping
     if( gt_mapping_ )
         gt_mapping_->setMapFrame( map_frame_ );
@@ -1117,6 +1146,8 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
 bool KinectListener::updateViewerOnceCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res )
 {
     //
+    publishVisualOdometryPose();
+    publishVisualOdometryPath();
     gt_mapping_->updateMapViewer();
     res.success = true;
     res.message = " Update viewer once";
@@ -1134,6 +1165,8 @@ bool KinectListener::saveSlamResultSimpleCallback(std_srvs::Trigger::Request &re
     else
         prefix = "/home/lizhi/bags/result/"+time_str+"/";
     //
+    gt_mapping_->updateLandmarksInlierAll();
+    //
     savePlaneLandmarks( prefix + "planes.txt");  // save path and landmarks
     savePathToFile( gt_mapping_->getOptimizedPath(), prefix + "optimized_path.txt");
     savePathToFile( odom_poses_, prefix + "odom_path.txt");
@@ -1143,11 +1176,31 @@ bool KinectListener::saveSlamResultSimpleCallback(std_srvs::Trigger::Request &re
     gt_mapping_->saveGraphDot( prefix + "graph.dot");      // save grapy
     gt_mapping_->saveMapKeypointPCD( prefix + "map_keypoints.pcd"); // save keypoint cloud
     gt_mapping_->saveMapPCD( prefix + "map.pcd");          // save map
-    gt_mapping_->saveMapFullPCD( prefix + "map_full.pcd"); // save map full
-    gt_mapping_->saveMapFullColoredPCD( prefix + "map_full_colored.pcd"); // save map full colored
-//    gt_mapping_->saveStructurePCD( prefix + "structure.pcd"); // save structure cloud
+    //
+    if( save_map_full_pcd_ )
+        gt_mapping_->saveMapFullPCD( prefix + "map_full.pcd"); // save map full
+    if( save_map_full_colored_pcd_ )
+        gt_mapping_->saveMapFullColoredPCD( prefix + "map_full_colored.pcd"); // save map full colored
+    if( save_octomap_ )
+        gt_mapping_->saveOctomap( prefix + "octomap.ot" ); // save octomap
+    if( save_structure_pcd_ )
+        gt_mapping_->saveStructurePCD( prefix + "structure.pcd"); // save structure cloud
+
+    // Save every individual plane landmark as a pcd file
+    if( save_map_full_pcd_ || save_map_full_colored_pcd_ )
+    {
+        std::string lm_dir = "/home/lizhi/bags/result/"+time_str+"/planes";    // directory
+        std::string lm_prefix;
+        if( !boost::filesystem::create_directory(lm_dir) )
+            lm_prefix = "/home/lizhi/bags/result/"+time_str+"_planes_";
+        else
+            lm_prefix = "/home/lizhi/bags/result/"+time_str+"/planes/";
+        gt_mapping_->saveMapPlanePCD( lm_prefix );
+    }
+
+    //
     res.success = true;
-    res.message = " Save slam result(landmarks&path, map(simplied, keypoints, full, full colored, structure), graph) to directory: " + dir + ".";
+    res.message = " Save slam result(landmarks&path, map(simplied, keypoints, planes, full, full colored), octomap, graph) to directory: " + dir + ".";
     cout << GREEN << res.message << RESET << endl;
     return true;
 }
@@ -1162,6 +1215,8 @@ bool KinectListener::saveSlamResultCallback(std_srvs::Trigger::Request &req, std
     else
         prefix = "/home/lizhi/bags/result/"+time_str+"/";
     //
+    gt_mapping_->updateLandmarksInlierAll();
+    //
     savePlaneLandmarks( prefix + "planes.txt");  // save path and landmarks
     savePathToFile( gt_mapping_->getOptimizedPath(), prefix + "optimized_path.txt");
     savePathToFile( odom_poses_, prefix + "odom_path.txt");
@@ -1171,11 +1226,24 @@ bool KinectListener::saveSlamResultCallback(std_srvs::Trigger::Request &req, std
     gt_mapping_->saveGraphDot( prefix + "graph.dot");      // save grapy
     gt_mapping_->saveMapKeypointPCD( prefix + "map_keypoints.pcd"); // save keypoint cloud
     gt_mapping_->saveMapPCD( prefix + "map.pcd");          // save map
+    //
     gt_mapping_->saveMapFullPCD( prefix + "map_full.pcd"); // save map full
     gt_mapping_->saveMapFullColoredPCD( prefix + "map_full_colored.pcd"); // save map full colored
+    //
+    // Save every individual plane landmark as a pcd file
+    std::string lm_dir = "/home/lizhi/bags/result/"+time_str+"/planes";    // directory
+    std::string lm_prefix;
+    if( !boost::filesystem::create_directory(lm_dir) )
+        lm_prefix = "/home/lizhi/bags/result/"+time_str+"_planes_";
+    else
+        lm_prefix = "/home/lizhi/bags/result/"+time_str+"/planes/";
+    gt_mapping_->saveMapPlanePCD( lm_prefix );
+    //
+    gt_mapping_->saveOctomap( prefix + "octomap.ot" ); // save octomap
     gt_mapping_->saveStructurePCD( prefix + "structure.pcd"); // save structure cloud
+
     res.success = true;
-    res.message = " Save slam result(landmarks&path, map(simplied, keypoints, full, full colored, structure), graph) to directory: " + dir + ".";
+    res.message = " Save slam result(landmarks&path, map(simplied, keypoints, full, full colored, structure), octomap, graph) to directory: " + dir + ".";
     cout << GREEN << res.message << RESET << endl;
     return true;
 }
