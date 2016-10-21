@@ -60,6 +60,8 @@ class GTMapping
 public:
     GTMapping( ros::NodeHandle &nh, Viewer* viewer, Tracking* tracker = NULL);
 
+    bool mappingMixKeyMessage( Frame *frame );
+
     bool mappingMix( Frame *frame );
 
     bool mapping( Frame *frame );
@@ -123,6 +125,10 @@ public:
     //
     inline void setVerbose( bool verbose ) { verbose_ = verbose; }
     bool getVerbose() const { return verbose_; }
+    // Symbol
+    bool isMapRefined() const { return map_refined_; }
+    bool isKeypointRemoved() const { return keypoint_removed_; }
+
 
 protected:
     bool addFirstFrameMix( Frame *frame );
@@ -187,7 +193,7 @@ protected:
     void computeLostKeypoints( std::vector<int> &unmatched_landmarks,
                                std::vector<int> &lost_landmarks );
 
-    void removeLostLandmarks( std::vector<int> &lost_landmarks );
+    void removeKeypoints( std::vector<int> &lost_landmarks, FactorIndices &removed_factors );
 
     void mergeCoplanarLandmarks( std::map<int, std::set<int> > merge_list );
 
@@ -250,9 +256,10 @@ private:
     // Create a Factor Graph and Values to hold the new data
     NonlinearFactorGraph factor_graph_; // factor graph
     Values initial_estimate_; // initial guess
+    FactorIndices removed_factors_; // factors will be removed
     // Buffer
-    NonlinearFactorGraph factor_graph_buffer_; // factor graph
-    Values initial_estimate_buffer_; // initial guess
+//    NonlinearFactorGraph factor_graph_buffer_; // factor graph
+//    Values initial_estimate_buffer_; // initial guess
 
     //
     int next_plane_id_; // set identical id to plane
@@ -273,8 +280,10 @@ private:
     PointCloudTypePtr keypoints_cloud_; // keypoints cloud for visualization
 //    std::map<int, gtsam::OrientedPlane3> optimized_landmarks_list_last_; // last optimized
     octomap::OcTree *octree_map_;
-    //
-    //
+
+    // Symbol
+    bool map_refined_;
+    bool keypoint_removed_;
 
     //
     std::string map_frame_;
@@ -302,6 +311,7 @@ private:
     //
     double plane_match_direction_threshold_;
     double plane_match_distance_threshold_;
+    bool plane_force_inlier_update_;
     bool plane_match_check_overlap_;
     double plane_match_overlap_alpha_;
     double plane_inlier_leaf_size_;

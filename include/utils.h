@@ -400,14 +400,27 @@ struct Runtime{
         , frame(0)
         , tracking(0)
         , mapping(0)
-        , total(0) {}
+        , total(0)
+        , map_refined_(false)
+        , keypoint_removed_(false) {}
 
     Runtime( bool _key_frame, double _frame, double _track, double _map, double _total )
         : key_frame(_key_frame)
         , frame(_frame)
         , tracking(_track)
         , mapping(_map)
-        , total(_total) {}
+        , total(_total)
+        , map_refined_(false)
+        , keypoint_removed_(false) {}
+
+    Runtime( bool _key_frame, double _frame, double _track, double _map, double _total, bool refined, bool kp_removed )
+        : key_frame(_key_frame)
+        , frame(_frame)
+        , tracking(_track)
+        , mapping(_map)
+        , total(_total)
+        , map_refined_(refined)
+        , keypoint_removed_(kp_removed) {}
 
     void operator += ( const Runtime &other )
     {
@@ -464,6 +477,8 @@ struct Runtime{
     double tracking;
     double mapping;
     double total;
+    bool map_refined_;
+    bool keypoint_removed_;
 };
 
 //the following are UBUNTU/LINUX ONLY terminal color

@@ -38,6 +38,8 @@ KinectListener::KinectListener() :
     viewer_ = new Viewer(nh_);
     tracker_ = new Tracking(nh_, viewer_ );
     gt_mapping_ = new GTMapping(nh_, viewer_, tracker_);
+    //
+    tracker_->setVerbose( verbose_ );
     gt_mapping_->setVerbose( verbose_ );
 
     // reconfigure
@@ -140,7 +142,8 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
 //        return;
 //    }
 
-    cout << RESET << "----------------------------------------------------------------------" << endl;
+    cout << BOLDRED << "#" << RESET;
+//    cout << RESET << "----------------------------------------------------------------------" << endl;
     // Get odom pose
     tf::Transform odom_pose;
     if( getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
@@ -167,9 +170,16 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
     cvtCameraParameter( cam_info_msg, camera);
 
     if( force_odom_ )
-        trackDepthRgbImage( visual_img_msg, depth_img_msg, camera, odom_pose );
+    {
+        if( mapping_key_message_ )
+            trackKeyMessage( visual_img_msg, depth_img_msg, camera, odom_pose );
+        else
+            trackDepthRgbImage( visual_img_msg, depth_img_msg, camera, odom_pose );
+    }
     else
+    {
         trackDepthRgbImage( visual_img_msg, depth_img_msg, camera );
+    }
 
 }
 
@@ -400,6 +410,197 @@ void KinectListener::trackPointCloud( const sensor_msgs::PointCloud2ConstPtr &po
     }
 }
 
+bool KinectListener::isKeyFrame( tf::Transform &odom_pose )
+{
+    static tf::Transform last_odom_pose = tf::Transform::getIdentity(); // update every iteration
+    static double linear_distance = 0;
+    static double angular_distance = 0;
+
+    //
+    tf::Transform rel_tf = last_odom_pose.inverse()*odom_pose;
+    last_odom_pose = odom_pose;
+
+    gtsam::Pose3 pose3 = tfToPose3( rel_tf );
+    double x, y, yaw;
+    x = pose3.z();
+    y = pose3.x();
+    yaw = pose3.rotation().pitch();
+
+    // absolute distance
+    linear_distance += sqrt(x*x+y*y);
+    angular_distance += fabs(yaw*RAD_TO_DEG);
+//    cout << MAGENTA << "  distance: " << WHITE << linear_distance << ", " << angular_distance << RESET << endl;
+
+    if( linear_distance >= 0.05 || angular_distance >= 3.0 )
+    {
+        linear_distance = 0;
+        angular_distance = 0;
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
+void KinectListener::trackKeyMessage( const sensor_msgs::ImageConstPtr &visual_img_msg,
+                                      const sensor_msgs::ImageConstPtr &depth_img_msg,
+                                      CameraParameters & camera,
+                                      tf::Transform &odom_pose )
+{
+    static tf::Transform last_key_odom_pose = tf::Transform::getIdentity();
+    static Frame *last_frame;
+    static bool last_frame_valid = false;
+    static tf::Transform last_vo_tf;
+
+    frame_count_++;
+    if( !isKeyFrame(odom_pose) && last_frame_valid )
+    {
+//        ROS_INFO_STREAM("Not keyframe. Skip.");
+        return;
+    }
+
+    cout << BOLDMAGENTA << "no cloud msg: " << depth_img_msg->header.seq << RESET << endl;
+
+    // Guess motion from odom
+    tf::Transform estimated_rel_tf = last_key_odom_pose.inverse()*odom_pose;
+    last_key_odom_pose = odom_pose;
+    Eigen::Matrix4d estimated_transform = transformTFToMatrix4d( estimated_rel_tf );
+
+    camera_parameters_ = camera;
+
+    // Get Mat Image
+    cv::Mat visual_image = cv_bridge::toCvCopy(visual_img_msg)->image; // to cv image
+    cv::Mat depth_image = cv_bridge::toCvCopy(depth_img_msg)->image; // to cv image
+
+    const ros::Time start_time = ros::Time::now();
+    ros::Time step_time = start_time;
+    double frame_dura, track_dura, map_dura, display_dura;
+    double total_dura;
+
+    // Compute Frame
+    Frame *frame;
+    if( !keypoint_type_.compare("ORB") )
+    {
+        if( plane_segment_method_ == LineBased )
+            frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, line_based_plane_segmentor_);
+        else
+            frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, organized_plane_segmentor_);
+
+    }
+    else if( !keypoint_type_.compare("SURF") )
+    {
+        if( plane_segment_method_ == LineBased )
+            frame = new Frame( visual_image, depth_image, camera_parameters_, surf_detector_, surf_extractor_, line_based_plane_segmentor_);
+        else
+            frame = new Frame( visual_image, depth_image, camera_parameters_, surf_detector_, surf_extractor_, organized_plane_segmentor_);
+
+    }else
+    {
+        ROS_ERROR_STREAM("keypoint_type_ undefined.");
+        return;
+    }
+    frame->stamp_ = visual_img_msg->header.stamp;
+    frame->valid_ = true;
+    //
+    frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+    //
+
+    // Set motion
+    RESULT_OF_MOTION motion;
+    motion.setTransform4d( estimated_transform );
+    motion.valid = true;
+
+    if( !last_frame_valid )
+    {
+        frame_count_ = 1;
+        // check number of planes ???
+        if( frame->segment_planes_.size() > 0)
+        {
+            frame->valid_ = true;   // first frame, set valid, add to mapper as first frame
+            frame->pose_ = odom_pose;   // set odom pose as initial pose
+        }
+    }
+    else
+    {
+        // estimated pose
+        frame->pose_ = last_frame->pose_ * motionToTf( motion );
+        frame->valid_ = true;
+    }
+
+    //
+    track_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
+
+    // Mapping
+    if( frame->valid_ && do_slam_ ) // frame is always valid
+    {
+        if( mapping_keypoint_ )
+            frame->key_frame_ = gt_mapping_->mappingMixKeyMessage( frame );
+        else
+            frame->key_frame_ = gt_mapping_->mapping( frame );
+    }
+    map_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
+    // Upate odom to map tf
+    tf::Transform odom_to_map = frame->pose_ * odom_pose.inverse();
+    double yaw = tf::getYaw( odom_to_map.getRotation() );
+    // Set x, y, yaw
+    map_tf_mutex_.lock();
+    odom_to_map_tf_ = tf::Transform( tf::createQuaternionFromYaw(yaw),
+                                     tf::Vector3(odom_to_map.getOrigin().x(), odom_to_map.getOrigin().y(), 0) );
+    map_tf_mutex_.unlock();
+
+    // Map for visualization
+    if( frame->key_frame_)
+        gt_mapping_->updateMapViewer();
+
+    // Display frame
+    viewer_->removeFrames();
+    if( last_frame_valid && last_frame->valid_ )
+        viewer_->displayFrame( *last_frame, "last_frame", viewer_->vp1() );
+    if( frame->valid_ )
+        viewer_->displayFrame( *frame, "frame", viewer_->vp2() );
+    viewer_->spinFramesOnce();
+    //
+    display_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
+    //
+    total_dura = (step_time - start_time).toSec() * 1000.0f;
+    // Print time
+    if( verbose_ )
+        cout << GREEN << "Segment planes = " << frame->segment_planes_.size() << RESET << endl;
+    if( verbose_ )
+        cout << GREEN << "Processing total time: " << total_dura << RESET << endl;
+    if( frame->key_frame_ ){
+        cout << GREEN << "Time:"
+             << " frame: " << MAGENTA << frame_dura
+             << GREEN << ", tracking: " << MAGENTA << track_dura
+             << GREEN << ", mapping: " << MAGENTA << map_dura
+             << GREEN << ", display: " << MAGENTA << display_dura
+             << RESET << endl;
+    }
+
+    // Runtimes, push new one
+    if( frame->key_frame_ && last_frame_valid )
+    {
+        // Runtimes
+        const double total = frame_dura + track_dura + map_dura;
+        runtimes_.push_back( Runtime(true, frame_dura, track_dura, map_dura, total, gt_mapping_->isMapRefined(), gt_mapping_->isKeypointRemoved()) );
+        if( verbose_ )
+            cout << GREEN << " Runtimes size: " << runtimes_.size() << RESET << endl;
+    }
+
+    // store key frame
+    if( !last_frame_valid && frame->key_frame_ )
+        last_frame_valid = true;    // set last frame valid
+    last_frame = frame;
+}
+
 void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visual_img_msg,
                                          const sensor_msgs::ImageConstPtr &depth_img_msg,
                                          CameraParameters & camera,
@@ -413,9 +614,11 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     frame_count_++;
     if( verbose_ )
     {
-        cout << RESET << "----------------------------------------------------------------------" << endl;
         cout << BOLDMAGENTA << "no cloud msg(force odom): " << depth_img_msg->header.seq
              << MAGENTA << " use_odom_tracking_ = " << (use_odom_tracking_?"true":"false") << RESET << endl;
+    }
+    else{
+        cout << BOLDMAGENTA << "no cloud msg: " << depth_img_msg->header.seq << RESET << endl;
     }
 
     camera_parameters_ = camera;
@@ -602,7 +805,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     {
         // Runtimes
         const double total = frame_dura + track_dura + map_dura;
-        runtimes_.push_back( Runtime(true, frame_dura, track_dura, map_dura, total) );
+        runtimes_.push_back( Runtime(true, frame_dura, track_dura, map_dura, total, gt_mapping_->isMapRefined(), gt_mapping_->isKeypointRemoved()) );
         if( verbose_ )
             cout << GREEN << " Runtimes size: " << runtimes_.size() << RESET << endl;
     }
@@ -630,8 +833,12 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     static tf::Transform last_vo_tf;
 
     frame_count_++;
-    cout << RESET << "----------------------------------------------------------------------" << endl;
-    cout << BOLDMAGENTA << "no cloud msg: " << depth_img_msg->header.seq << RESET << endl;
+    if( verbose_ ){
+        cout << RESET << "----------------------------------------------------------------------" << endl;
+        cout << BOLDMAGENTA << "no cloud msg: " << depth_img_msg->header.seq << RESET << endl;
+    }else{
+        cout << BOLDMAGENTA << "no cloud msg: " << depth_img_msg->header.seq << RESET << endl;
+    }
 
     camera_parameters_ = camera;
 
@@ -682,9 +889,10 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
         // print motion
         if( motion.valid )  // success, print tracking result
         {
-            cout << MAGENTA << " Tracking motion, rmse = " << motion.rmse << endl;
-            printTransform( motion.transform4d(), "", MAGENTA);
-
+            if( verbose_ ){
+                cout << MAGENTA << " Tracking motion, rmse = " << motion.rmse << endl;
+                printTransform( motion.transform4d(), "", MAGENTA);
+            }
             // estimated pose
             frame->pose_ = last_frame->pose_ * motionToTf( motion );
             frame->valid_ = true;
@@ -692,7 +900,8 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
         else    // failed
         {
             frame->valid_ = false;
-            cout << RED << "failed to estimated motion." << RESET << endl;
+            if( verbose_ )
+                cout << RED << "failed to estimated motion." << RESET << endl;
         }
     }
     else
@@ -792,21 +1001,25 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     //
     total_dura = (step_time - start_time).toSec() * 1000.0f;
     // Print time
-    cout << GREEN << "Processing total time: " << total_dura << endl;
-    cout << "Time:"
-         << " frame: " << frame_dura
-         << ", tracking: " << track_dura
-         << ", mapping: " << map_dura
-         << ", display: " << display_dura
-         << RESET << endl;
+    if( verbose_ )
+        cout << GREEN << "Processing total time: " << total_dura << endl;
+    if( frame->key_frame_ ){
+        cout << "Time:"
+             << " frame: " << frame_dura
+             << ", tracking: " << track_dura
+             << ", mapping: " << map_dura
+             << ", display: " << display_dura
+             << RESET << endl;
+    }
 
     // Runtimes, push new one, publish optimized path
     if( frame->key_frame_ && last_frame_valid)
     {
         // Runtimes
         const double total = frame_dura + track_dura + map_dura;
-        runtimes_.push_back( Runtime(true, frame_dura, track_dura, map_dura, total) );
-        cout << GREEN << " Runtimes size: " << runtimes_.size() << RESET << endl;
+        runtimes_.push_back( Runtime(true, frame_dura, track_dura, map_dura, total, gt_mapping_->isMapRefined(), gt_mapping_->isKeypointRemoved()) );
+        if( verbose_ )
+            cout << GREEN << " Runtimes size: " << runtimes_.size() << RESET << endl;
     }
 
 
@@ -924,7 +1137,7 @@ void KinectListener::saveRuntimes( const std::string &filename )
 
     FILE* yaml = std::fopen( filename.c_str(), "w" );
     fprintf( yaml, "# runtimes file: %s\n", filename.c_str() );
-    fprintf( yaml, "# format: frame tracking mapping total\n" );
+    fprintf( yaml, "# format: frame tracking mapping total refined removed\n" );
     fprintf( yaml, "# frame size: %d\n", frame_count_ );
     fprintf( yaml, "# key frame size: %d\n\n", runtimes_.size() );
 
@@ -937,7 +1150,12 @@ void KinectListener::saveRuntimes( const std::string &filename )
         Runtime &runtime = runtimes_[i];
         if( !runtime.key_frame )
             continue;
-        fprintf( yaml, "%f %f %f %f\n", runtime.frame, runtime.tracking, runtime.mapping, runtime.total);
+        fprintf( yaml, "%f %f %f %f", runtime.frame, runtime.tracking, runtime.mapping, runtime.total);
+        if( runtime.map_refined_ )
+            fprintf( yaml, " refined" );
+        if( runtime.keypoint_removed_ )
+            fprintf( yaml, " removed" );
+        fprintf( yaml, "\n");
         avg_time += runtime;
         count ++;
         //
@@ -1134,9 +1352,12 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     if( !force_odom_ ){
         use_odom_tracking_ = false;
         config.use_odom_tracking = false;
+        mapping_key_message_ = false;
+        config.mapping_key_message = false;
     }
     else {
         use_odom_tracking_ = config.use_odom_tracking;
+        mapping_key_message_ = config.mapping_key_message;
     }
     mapping_keypoint_ = config.mapping_keypoint;
     map_frame_ = config.map_frame;

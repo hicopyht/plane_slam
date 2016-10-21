@@ -26,6 +26,8 @@ public:
     bool track( const Frame &source, Frame &target, RESULT_OF_MOTION &motion,
                 const Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4) );
 
+    void inline setVerbose( bool verbose ) { verbose_ = verbose; }
+
 public:
     bool solveRelativeTransformPlanes( const Frame &source,
                                        const Frame &target,
@@ -194,6 +196,7 @@ protected:
     void trackingReconfigCallback(plane_slam::TrackingConfig &config, uint32_t level);
 
 private:
+    bool verbose_;
     //
     Viewer * viewer_;
     //

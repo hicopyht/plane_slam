@@ -70,6 +70,13 @@ public:
                           CameraParameters& camera,
                           tf::Transform &odom_pose );
 
+    bool isKeyFrame( tf::Transform &odom_pose );
+
+    void trackKeyMessage( const sensor_msgs::ImageConstPtr &visual_img_msg,
+                          const sensor_msgs::ImageConstPtr &depth_img_msg,
+                          CameraParameters & camera,
+                          tf::Transform &odom_pose );
+
     void trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visual_img_msg,
                              const sensor_msgs::ImageConstPtr &depth_img_msg,
                              CameraParameters &camera,
@@ -178,6 +185,7 @@ private:
     bool do_mapping_;
     bool do_slam_;
     bool force_odom_;
+    bool mapping_key_message_;
     bool use_odom_tracking_;
     bool mapping_keypoint_;
     string camera_frame_;
@@ -201,7 +209,7 @@ private:
     std::vector<geometry_msgs::PoseStamped> visual_odometry_poses_;
 
     // Runtimes and frame count
-    int frame_count_;
+    int frame_count_;   // full frame count
     std::vector<Runtime> runtimes_;
 
     //

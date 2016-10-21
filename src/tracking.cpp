@@ -79,7 +79,8 @@ bool Tracking::track(const Frame &source, Frame &target,
         std::sort( pairs.begin(), pairs.end() );
     }
     const int pairs_num = pairs.size();
-    cout << GREEN << " Plane pairs = " << pairs_num << RESET << endl;
+    if( verbose_ )
+        cout << GREEN << " Plane pairs = " << pairs_num << RESET << endl;
     //
     pairs_dura = (ros::Time::now() - start_time).toSec() * 1000;
     start_time = ros::Time::now();
@@ -100,7 +101,8 @@ bool Tracking::track(const Frame &source, Frame &target,
     // Assign good matches to Frame
 //    target.good_matches_ = good_matches;
     //
-    cout << GREEN << " Matches features, good_matches = " << good_matches.size() << RESET << endl;
+    if( verbose_ )
+        cout << GREEN << " Matches features, good_matches = " << good_matches.size() << RESET << endl;
     //
     match_f_dura = (ros::Time::now() - start_time).toSec() * 1000;
     start_time = ros::Time::now();
@@ -129,13 +131,15 @@ bool Tracking::track(const Frame &source, Frame &target,
     start_time = ros::Time::now();
 
     double total_time = pairs_dura + match_f_dura + m_e_dura + display_dura;
-    cout << GREEN << " Tracking total time: " << total_time << endl;
-    cout << " - Time:"
-         << " pairing: " << pairs_dura
-         << ", kp_matching: " << match_f_dura
-         << ", motion_estimate: " << m_e_dura
-         << ", matches display: " << display_dura
-         << RESET << endl;
+    if( verbose_ ){
+        cout << GREEN << " Tracking total time: " << total_time << endl;
+        cout << " - Time:"
+             << " pairing: " << pairs_dura
+             << ", kp_matching: " << match_f_dura
+             << ", motion_estimate: " << m_e_dura
+             << ", matches display: " << display_dura
+             << RESET << endl;
+    }
 
     return valid;
 
@@ -210,8 +214,10 @@ bool Tracking::solveRelativeTransformPlanes( const Frame &source,
         }
     }
 
-    cout << GREEN << " Plane RANSAC iterations = " << real_iterations
-         << ", valid iterations = " << valid_iterations << RESET << endl;
+    if( verbose_ ){
+        cout << GREEN << " Plane RANSAC iterations = " << real_iterations
+             << ", valid iterations = " << valid_iterations << RESET << endl;
+    }
 
 //    Eigen::umeyama
     result = best_transform;
@@ -321,7 +327,8 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
 
     if( valid_iterations == 0 ) // maybe no depth. Try identity?
     {
-        cout << BOLDRED << "No valid iteration, try identity." << RESET << endl;
+        if( verbose_ )
+            cout << BOLDRED << "No valid iteration, try identity." << RESET << endl;
         //ransac iteration with identity
         Eigen::Matrix4f trans = Eigen::Matrix4f::Identity();//hypothesis
         std::vector<cv::DMatch> inlier; //result
@@ -332,8 +339,8 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
         //test which samples are inliers
         computeCorrespondenceInliersAndError( good_matches, Eigen::Matrix4f::Identity(), source.feature_locations_3d_, target.feature_locations_3d_,
                                             min_inlier_threshold, inlier, inlier_error, max_dist_m );
-
-        cout << BOLDRED << "inlier = " << inlier.size() << ", error = " << inlier_error << RESET << endl;
+        if( verbose_ )
+            cout << BOLDRED << "inlier = " << inlier.size() << ", error = " << inlier_error << RESET << endl;
         if( inlier.size() > sample_size && inlier_error < refined_error )
         {
             refined_matches = inlier;
@@ -361,10 +368,12 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
             if( inlier.size() < min_inlier_threshold || inlier_error > max_dist_m)
                 break;
 
-            cout << BOLDBLUE << " - refine = " << refine << ", relative transform: " << RESET << endl;
-            printTransform( transformation, "", BOLDBLUE);
-            cout << BLUE << " - inlier = " << inlier.size() << ", error = " << inlier_error << RESET << endl;
-            cout << endl;
+            if( verbose_ ){
+                cout << BOLDBLUE << " - refine = " << refine << ", relative transform: " << RESET << endl;
+                printTransform( transformation, "", BOLDBLUE);
+                cout << BLUE << " - inlier = " << inlier.size() << ", error = " << inlier_error << RESET << endl;
+                cout << endl;
+            }
 
             if( inlier.size() > refined_matches.size() && inlier_error < refined_error )
             {
@@ -394,8 +403,10 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
         }
     }
 
-    cout << BLUE << " Point RANSAC real iterations = " << real_iterations
-         << ", valid iterations = " << valid_iterations << RESET << endl;
+    if( verbose_ ){
+        cout << BLUE << " Point RANSAC real iterations = " << real_iterations
+             << ", valid iterations = " << valid_iterations << RESET << endl;
+    }
 
     result.setTransform4f( resulting_transformation );    // save result
     result.rmse = rmse;
@@ -710,8 +721,10 @@ bool Tracking::solveRelativeTransformPlanesPointsRansac( const Frame &source,
     }
 
     //
-    cout << BLUE << " Plane/Point RANSAC real iterations = " << real_iterations
-         << ", valid iterations = " << valid_iterations << RESET << endl;
+    if( verbose_ ) {
+        cout << BLUE << " Plane/Point RANSAC real iterations = " << real_iterations
+             << ", valid iterations = " << valid_iterations << RESET << endl;
+    }
 
     // check if success
     if( matches.size() > min_inlier_threshold && resulting_error < max_dist_m)
@@ -800,7 +813,8 @@ bool Tracking::solveRelativeTransformPnP( const Frame& source,
 //        target.kp_inlier_.push_back( );
 //    }
 
-    cout << MAGENTA << " inlier Mat: " << inlier << endl;
+    if( verbose_ )
+        cout << MAGENTA << " inlier Mat: " << inlier << endl;
 
     return ( result.inlier >= min_inlier_threshold );
 }
@@ -843,7 +857,8 @@ bool Tracking::solveRelativeTransform( const Frame &source,
     start_time = ros::Time::now();
 
 //    // print info
-    cout << GREEN << " Transformation from plane correspondences: valid = " << (best_transform.valid?"true":"false") << RESET << endl;
+    if( verbose_ )
+        cout << GREEN << " Transformation from plane correspondences: valid = " << (best_transform.valid?"true":"false") << RESET << endl;
 //    cout << GREEN << "  - rmse: " << best_transform.rmse << RESET << endl;
 //    printTransform( best_transform.transform4d() );
 
@@ -863,7 +878,8 @@ bool Tracking::solveRelativeTransform( const Frame &source,
     start_time = ros::Time::now();
 
 //    // print info
-    cout << GREEN << " Transformation from plane/point correspondences: valid = " << (best_transform.valid?"true":"false") << RESET << endl;
+    if( verbose_ )
+        cout << GREEN << " Transformation from plane/point correspondences: valid = " << (best_transform.valid?"true":"false") << RESET << endl;
 //    cout << GREEN << "  - rmse: " << best_transform.rmse << ", inlier = " << best_transform.inlier << RESET << endl;
 //    printTransform( best_transform.transform4d() );
 
@@ -885,7 +901,8 @@ bool Tracking::solveRelativeTransform( const Frame &source,
     start_time = ros::Time::now();
 
 //    // print info
-    cout << GREEN << " Transformation from point correspondences: valid = " << (best_transform.valid?"true":"false") << RESET << endl;
+    if( verbose_ )
+        cout << GREEN << " Transformation from point correspondences: valid = " << (best_transform.valid?"true":"false") << RESET << endl;
 //    cout << GREEN << "  - rmse: " << best_transform.rmse << ", inlier = " << best_transform.inlier << RESET << endl;
 //    printTransform( best_transform.transform4d() );
 
@@ -906,7 +923,8 @@ bool Tracking::solveRelativeTransform( const Frame &source,
     start_time = ros::Time::now();
 
 //    // print info
-    cout << GREEN << " Transformation from ICP: valid = " << (best_transform.valid?"true":"false") << RESET << endl;
+    if( verbose_ )
+        cout << GREEN << " Transformation from ICP: valid = " << (best_transform.valid?"true":"false") << RESET << endl;
 //    cout << GREEN << "  - rmse: " << best_transform.rmse << RESET << endl;
 //    printTransform( best_transform.transform4d() );
 
@@ -927,20 +945,23 @@ bool Tracking::solveRelativeTransform( const Frame &source,
     start_time = ros::Time::now();
 
 //    // print info
-    cout << GREEN << " Transformation from PnP: valid = " << (best_transform.valid?"true":"false") << RESET << endl;
+    if( verbose_ )
+        cout << GREEN << " Transformation from PnP: valid = " << (best_transform.valid?"true":"false") << RESET << endl;
 //    cout << GREEN << "  - rmse: " << best_transform.rmse << RESET << endl;
 //    printTransform( best_transform.transform4d() );
 
     /// Print info
     double total_time = planes_dura + points_planes_dura + points_dura + icp_dura + pnp_dura;
-    cout << GREEN << " Transformation total time: " << total_time << endl;
-    cout << " -Time:"
-         << " planes: " << planes_dura
-         << ", planes/points: " << points_planes_dura
-         << ", points: " << points_dura
-         << ", icp: " << icp_dura
-         << ", pnp: " << pnp_dura
-         << RESET << endl;
+    if( verbose_ ){
+        cout << GREEN << " Transformation total time: " << total_time << endl;
+        cout << " -Time:"
+             << " planes: " << planes_dura
+             << ", planes/points: " << points_planes_dura
+             << ", points: " << points_dura
+             << ", icp: " << icp_dura
+             << ", pnp: " << pnp_dura
+             << RESET << endl;
+    }
 
     return false;
 }
