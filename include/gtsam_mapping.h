@@ -120,6 +120,9 @@ public:
     inline void setMapFrame( const std::string &frame_id ) { map_frame_ = frame_id; }
     std::string getMapFrame() const { return map_frame_; }
     // Throttle memory
+    //
+    inline void setVerbose( bool verbose ) { verbose_ = verbose; }
+    bool getVerbose() const { return verbose_; }
 
 protected:
     bool addFirstFrameMix( Frame *frame );
@@ -187,6 +190,10 @@ protected:
     void removeLostLandmarks( std::vector<int> &lost_landmarks );
 
     void mergeCoplanarLandmarks( std::map<int, std::set<int> > merge_list );
+
+    void mergeLandmarkInlier( int from, int to );
+
+    void projectAndDownsamplePlane( PlaneType *lm );
 
     bool removeLandmarksBadInlier();
 
@@ -276,6 +283,7 @@ private:
     cv::RNG rng_;
 
     // Parameters
+    bool verbose_;
     bool throttle_memory_;
     bool use_keyframe_;
     double keyframe_linear_threshold_;

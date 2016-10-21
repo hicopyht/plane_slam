@@ -10,7 +10,7 @@ KinectListener::KinectListener() :
   , camera_parameters_()
   , set_init_pose_( false )
 {
-    odom_to_map_tf_.setIdentity();
+    private_nh_.param<bool>("verbose", verbose_, false );
     //
     nh_.setCallbackQueue(&my_callback_queue_);
 
@@ -38,6 +38,7 @@ KinectListener::KinectListener() :
     viewer_ = new Viewer(nh_);
     tracker_ = new Tracking(nh_, viewer_ );
     gt_mapping_ = new GTMapping(nh_, viewer_, tracker_);
+    gt_mapping_->setVerbose( verbose_ );
 
     // reconfigure
     plane_slam_config_callback_ = boost::bind(&KinectListener::planeSlamReconfigCallback, this, _1, _2);
@@ -92,6 +93,7 @@ KinectListener::KinectListener() :
         exit(1);
     }
 
+    odom_to_map_tf_.setIdentity();
     if( publish_map_tf_ )
     {
         tf_timer_ = nh_.createTimer(ros::Duration(1.0/map_tf_freq_), &KinectListener::publishTfTimerCallback, this );
@@ -144,8 +146,11 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
     if( getOdomPose( odom_pose, depth_img_msg->header.frame_id, ros::Time(0) ) )
     {
         // Print info
-        cout << CYAN << " Odom pose: " << RESET << endl;
-        printTransform( transformTFToMatrix4d(odom_pose) );
+        if( verbose_ )
+        {
+            cout << CYAN << " Odom pose: " << RESET << endl;
+            printTransform( transformTFToMatrix4d(odom_pose) );
+        }
 
         // Publish odom path
         odom_poses_.push_back( tfToGeometryPose(odom_pose) );
@@ -215,7 +220,6 @@ void KinectListener::trackPointCloud( const sensor_msgs::PointCloud2ConstPtr &po
     static bool last_frame_valid = false;
     static tf::Transform last_tf;
 
-    cout << RESET << "----------------------------------------------------------------------" << endl;
     cout << BOLDMAGENTA << "no cloud msg: " << point_cloud->header.seq << RESET << endl;
 
     camera_parameters_ = camera;
@@ -407,9 +411,12 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     static tf::Transform last_vo_tf;
 
     frame_count_++;
-    cout << RESET << "----------------------------------------------------------------------" << endl;
-    cout << BOLDMAGENTA << "no cloud msg(force odom): " << depth_img_msg->header.seq << RESET << endl;
-    cout << MAGENTA << "  use_odom_tracking_ = " << (use_odom_tracking_?"true":"false") << RESET << endl;
+    if( verbose_ )
+    {
+        cout << RESET << "----------------------------------------------------------------------" << endl;
+        cout << BOLDMAGENTA << "no cloud msg(force odom): " << depth_img_msg->header.seq
+             << MAGENTA << " use_odom_tracking_ = " << (use_odom_tracking_?"true":"false") << RESET << endl;
+    }
 
     camera_parameters_ = camera;
 
@@ -421,8 +428,6 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     ros::Time step_time = start_time;
     double frame_dura, track_dura, map_dura, display_dura;
     double total_dura;
-
-    cout << BLUE << "  construct frame " << RESET << endl;
 
     // Compute Frame
     Frame *frame;
@@ -448,7 +453,6 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     }
     frame->stamp_ = visual_img_msg->header.stamp;
     frame->valid_ = false;
-    cout << GREEN << "  Done constructing frame. " << RESET << endl;
     //
     frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
@@ -460,8 +464,8 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     tf::Transform estimated_rel_tf = last_odom_pose.inverse()*odom_pose;
     last_odom_pose = odom_pose;
     Eigen::Matrix4d estimated_transform = transformTFToMatrix4d( estimated_rel_tf );
-    cout << GREEN << "Relative Motion: " << RESET << endl;
-    printTransform( estimated_transform, "Relative Motion", GREEN );
+//    cout << GREEN << "Relative Motion: " << RESET << endl;
+//    printTransform( estimated_transform, "Relative Motion", GREEN );
     // Tracking
     RESULT_OF_MOTION motion;
     motion.valid = false;
@@ -474,26 +478,32 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
             motion.setTransform4d( estimated_transform );
             motion.valid = true;
         }
-        // print motion
+        //
         if( motion.valid && !use_odom_tracking_ )  // success, print tracking result. Not if using odom
         {
-            gtsam::Rot3 rot3( motion.rotation );
-            cout << MAGENTA << " estimated motion, rmse = " << motion.rmse << endl;
-            cout << "  - R(rpy): " << rot3.roll()
-                 << ", " << rot3.pitch()
-                 << ", " << rot3.yaw() << endl;
-            cout << "  - T:      " << motion.translation[0]
-                 << ", " << motion.translation[1]
-                 << ", " << motion.translation[2] << RESET << endl;
+            if( verbose_ )
+            {
+                printPose3( motionToPose3(motion), " estimated motion", MAGENTA );
+                gtsam::Rot3 rot3( motion.rotation );
+                cout << MAGENTA << " estimated motion, rmse = " << motion.rmse << endl;
+                cout << "  - R(rpy): " << rot3.roll()
+                     << ", " << rot3.pitch()
+                     << ", " << rot3.yaw() << endl;
+                cout << "  - T:      " << motion.translation[0]
+                     << ", " << motion.translation[1]
+                     << ", " << motion.translation[2] << RESET << endl;
+            }
         }
         else if( use_odom_tracking_ )
         {
-            cout << YELLOW << "  odom >> tracking." << RESET << endl;
+            if( verbose_ )
+                cout << YELLOW << "  odom >> tracking." << RESET << endl;
         }
         else    // failed
         {
             motion.setTransform4d( estimated_transform );
-            cout << YELLOW << "failed to estimated motion, use odom." << RESET << endl;
+            if( verbose_ )
+                cout << YELLOW << "failed to estimated motion, use odom." << RESET << endl;
         }
 
         // estimated pose
@@ -574,14 +584,18 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     //
     total_dura = (step_time - start_time).toSec() * 1000.0f;
     // Print time
-    cout << GREEN << "Segment planes = " << frame->segment_planes_.size() << RESET << endl;
-    cout << GREEN << "Processing total time: " << total_dura << endl;
-    cout << "Time:"
-         << " frame: " << frame_dura
-         << ", tracking: " << track_dura
-         << ", mapping: " << map_dura
-         << ", display: " << display_dura
-         << RESET << endl;
+    if( verbose_ )
+        cout << GREEN << "Segment planes = " << frame->segment_planes_.size() << RESET << endl;
+    if( verbose_ )
+        cout << GREEN << "Processing total time: " << total_dura << RESET << endl;
+    if( frame->key_frame_ ){
+        cout << GREEN << "Time:"
+             << " frame: " << MAGENTA << frame_dura
+             << GREEN << ", tracking: " << MAGENTA << track_dura
+             << GREEN << ", mapping: " << MAGENTA << map_dura
+             << GREEN << ", display: " << MAGENTA << display_dura
+             << RESET << endl;
+    }
 
     // Runtimes, push new one
     if( frame->key_frame_ && last_frame_valid)
@@ -589,7 +603,8 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
         // Runtimes
         const double total = frame_dura + track_dura + map_dura;
         runtimes_.push_back( Runtime(true, frame_dura, track_dura, map_dura, total) );
-        cout << GREEN << " Runtimes size: " << runtimes_.size() << RESET << endl;
+        if( verbose_ )
+            cout << GREEN << " Runtimes size: " << runtimes_.size() << RESET << endl;
     }
 
     if( frame->valid_ )    // store key frame

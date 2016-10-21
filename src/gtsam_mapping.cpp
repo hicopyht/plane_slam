@@ -93,7 +93,8 @@ bool GTMapping::mappingMix( Frame *frame )
 //    if( success )
 //        updateMapViewer();
 
-    cout << GREEN << " GTMapping, success = " << (success?"true":"false") << "." << RESET << endl;
+    if( verbose_ )
+        cout << GREEN << " GTMapping, success = " << (success?"true":"false") << "." << RESET << endl;
 
     return success;
 }
@@ -109,6 +110,11 @@ bool GTMapping::doMappingMix( Frame *frame )
         ROS_ERROR("You should call mapping() instead of doMapping().");
         exit(1);
     }
+
+    const ros::Time start_time = ros::Time::now();
+    ros::Time step_time = start_time;
+    double cvt_dura, plane_m_dura, plane_add_dura, kp_m_dura, kp_gm_dura, kp_add_dura;
+    double optimize_dura, update_dura, inlier_dura, octomap_dura, refine_dura, semantic_dura;
 
     // Set id to frame
     frame->setId( next_frame_id_ );
@@ -131,6 +137,10 @@ bool GTMapping::doMappingMix( Frame *frame )
             removePlaneBadInlier( plane.cloud_voxel );
     }
 
+    // Time
+    cvt_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
     /// 1: plane features
     // Get predicted-observation
     std::map<int, gtsam::OrientedPlane3> predicted_observations = getPredictedObservation( new_pose );
@@ -140,12 +150,18 @@ bool GTMapping::doMappingMix( Frame *frame )
     matchObservationWithPredicted( predicted_observations, observations, planes, new_pose, pairs);
 
     // Print pairs info
-    cout << GREEN << " find pairs(obs, lm): " << pairs.size() << RESET << endl;
-    for( int i = 0; i < pairs.size(); i++)
-    {
-        const PlanePair &pair = pairs[i];
-        cout << "  - " << pair.iobs << ", " << pair.ilm << endl;
+    if( verbose_ ){
+        cout << GREEN << " find pairs(obs, lm): " << pairs.size() << RESET << endl;
+        for( int i = 0; i < pairs.size(); i++)
+        {
+            const PlanePair &pair = pairs[i];
+            cout << "  - " << pair.iobs << ", " << pair.ilm << endl;
+        }
     }
+
+    // Time
+    plane_m_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
 
 //    // check pairs
 //    if( pairs.size() < 3 )
@@ -214,6 +230,10 @@ bool GTMapping::doMappingMix( Frame *frame )
         }
     }
 
+    // Time
+    plane_add_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
     /// 2: point features
     std::vector<int> lost_landmarks;
     // inlier for tracking of frame with previous
@@ -243,12 +263,20 @@ bool GTMapping::doMappingMix( Frame *frame )
 //        tracker_->computeCorrespondenceInliersAndError( frame->good_matches_, transformation, frame_last->feature_locations_3d_, frame->feature_locations_3d_,
 //                                                        min_inlier_threshold, frame->kp_inlier_, inlier_error, max_dist_m );
 
-        cout << GREEN << " compute matches with previous: " << frame_last->id()
-             << ", good_matches_ = " << frame->good_matches_.size()
-             << ", kp_inlier = " << frame->kp_inlier_.size() << RESET << endl;
-        printTransform( motion.transform4d(), "  Relative TF", WHITE);
-        printPose3( rel_pose, "  Relative Pose:", BLUE );
+        if( verbose_ ){
+            cout << GREEN << " compute matches with previous: " << frame_last->id()
+                 << ", good_matches_ = " << frame->good_matches_.size()
+                 << ", kp_inlier = " << frame->kp_inlier_.size() << RESET << endl;
+            printTransform( motion.transform4d(), "  Relative TF", WHITE);
+            printPose3( rel_pose, "  Relative Pose:", BLUE );
+        }
+
     }
+
+    // Time
+    kp_m_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
     //
     if( frame->id() == 1 ) // first two frames, add bwtween factors
     {
@@ -315,9 +343,14 @@ bool GTMapping::doMappingMix( Frame *frame )
         std::vector<cv::DMatch> matches;
         std::vector<int> unmatched_landmarks;
         matchKeypointWithMap( *frame, matches, unmatched_landmarks);
-        cout << MAGENTA << "  Match time: " << (ros::Time::now()-stime).toSec()*1000.0 << " ms" << RESET << endl;
+        if( verbose_ )
+            cout << MAGENTA << "  Match time: " << (ros::Time::now()-stime).toSec()*1000.0 << " ms" << RESET << endl;
 //        matchKeypointsWithGlobal( frame->kp_inlier_, frame->pose_, frame->camera_params_,
 //                                  frame->feature_descriptors_, frame->feature_locations_3d_, matches );
+
+        // Time
+        kp_gm_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+        step_time = ros::Time::now();
 
         /// Compute lost_landmarks
         computeLostKeypoints( unmatched_landmarks, lost_landmarks );
@@ -385,6 +418,10 @@ bool GTMapping::doMappingMix( Frame *frame )
                 initial_estimate_buffer_.insert<Point3>( kp_key, gp3_w );
             }
         }
+
+        // Time
+        kp_add_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+        step_time = ros::Time::now();
     }
 
 
@@ -397,6 +434,10 @@ bool GTMapping::doMappingMix( Frame *frame )
     isam2_->update(factor_graph_, initial_estimate_);
     isam2_->update(); // call additionally
 
+    // Time
+    optimize_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
     // Delete lost keypoint landmarks
     removeLostLandmarks( lost_landmarks );
 
@@ -407,12 +448,24 @@ bool GTMapping::doMappingMix( Frame *frame )
     // Update optimized poses, planes, keypoints
     updateOptimizedResultMix();
 
+    // Time
+    update_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
 //    cout << "  Update landmarks inlier ..." << endl;
     // Update Map
     updateLandmarksInlier( frame->id() );
 
+    // Time
+    inlier_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
     // Update Octomap
     updateOctoMap();
+
+    // Time
+    octomap_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
 
     // Clear the factor graph and values for the next iteration
     factor_graph_.resize(0);
@@ -424,14 +477,40 @@ bool GTMapping::doMappingMix( Frame *frame )
         refinePlanarMap();
     }
 
+    // Time
+    refine_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
     // Semantic labelling: floor, wall, door, table
     semanticMapLabel();
+
+    // Time
+    semantic_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
 
     // update estimated
     last_estimated_pose_ = optimized_poses_list_[ frame->id() ];
     last_estimated_pose_tf_ = pose3ToTF( last_estimated_pose_ );
-    return true;
 
+    // Print timing
+    cout << "Time:"
+         << " cvt: " << MAGENTA << cvt_dura << RESET
+         << ", p_m: " << MAGENTA << plane_m_dura << RESET
+         << ", p_a: " << MAGENTA << plane_add_dura << RESET
+         << ", kp_m: " << MAGENTA << kp_m_dura << RESET
+         << ", kp_gm: " << MAGENTA << kp_gm_dura << RESET
+         << ", kp_a: " << MAGENTA << kp_add_dura << RESET
+         << endl;
+
+    cout << " opt: " << MAGENTA << optimize_dura << RESET
+         << ", upd: " << MAGENTA << update_dura << RESET
+         << ", inli: " << MAGENTA << inlier_dura << RESET
+         << ", octo: " << MAGENTA << octomap_dura << RESET
+         << ", ref: " << MAGENTA << refine_dura << RESET
+         << ", label: " << MAGENTA << semantic_dura << RESET
+         << endl;
+
+    return true;
 }
 
 bool GTMapping::addFirstFrameMix( Frame *frame )
@@ -1080,9 +1159,11 @@ void GTMapping::matchKeypointWithMap( const Frame &frame, std::vector<cv::DMatch
 
 
     // Print info
-    cout << GREEN << "  predicted keypoints: " << predicted_keypoints.size()
-         << ", matched: " << matches.size()
-         << ", umatched: " << unmatched_landmarks.size() << RESET << endl;
+    if( verbose_ ){
+        cout << GREEN << "  predicted keypoints: " << predicted_keypoints.size()
+             << ", matched: " << matches.size()
+             << ", umatched: " << unmatched_landmarks.size() << RESET << endl;
+    }
 }
 
 void GTMapping::matchKeypointsWithGlobal( const Frame &frame,
@@ -1542,14 +1623,16 @@ bool GTMapping::refinePlanarMap()
                     {
                         p1.valid = false;
                         remove_list[idx1] = idx2;
-                        cout << RED << "  -- find co-planar: " << idx1 << " to " << idx2 << RESET << endl;
+                        if( verbose_ )
+                            cout << RED << "  -- find co-planar: " << idx1 << " to " << idx2 << RESET << endl;
                         break;
                     }
                     else
                     {
                         p2.valid = false;
                         remove_list[idx2] = idx1;
-                        cout << RED << "  -- find co-planar: " << idx2 << " to " << idx1 << RESET << endl;
+                        if( verbose_ )
+                            cout << RED << "  -- find co-planar: " << idx2 << " to " << idx1 << RESET << endl;
                     }
                     find_coplanar = true;
                 } // end of if overlap
@@ -1560,7 +1643,8 @@ bool GTMapping::refinePlanarMap()
 
     } // end of for( int i = 0; i < (num - 1 ); i++)
 
-    cout << YELLOW << " Find co-planar pairs: " << remove_list.size() << RESET << endl;
+    if( verbose_ )
+        cout << YELLOW << " Find co-planar pairs: " << remove_list.size() << RESET << endl;
 
     std::map<int, std::set<int> > merge_list;   // merge list <to, set<from>>
     for( std::map<int,int>::iterator it = remove_list.begin(); it != remove_list.end(); it++)
@@ -1668,12 +1752,12 @@ void GTMapping::removeLostLandmarks( std::vector<int> &lost_landmarks )
     if( lost_landmarks.size() <= 0 )
         return;
 
-    cout << MAGENTA << "  Lost landmarks:";
-    for( int i = 0; i < lost_landmarks.size(); i++ )
-    {
-        cout << " " << lost_landmarks[i];
-    }
-    cout << RESET << endl;
+//    cout << MAGENTA << "  Lost landmarks:";
+//    for( int i = 0; i < lost_landmarks.size(); i++ )
+//    {
+//        cout << " " << lost_landmarks[i];
+//    }
+//    cout << RESET << endl;
 
     // Do not remove id = 0
     std::vector<int>::iterator itl = std::find( lost_landmarks.begin(), lost_landmarks.end(), 0 );
@@ -1683,7 +1767,7 @@ void GTMapping::removeLostLandmarks( std::vector<int> &lost_landmarks )
     if( lost_landmarks.size() <= 0 )
         return;
 
-    cout << BLUE << "  Remove values(" << lost_landmarks.size() << "):" << RESET << endl;
+//    cout << BLUE << "  Remove values(" << lost_landmarks.size() << "):" << RESET << endl;
     FastVector<Key> remove_keys;
     // Remove variable from graph
     Values isam2_values = isam2_->calculateBestEstimate();
@@ -1697,7 +1781,7 @@ void GTMapping::removeLostLandmarks( std::vector<int> &lost_landmarks )
         {
             delete keypoints_list_.at( idx );
             keypoints_list_.erase( idx );
-            cout << MAGENTA << "\t" << idx;
+//            cout << MAGENTA << "\t" << idx;
         }
 
         // Delete id == 'idx' in the 'keypoints_list_'
@@ -1705,7 +1789,7 @@ void GTMapping::removeLostLandmarks( std::vector<int> &lost_landmarks )
         if( okpitem != optimized_keypoints_list_.end() )
         {
             optimized_keypoints_list_.erase( idx );
-            cout << YELLOW << "\t" << idx;
+//            cout << YELLOW << "\t" << idx;
         }
 
         // delete gtsam::Point3 variable from values
@@ -1721,7 +1805,7 @@ void GTMapping::removeLostLandmarks( std::vector<int> &lost_landmarks )
         remove_keys.push_back( key_kp );
     }
 
-    cout << BLUE << "  Remove factor(" << remove_keys.size() << "):" << RESET << endl;
+//    cout << BLUE << "  Remove factor(" << remove_keys.size() << "):" << RESET << endl;
 
     // Remove factor in the graph
     for( NonlinearFactorGraph::iterator factor_iter = factor_graph_buffer_.begin();
@@ -1737,17 +1821,18 @@ void GTMapping::removeLostLandmarks( std::vector<int> &lost_landmarks )
             FastVector<Key>::iterator lost_it = std::find(remove_keys.begin(), remove_keys.end(), key);
             if ( lost_it != remove_keys.end() )
             {
-                cout << MAGENTA << " " << key;
-                cout << BLUE << "/" << lost_landmarks[lost_it - remove_keys.begin()] << RESET << endl;
+//                cout << MAGENTA << " " << key;
+//                cout << BLUE << "/" << lost_landmarks[lost_it - remove_keys.begin()] << RESET << endl;
                 factor_graph_buffer_.erase( factor_iter );
             }
         }
     }
 
-    cout << BLUE << "  Update graph." << RESET << endl;
+//    cout << BLUE << "  Update graph." << RESET << endl;
     delete isam2_;
     isam2_ = new ISAM2( isam2_parameters_ );
     isam2_->update( factor_graph_buffer_, isam2_values );
+    
 }
 
 void GTMapping::mergeCoplanarLandmarks( std::map<int, std::set<int> > merge_list )
@@ -1757,12 +1842,11 @@ void GTMapping::mergeCoplanarLandmarks( std::map<int, std::set<int> > merge_list
     for( std::map<int, std::set<int> >::iterator it = merge_list.begin(); it != merge_list.end(); it++)
     {
         std::set<int> from_set = it->second;
-        cout << "  - from:";
+        cout << YELLOW << "  - from:";
         for( std::set<int>::iterator its = from_set.begin(); its!= from_set.end(); its++)
             cout << " " << (*its);
-        cout << " to: " << it->first << endl;
+        cout << " to: " << it->first << RESET << endl;
     }
-    cout << RESET << endl;
 
 
     // Graph variable
@@ -1773,6 +1857,7 @@ void GTMapping::mergeCoplanarLandmarks( std::map<int, std::set<int> > merge_list
     {
         const int to = itt->first;
         const std::set<int> from_set = itt->second;
+        PlaneType* tolm = landmarks_list_.at( to );
         for( std::set<int>::const_iterator itf = from_set.begin(); itf!= from_set.end(); itf++)
         {
             const int from = *itf;
@@ -1782,6 +1867,9 @@ void GTMapping::mergeCoplanarLandmarks( std::map<int, std::set<int> > merge_list
             std::map<int, PlaneType*>::iterator litem = landmarks_list_.find( from );
             if( litem != landmarks_list_.end() )
             {
+                // Merge inlier
+                *(tolm->cloud_voxel) += *(litem->second->cloud_voxel);
+                //
                 delete litem->second;
 //                landmarks_list_.erase( from );
                 landmarks_list_.erase( litem );
@@ -1818,8 +1906,10 @@ void GTMapping::mergeCoplanarLandmarks( std::map<int, std::set<int> > merge_list
 
             // Change factor id in the graph, just build rekey_mapping
             rekey_mapping[key_from] = key_to;
-
         }
+
+        // Project and downsample
+        projectAndDownsamplePlane( tolm );
 
     }
 
@@ -1851,16 +1941,37 @@ void GTMapping::mergeCoplanarLandmarks( std::map<int, std::set<int> > merge_list
 
     }
 
-    cout << YELLOW << " Update graph ..." << RESET << endl;
     delete isam2_;
     isam2_ = new ISAM2( isam2_parameters_ );
     isam2_->update( factor_graph_buffer_, isam2_values );
     isam2_->update();
-    cout << YELLOW << " optimized result mix." << RESET << endl;
     updateOptimizedResultMix();
-    cout << YELLOW << " update inlier." << RESET << endl;
-    updateLandmarksInlier();
-    cout << YELLOW << " Done." << RESET << endl;
+//    updateLandmarksInlier();
+}
+
+void GTMapping::mergeLandmarkInlier( int from, int to )
+{
+
+}
+
+void GTMapping::projectAndDownsamplePlane( PlaneType *lm )
+{
+    if( !lm )
+        return;
+
+    PointCloudTypePtr cloud_projected( new PointCloudType );
+    projectPoints( *(lm->cloud_voxel), lm->coefficients, *cloud_projected );
+    voxelGridFilter( cloud_projected, lm->cloud_voxel, plane_inlier_leaf_size_ );
+    setPointCloudColor( *(lm->cloud_voxel), lm->color );
+    cloud_projected->clear();
+
+    // compute 3d centroid
+    Eigen::Vector4f cen;
+    pcl::compute3DCentroid( *(lm->cloud_voxel), cen );
+    lm->centroid.x = cen[0];
+    lm->centroid.y = cen[1];
+    lm->centroid.z = cen[2];
+    lm->centroid.rgb = lm->color.float_value;
 }
 
 bool GTMapping::removeLandmarksBadInlier()
@@ -1990,6 +2101,7 @@ void GTMapping::updateLandmarksInlier( int index )
     // usually the last frame
     if( index >= 0 )
     {
+        planes_optimized_.clear();
         if( frames_list_.find( index ) != frames_list_.end() )
         {
             Frame *frame = frames_list_.at( index );
@@ -2001,6 +2113,10 @@ void GTMapping::updateLandmarksInlier( int index )
                     planes_optimized_.insert( id );
                 }
             }
+        }
+        else
+        {
+            return;
         }
     }
 
@@ -2021,40 +2137,40 @@ void GTMapping::updateLandmarksInlier( int index )
         lm->cloud_voxel->clear();  // clear inlier
     }
 
-    // Sum
-    for( std::map<int, Frame*>::iterator it = frames_list_.begin();
-         it != frames_list_.end(); it++)
+    // Add inlier
+    Frame *frame = frames_list_.at( index );;
+    Eigen::Matrix4d trans = transformTFToMatrix4d( frame->pose_ );
+    for( int idx = 0; idx < frame->segment_planes_.size(); idx++)
     {
-        Frame *frame = it->second;
-        Eigen::Matrix4d trans = transformTFToMatrix4d( frame->pose_ );
-        for( int idx = 0; idx < frame->segment_planes_.size(); idx++)
+        PlaneType &obs = frame->segment_planes_[idx];
+        if( planes_optimized_.find(obs.id()) != planes_optimized_.end() )
         {
-            PlaneType &obs = frame->segment_planes_[idx];
-            if( planes_optimized_.find(obs.id()) != planes_optimized_.end() )
-            {
-                PlaneType *lm = landmarks_list_[ obs.id() ];
-                *(lm->cloud_voxel) += transformPointCloud( *(obs.cloud_voxel), trans );
-            }
+            PlaneType *lm = landmarks_list_[ obs.id() ];
+            *(lm->cloud_voxel) += transformPointCloud( *(obs.cloud_voxel), trans );
         }
     }
+
+//    // Sum
+//    for( std::map<int, Frame*>::iterator it = frames_list_.begin();
+//         it != frames_list_.end(); it++)
+//    {
+//        Frame *frame = it->second;
+//        Eigen::Matrix4d trans = transformTFToMatrix4d( frame->pose_ );
+//        for( int idx = 0; idx < frame->segment_planes_.size(); idx++)
+//        {
+//            PlaneType &obs = frame->segment_planes_[idx];
+//            if( planes_optimized_.find(obs.id()) != planes_optimized_.end() )
+//            {
+//                PlaneType *lm = landmarks_list_[ obs.id() ];
+//                *(lm->cloud_voxel) += transformPointCloud( *(obs.cloud_voxel), trans );
+//            }
+//        }
+//    }
 
     // Project and Downsample
     for( std::set<int>::iterator it = planes_optimized_.begin(); it != planes_optimized_.end(); it++ )
     {
-        PlaneType *lm = landmarks_list_.at(*it);;
-        PointCloudTypePtr cloud_projected( new PointCloudType );
-        projectPoints( *(lm->cloud_voxel), lm->coefficients, *cloud_projected );
-        voxelGridFilter( cloud_projected, lm->cloud_voxel, plane_inlier_leaf_size_ );
-        setPointCloudColor( *(lm->cloud_voxel), lm->color );
-        cloud_projected->clear();
-
-        // compute 3d centroid
-        Eigen::Vector4f cen;
-        pcl::compute3DCentroid( *(lm->cloud_voxel), cen );
-        lm->centroid.x = cen[0];
-        lm->centroid.y = cen[1];
-        lm->centroid.z = cen[2];
-        lm->centroid.rgb = lm->color.float_value;
+        projectAndDownsamplePlane( landmarks_list_.at(*it) );
     }
 
 }
@@ -2817,7 +2933,7 @@ bool GTMapping::optimizeGraphCallback(std_srvs::Trigger::Request &req, std_srvs:
     {
         optimizeGraph();        // graph optimizing
         updateOptimizedResult();    // update result
-        updateLandmarksInlier();    // Update Map
+        updateLandmarksInlierAll();    // Update Map
         if( refine_planar_map_ )    // Refine map
             refinePlanarMap();
         updateMapViewer();  // update visualization

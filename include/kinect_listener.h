@@ -138,6 +138,7 @@ private:
     dynamic_reconfigure::Server<plane_slam::PlaneSlamConfig> plane_slam_config_server_;
     dynamic_reconfigure::Server<plane_slam::PlaneSlamConfig>::CallbackType plane_slam_config_callback_;
     // subscribers
+    bool verbose_;
     int subscriber_queue_size_;
     std::string topic_image_visual_;
     std::string topic_image_depth_;
