@@ -246,6 +246,7 @@ bool GTMapping::doMappingMix( Frame *frame )
             lm->color.Green = rng_.uniform(0, 255);
             lm->color.Red = rng_.uniform(0, 255);
             lm->color.Alpha = 255;
+            lm->setId( obs.id() );
             landmarks_list_[obs.id()] = lm;
         }
     }
@@ -624,6 +625,7 @@ bool GTMapping::addFirstFrameMix( Frame *frame )
         lm->color.Green = rng_.uniform(0, 255);
         lm->color.Red = rng_.uniform(0, 255);
         lm->color.Alpha = 255;
+        lm->setId( plane.id() );
         landmarks_list_[plane.id()] = lm;
     }
 
@@ -796,6 +798,7 @@ bool GTMapping::doMapping( Frame *frame )
             lm->color.Green = rng_.uniform(0, 255);
             lm->color.Red = rng_.uniform(0, 255);
             lm->color.Alpha = 255;
+            lm->setId( obs.id() );
             landmarks_list_[obs.id()] = lm;
         }
     }
@@ -928,6 +931,7 @@ bool GTMapping::addFirstFrame( Frame *frame )
         lm->color.Green = rng_.uniform(0, 255);
         lm->color.Red = rng_.uniform(0, 255);
         lm->color.Alpha = 255;
+        lm->setId( plane.id() );
         landmarks_list_[plane.id()] = lm;
     }
 
@@ -997,7 +1001,7 @@ void GTMapping::labelPlane( PlaneType *plane )
 //         << ", indices:" << size << RESET << endl;
 
     // Labelling "FLOOR"
-    if( theta < (5.0*DEG_TO_RAD) && (d < 0.1) ) // theta < 5deg, d < 0.1m
+    if( theta < (5.0*DEG_TO_RAD) && (plane->centroid.z < 0.15) ) // theta < 5deg, cen_z < 0.15m
     {
         plane->semantic_label = "FLOOR";
         return;
@@ -1548,7 +1552,7 @@ bool GTMapping::checkLandmarksOverlap( const PlaneType &lm1, const PlaneType &lm
         if( octreeD.isVoxelOccupiedAtPoint( pt ) )
         {
             collision ++;
-            if(collision > 20)
+            if(collision > 3)
                 return true;
         }
     }

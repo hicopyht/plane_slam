@@ -1044,7 +1044,7 @@ void KinectListener::savePlaneLandmarks( const std::string &filename )
     FILE* yaml = std::fopen( filename.c_str(), "w" );
     fprintf( yaml, "# landmarks file: %s\n", filename.c_str() );
     fprintf( yaml, "# landmarks format: ax+by+cz+d = 0");
-    fprintf( yaml, "# lm(a,b,c,d,numOfPoints, semantic_label)");
+    fprintf( yaml, "# lm(a,b,c,d,id,numOfPoints(voxel), semantic_label)");
 
     // Save Landmarks
     std::map<int, PlaneType*> landmarks = gt_mapping_->getLandmark();
@@ -1055,8 +1055,9 @@ void KinectListener::savePlaneLandmarks( const std::string &filename )
         PlaneType *lm = it->second;
         if( !lm->valid )
             continue;
-        fprintf( yaml, "%f %f %f %f %d %s\n", lm->coefficients[0], lm->coefficients[1],
-                lm->coefficients[2], lm->coefficients[3], lm->cloud->size(), lm->semantic_label.c_str() );
+        fprintf( yaml, "%f %f %f %f %d %d %s\n", lm->coefficients[0], lm->coefficients[1],
+                lm->coefficients[2], lm->coefficients[3], it->first, lm->cloud_voxel->size(), lm->semantic_label.c_str() );
+//        cout << WHITE << " - save lm: " << BLUE << it->first << WHITE << " points: " << BLUE << lm->cloud_voxel->size() << RESET << endl;
     }
     fprintf( yaml, "\n");
 
