@@ -9,8 +9,10 @@ KinectListener::KinectListener() :
   , tf_listener_( nh_, ros::Duration(10.0) )
   , camera_parameters_()
   , set_init_pose_( false )
+  , save_message_pcd_(0)
 {
     private_nh_.param<bool>("verbose", verbose_, false );
+    cout << WHITE << "  verbose = " << (verbose_?"true":"false") << RESET << endl;
     //
     nh_.setCallbackQueue(&my_callback_queue_);
 
@@ -117,6 +119,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
                                 const sensor_msgs::ImageConstPtr& depth_img_msg,
                                 const sensor_msgs::CameraInfoConstPtr& cam_info_msg)
 {
+//    static tf::Transform last_odom = tf::Transform(tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0));
     static int skip = 0;
     camera_frame_ = depth_img_msg->header.frame_id;
 
@@ -154,11 +157,6 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
             cout << CYAN << " Odom pose: " << RESET << endl;
             printTransform( transformTFToMatrix4d(odom_pose) );
         }
-
-        // Publish odom path
-        odom_poses_.push_back( tfToGeometryPose(odom_pose) );
-        publishOdomPose();
-        publishOdomPath();
     }
     else{
         if(force_odom_)
@@ -171,10 +169,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
 
     if( force_odom_ )
     {
-        if( mapping_key_message_ )
-            trackKeyMessage( visual_img_msg, depth_img_msg, camera, odom_pose );
-        else
-            trackDepthRgbImage( visual_img_msg, depth_img_msg, camera, odom_pose );
+        trackDepthRgbImage( visual_img_msg, depth_img_msg, camera, odom_pose );
     }
     else
     {
@@ -202,10 +197,12 @@ void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img
     tf::Transform odom_pose;
     if( getOdomPose( odom_pose, point_cloud->header.frame_id, ros::Time(0) ) )
     {
-        // Publish odom path
-        odom_poses_.push_back( tfToGeometryPose(odom_pose) );
-        publishOdomPose();
-        publishOdomPath();
+        // Print info
+        if( verbose_ )
+        {
+            cout << CYAN << " Odom pose: " << RESET << endl;
+            printTransform( transformTFToMatrix4d(odom_pose) );
+        }
     }
     else{
         if(force_odom_)
@@ -225,112 +222,40 @@ void KinectListener::trackPointCloud( const sensor_msgs::PointCloud2ConstPtr &po
                                       CameraParameters& camera,
                                       tf::Transform &odom_pose )
 {
-    static tf::Transform last_odom_pose = tf::Transform::getIdentity();
+    static tf::Transform last_keyframe_odom = tf::Transform::getIdentity();
     static Frame *last_frame;
     static bool last_frame_valid = false;
-    static tf::Transform last_tf;
 
     cout << BOLDMAGENTA << "no cloud msg: " << point_cloud->header.seq << RESET << endl;
 
-    camera_parameters_ = camera;
+    // If motion is too small, stop mapping
+    if( mapping_key_message_ && !last_frame->valid_
+          && !isBigOdomChange(last_keyframe_odom.inverse() * odom_pose, gt_mapping_->getKeyFrameLinearThreshold(), gt_mapping_->getKeyFrameAngularThreshold()) )
+    {
+        return;
+    }
 
-    // Ros message to pcl type
-    PointCloudTypePtr input( new PointCloudType );
-    pcl::fromROSMsg( *point_cloud, *input);
-
-    //
+    // Time
     const ros::Time start_time = ros::Time::now();
     ros::Time step_time = start_time;
     double frame_dura, track_dura, map_dura, display_dura;
     double total_dura;
 
-    // Compute Frame
-    Frame *frame;
-    if( plane_segment_method_ == LineBased )
-        frame = new Frame( input, camera_parameters_, line_based_plane_segmentor_);
-    else
-        frame = new Frame( input, camera_parameters_, organized_plane_segmentor_);
-    frame->stamp_ = point_cloud->header.stamp;
-    frame->valid_ = false;
+    // Frame
+    Frame *frame = pointCloudToFrame( point_cloud, camera );
+    frame->odom_pose_ = odom_pose;
     //
     frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
 
-    // Guess motion from odom
-    if( !last_frame_valid )
-        last_odom_pose = odom_pose;
-    tf::Transform estimated_rel_tf = last_odom_pose.inverse()*odom_pose;
-    Eigen::Matrix4d estimated_transform = transformTFToMatrix4d( estimated_rel_tf );
-    printTransform( estimated_transform, "Relative Motion", GREEN );
-    // Tracking
-    RESULT_OF_MOTION motion;
-    motion.valid = false;
-    if( last_frame_valid )  // Do tracking
-    {
-        if( !use_odom_tracking_ )
-            tracker_->track( *last_frame, *frame, motion, estimated_transform);
-        else
-        {
-            motion.setTransform4d( estimated_transform );
-            motion.valid = true;
-        }
-        // print motion
-        if( motion.valid && !use_odom_tracking_ )  // success, print tracking result
-        {
-            gtsam::Rot3 rot3( motion.rotation );
-            cout << MAGENTA << " estimated motion, rmse = " << motion.rmse << endl;
-            cout << "  - R(rpy): " << rot3.roll()
-                 << ", " << rot3.pitch()
-                 << ", " << rot3.yaw() << endl;
-            cout << "  - T:      " << motion.translation[0]
-                 << ", " << motion.translation[1]
-                 << ", " << motion.translation[2] << RESET << endl;
-        }
-        else if( use_odom_tracking_ )
-        {
-            cout << YELLOW << "  odom >> tracking." << RESET << endl;
-        }
-        else    // failed
-        {
-            motion.setTransform4d( estimated_transform );
-            cout << YELLOW << "failed to estimated motion, use odom." << RESET << endl;
-        }
-
-        // estimated pose
-        frame->pose_ = last_frame->pose_ * motionToTf( motion );
-        frame->valid_ = true;
-    }
-    else
-    {
-        if( frame->segment_planes_.size() > 0)
-        {
-            frame->valid_ = true;   // first frame, set valid, add to mapper as first frame
-            frame->pose_ = odom_pose;   // set odom pose as initial pose
-        }
-    }
-
+    // Motion from odom
+    trackFrameMotionOdom( last_frame, frame );
     //
     track_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
 
-    // Publish visual odometry path
-    if( !last_frame_valid && frame->valid_ ) // First frame, valid, set initial pose
-    {
-        // First odometry pose to true pose.
-        visual_odometry_poses_.clear();
-        visual_odometry_poses_.push_back( tfToGeometryPose(odom_pose) );
-        last_tf = odom_pose;
-    }
-    else if( motion.valid ) // not first frame, motion is always valid, calculate & publish odometry pose.
-    {
-        tf::Transform rel_tf = motionToTf( motion );
-        rel_tf.setOrigin( tf::Vector3( motion.translation[0], motion.translation[1], motion.translation[2]) );
-        tf::Transform new_tf = last_tf * rel_tf;
-        visual_odometry_poses_.push_back( tfToGeometryPose(new_tf) );
-        publishVisualOdometryPose();
-        publishVisualOdometryPath();
-        last_tf = new_tf;
-    }
+    // Record & publish visual odometry & odometry
+    recordVisualOdometry( last_frame, frame );
 
     // Mapping
     if( frame->valid_ ) // always valid
@@ -343,35 +268,12 @@ void KinectListener::trackPointCloud( const sensor_msgs::PointCloud2ConstPtr &po
     map_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
 
-    // Store last odom
-    if( frame->key_frame_ && do_slam_ )
-    {
-        last_odom_pose = odom_pose;
-    }
 
     // Upate odom to map tf
-    tf::Transform odom_to_map = frame->pose_ * odom_pose.inverse();
-    double yaw = tf::getYaw( odom_to_map.getRotation() );
-    // Set x, y, yaw
-    map_tf_mutex_.lock();
-    odom_to_map_tf_ = tf::Transform( tf::createQuaternionFromYaw(yaw),
-                                     tf::Vector3(odom_to_map.getOrigin().x(), odom_to_map.getOrigin().y(), 0) );
-    map_tf_mutex_.unlock();
-    // Correct pose
-//    frame->pose_ = odom_to_map_tf_ * odom_pose;
+    calculateOdomToMapTF( frame->pose_, frame->odom_pose_ );
 
-    // Map for visualization
-    if( frame->key_frame_)
-        gt_mapping_->updateMapViewer();
-
-
-    // Display frame
-    viewer_->removeFrames();
-    if( last_frame_valid )
-        viewer_->displayFrame( *last_frame, "last_frame", viewer_->vp1() );
-    if( frame->valid_ )
-        viewer_->displayFrame( *frame, "frame", viewer_->vp2() );
-    viewer_->spinFramesOnce();
+    // Visualization for mappint result
+    displayMappingResult( frame );
     //
     display_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
@@ -395,150 +297,71 @@ void KinectListener::trackPointCloud( const sensor_msgs::PointCloud2ConstPtr &po
         cout << GREEN << " Runtimes size: " << runtimes_.size() << RESET << endl;
     }
 
-    if( frame->valid_ )
-    {
-        if( !last_frame_valid )
-        {
-            last_frame_valid = true;
-        }
-        else if( !last_frame->key_frame_ )
-        {
-            delete last_frame;  // not keyframe, delete data
-        }
+    // Store key frame
+    storeKeyFrame( last_frame, frame );
 
-        last_frame = frame;
-    }
+    // Store key frame odom pose
+    if( frame->key_frame_ )
+        last_keyframe_odom = odom_pose;
+
 }
 
-bool KinectListener::isKeyFrame( tf::Transform &odom_pose )
+
+void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visual_img_msg,
+                                         const sensor_msgs::ImageConstPtr &depth_img_msg,
+                                         CameraParameters & camera,
+                                         tf::Transform &odom_pose)
 {
-    static tf::Transform last_odom_pose = tf::Transform::getIdentity(); // update every iteration
-    static double linear_distance = 0;
-    static double angular_distance = 0;
-
-    //
-    tf::Transform rel_tf = last_odom_pose.inverse()*odom_pose;
-    last_odom_pose = odom_pose;
-
-    gtsam::Pose3 pose3 = tfToPose3( rel_tf );
-    double x, y, yaw;
-    x = pose3.z();
-    y = pose3.x();
-    yaw = pose3.rotation().pitch();
-
-    // absolute distance
-    linear_distance += sqrt(x*x+y*y);
-    angular_distance += fabs(yaw*RAD_TO_DEG);
-//    cout << MAGENTA << "  distance: " << WHITE << linear_distance << ", " << angular_distance << RESET << endl;
-
-    if( linear_distance >= 0.05 || angular_distance >= 3.0 )
-    {
-        linear_distance = 0;
-        angular_distance = 0;
-        return true;
-    }
-    else
-    {
-        return false;
-    }
-}
-
-void KinectListener::trackKeyMessage( const sensor_msgs::ImageConstPtr &visual_img_msg,
-                                      const sensor_msgs::ImageConstPtr &depth_img_msg,
-                                      CameraParameters & camera,
-                                      tf::Transform &odom_pose )
-{
-    static tf::Transform last_key_odom_pose = tf::Transform::getIdentity();
-    static Frame *last_frame;
-    static bool last_frame_valid = false;
-    static tf::Transform last_vo_tf;
+    static tf::Transform last_keyframe_odom = tf::Transform::getIdentity();
+    static Frame *last_frame = new Frame();
 
     frame_count_++;
-    if( !isKeyFrame(odom_pose) && last_frame_valid )
+    if( verbose_ )
     {
-//        ROS_INFO_STREAM("Not keyframe. Skip.");
+        cout << BOLDMAGENTA << "no cloud msg(force odom): " << depth_img_msg->header.seq
+             << MAGENTA << " use_odom_tracking_ = " << (use_odom_tracking_?"true":"false") << RESET << endl;
+    }
+    else{
+        cout << BOLDMAGENTA << "no cloud msg: " << depth_img_msg->header.seq << RESET << endl;
+    }
+
+    // If motion is too small, stop mapping
+    if( mapping_key_message_ && !last_frame->valid_
+          && !isBigOdomChange(last_keyframe_odom.inverse() * odom_pose, gt_mapping_->getKeyFrameLinearThreshold(), gt_mapping_->getKeyFrameAngularThreshold()) )
+    {
         return;
     }
 
-    cout << BOLDMAGENTA << "no cloud msg: " << depth_img_msg->header.seq << RESET << endl;
-
-    // Guess motion from odom
-    tf::Transform estimated_rel_tf = last_key_odom_pose.inverse()*odom_pose;
-    last_key_odom_pose = odom_pose;
-    Eigen::Matrix4d estimated_transform = transformTFToMatrix4d( estimated_rel_tf );
-
-    camera_parameters_ = camera;
-
-    // Get Mat Image
-    cv::Mat visual_image = cv_bridge::toCvCopy(visual_img_msg)->image; // to cv image
-    cv::Mat depth_image = cv_bridge::toCvCopy(depth_img_msg)->image; // to cv image
-
+    // Time
     const ros::Time start_time = ros::Time::now();
     ros::Time step_time = start_time;
     double frame_dura, track_dura, map_dura, display_dura;
     double total_dura;
 
-    // Compute Frame
-    Frame *frame;
-    if( !keypoint_type_.compare("ORB") )
-    {
-        if( plane_segment_method_ == LineBased )
-            frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, line_based_plane_segmentor_);
-        else
-            frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, organized_plane_segmentor_);
-
-    }
-    else if( !keypoint_type_.compare("SURF") )
-    {
-        if( plane_segment_method_ == LineBased )
-            frame = new Frame( visual_image, depth_image, camera_parameters_, surf_detector_, surf_extractor_, line_based_plane_segmentor_);
-        else
-            frame = new Frame( visual_image, depth_image, camera_parameters_, surf_detector_, surf_extractor_, organized_plane_segmentor_);
-
-    }else
-    {
-        ROS_ERROR_STREAM("keypoint_type_ undefined.");
-        return;
-    }
-    frame->stamp_ = visual_img_msg->header.stamp;
-    frame->valid_ = true;
+    // Get frame
+    Frame *frame = depthRgbToFrame( visual_img_msg, depth_img_msg, camera );
+    frame->odom_pose_ = odom_pose;
     //
     frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
-    //
 
-    // Set motion
-    RESULT_OF_MOTION motion;
-    motion.setTransform4d( estimated_transform );
-    motion.valid = true;
+    // Debug
+    debugFrame( frame );
 
-    if( !last_frame_valid )
-    {
-        frame_count_ = 1;
-        // check number of planes ???
-        if( frame->segment_planes_.size() > 0)
-        {
-            frame->valid_ = true;   // first frame, set valid, add to mapper as first frame
-            frame->pose_ = odom_pose;   // set odom pose as initial pose
-        }
-    }
-    else
-    {
-        // estimated pose
-        frame->pose_ = last_frame->pose_ * motionToTf( motion );
-        frame->valid_ = true;
-    }
-
+    // Motion from odom
+    trackFrameMotionOdom( last_frame, frame );
     //
     track_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
 
+    // Record & publish visual odometry & odometry
+    recordVisualOdometry( last_frame, frame );
 
     // Mapping
-    if( frame->valid_ && do_slam_ ) // frame is always valid
+    if( frame->valid_ && do_slam_ ) // always valid
     {
         if( mapping_keypoint_ )
-            frame->key_frame_ = gt_mapping_->mappingMixKeyMessage( frame );
+            frame->key_frame_ = gt_mapping_->mappingMix( frame );
         else
             frame->key_frame_ = gt_mapping_->mapping( frame );
     }
@@ -546,28 +369,18 @@ void KinectListener::trackKeyMessage( const sensor_msgs::ImageConstPtr &visual_i
     step_time = ros::Time::now();
 
     // Upate odom to map tf
-    tf::Transform odom_to_map = frame->pose_ * odom_pose.inverse();
-    double yaw = tf::getYaw( odom_to_map.getRotation() );
-    // Set x, y, yaw
-    map_tf_mutex_.lock();
-    odom_to_map_tf_ = tf::Transform( tf::createQuaternionFromYaw(yaw),
-                                     tf::Vector3(odom_to_map.getOrigin().x(), odom_to_map.getOrigin().y(), 0) );
-    map_tf_mutex_.unlock();
+    calculateOdomToMapTF( frame->pose_, odom_pose );
 
     // Map for visualization
-    if( frame->key_frame_)
-        gt_mapping_->updateMapViewer();
+    displayMappingResult( frame );
 
-    // Display frame
-    viewer_->removeFrames();
-    if( last_frame_valid && last_frame->valid_ )
-        viewer_->displayFrame( *last_frame, "last_frame", viewer_->vp1() );
-    if( frame->valid_ )
-        viewer_->displayFrame( *frame, "frame", viewer_->vp2() );
-    viewer_->spinFramesOnce();
     //
     display_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
+
+    // Throttle memory
+    if( frame->key_frame_ && gt_mapping_->isThrottleMemory() )
+        frame->throttleMemory();
 
     //
     total_dura = (step_time - start_time).toSec() * 1000.0f;
@@ -586,7 +399,7 @@ void KinectListener::trackKeyMessage( const sensor_msgs::ImageConstPtr &visual_i
     }
 
     // Runtimes, push new one
-    if( frame->key_frame_ && last_frame_valid )
+    if( frame->key_frame_ )
     {
         // Runtimes
         const double total = frame_dura + track_dura + map_dura;
@@ -595,42 +408,134 @@ void KinectListener::trackKeyMessage( const sensor_msgs::ImageConstPtr &visual_i
             cout << GREEN << " Runtimes size: " << runtimes_.size() << RESET << endl;
     }
 
-    // store key frame
-    if( !last_frame_valid && frame->key_frame_ )
-        last_frame_valid = true;    // set last frame valid
-    last_frame = frame;
+    // Store key frame
+    storeKeyFrame( last_frame, frame );
+
+    // Store key frame odom pose
+    if( frame->key_frame_ )
+        last_keyframe_odom = odom_pose;
 }
 
 void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visual_img_msg,
                                          const sensor_msgs::ImageConstPtr &depth_img_msg,
-                                         CameraParameters & camera,
-                                         tf::Transform &odom_pose)
+                                         CameraParameters & camera)
 {
-    static tf::Transform last_odom_pose = tf::Transform::getIdentity();
-    static Frame *last_frame;
+    static Frame *last_frame = new Frame();
     static bool last_frame_valid = false;
     static tf::Transform last_vo_tf;
 
     frame_count_++;
-    if( verbose_ )
-    {
-        cout << BOLDMAGENTA << "no cloud msg(force odom): " << depth_img_msg->header.seq
-             << MAGENTA << " use_odom_tracking_ = " << (use_odom_tracking_?"true":"false") << RESET << endl;
-    }
-    else{
+    if( verbose_ ){
+        cout << RESET << "----------------------------------------------------------------------" << endl;
+        cout << BOLDMAGENTA << "no cloud msg: " << depth_img_msg->header.seq << RESET << endl;
+    }else{
         cout << BOLDMAGENTA << "no cloud msg: " << depth_img_msg->header.seq << RESET << endl;
     }
 
+    // Time
+    const ros::Time start_time = ros::Time::now();
+    ros::Time step_time = start_time;
+    double frame_dura, track_dura, map_dura, display_dura;
+    double total_dura;
+
+    // Get frame
+    Frame *frame = depthRgbToFrame( visual_img_msg, depth_img_msg, camera );
+    //
+    frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
+    // Motion from features
+    trackFrameMotion( last_frame, frame );
+
+    //
+    track_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
+
+    // Mapping
+    if( frame->valid_ && do_slam_ )
+    {
+        if( mapping_keypoint_ )
+            frame->key_frame_ = gt_mapping_->mappingMix( frame );
+        else
+            frame->key_frame_ = gt_mapping_->mapping( frame );
+    }
+    map_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
+    // Upate odom to map tf
+//    calculateOdomToMapTF( frame->pose_, frame->odom_pose_);
+
+    // Visualization for mapping result
+    displayMappingResult( frame );
+    //
+    display_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+    step_time = ros::Time::now();
+
+    // Throttle memory
+    if( frame->key_frame_ && gt_mapping_->isThrottleMemory() )
+        frame->throttleMemory();
+
+    //
+    total_dura = (step_time - start_time).toSec() * 1000.0f;
+    // Print time
+    if( verbose_ )
+        cout << GREEN << "Processing total time: " << total_dura << endl;
+    if( frame->key_frame_ ){
+        cout << "Time:"
+             << " frame: " << frame_dura
+             << ", tracking: " << track_dura
+             << ", mapping: " << map_dura
+             << ", display: " << display_dura
+             << RESET << endl;
+    }
+
+    // Runtimes, push new one, publish optimized path
+    if( frame->key_frame_ && last_frame_valid)
+    {
+        // Runtimes
+        const double total = frame_dura + track_dura + map_dura;
+        runtimes_.push_back( Runtime(true, frame_dura, track_dura, map_dura, total, gt_mapping_->isMapRefined(), gt_mapping_->isKeypointRemoved()) );
+        if( verbose_ )
+            cout << GREEN << " Runtimes size: " << runtimes_.size() << RESET << endl;
+    }
+
+    // Store key frame
+    storeKeyFrame( last_frame, frame );
+}
+
+Frame* KinectListener::pointCloudToFrame(const sensor_msgs::PointCloud2ConstPtr &point_cloud,
+                                         CameraParameters & camera)
+{
+    camera_parameters_ = camera;
+
+    // Ros message to pcl type
+    PointCloudTypePtr input( new PointCloudType );
+    pcl::fromROSMsg( *point_cloud, *input);
+
+    // Compute Frame
+    Frame *frame;
+    if( plane_segment_method_ == LineBased )
+        frame = new Frame( input, camera_parameters_, line_based_plane_segmentor_);
+    else
+        frame = new Frame( input, camera_parameters_, organized_plane_segmentor_);
+    frame->header_ = point_cloud->header;
+    frame->stamp_ = point_cloud->header.stamp;
+    frame->valid_ = false;
+
+    return frame;
+}
+
+Frame* KinectListener::depthRgbToFrame(const sensor_msgs::ImageConstPtr &visual_img_msg,
+                                       const sensor_msgs::ImageConstPtr &depth_img_msg,
+                                       CameraParameters & camera)
+{
+    // Store camera parameter
     camera_parameters_ = camera;
 
     // Get Mat Image
     cv::Mat visual_image = cv_bridge::toCvCopy(visual_img_msg)->image; // to cv image
     cv::Mat depth_image = cv_bridge::toCvCopy(depth_img_msg)->image; // to cv image
-
-    const ros::Time start_time = ros::Time::now();
-    ros::Time step_time = start_time;
-    double frame_dura, track_dura, map_dura, display_dura;
-    double total_dura;
 
     // Compute Frame
     Frame *frame;
@@ -652,27 +557,42 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     }else
     {
         ROS_ERROR_STREAM("keypoint_type_ undefined.");
-        return;
+        return (new Frame());
     }
-    frame->stamp_ = visual_img_msg->header.stamp;
+    //
+    frame->header_ = depth_img_msg->header;
+    frame->stamp_ = depth_img_msg->header.stamp;
     frame->valid_ = false;
-    //
-    frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
-    step_time = ros::Time::now();
-    //
 
-    // Guess motion from odom
-    if( !last_frame_valid )
-        last_odom_pose = odom_pose;
-    tf::Transform estimated_rel_tf = last_odom_pose.inverse()*odom_pose;
-    last_odom_pose = odom_pose;
+    return frame;
+}
+
+bool KinectListener::isBigOdomChange( tf::Transform rel_odom, double linear_threshold, double angular_threshold )
+{
+    // Check odom pose change
+    double linear_inc, angular_inc;
+    calAngleAndDistance( rel_odom, angular_inc, linear_inc);
+    if( fabs(angular_inc) < angular_threshold
+          && fabs(linear_inc) < linear_threshold )
+    {
+        return false;
+    }else{
+        return true;
+    }
+}
+
+bool KinectListener::trackFrameMotionOdom( Frame* last_frame, Frame* frame )
+{
+    tf::Transform estimated_rel_tf = tf::Transform::getIdentity();
+    // First frame
+    if( last_frame->valid_ )
+        estimated_rel_tf = last_frame->odom_pose_.inverse()*frame->odom_pose_;
     Eigen::Matrix4d estimated_transform = transformTFToMatrix4d( estimated_rel_tf );
-//    cout << GREEN << "Relative Motion: " << RESET << endl;
-//    printTransform( estimated_transform, "Relative Motion", GREEN );
-    // Tracking
+
+    // Cal motion
     RESULT_OF_MOTION motion;
     motion.valid = false;
-    if( last_frame_valid )  // Do tracking
+    if( last_frame->valid_ )  // Do tracking
     {
         if( !use_odom_tracking_ )
             tracker_->trackPlanes( *last_frame, *frame, motion, estimated_transform);
@@ -720,169 +640,18 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
         if( frame->segment_planes_.size() > 0)
         {
             frame->valid_ = true;   // first frame, set valid, add to mapper as first frame
-            frame->pose_ = odom_pose;   // set odom pose as initial pose
+            frame->pose_ = frame->odom_pose_;   // set odom pose as initial pose
         }
     }
 
-    //
-    track_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
-    step_time = ros::Time::now();
-
-    // Publish visual odometry path
-    if( !last_frame_valid && frame->valid_ ) // First frame, valid, set initial pose
-    {
-        // First odometry pose to true pose.
-        visual_odometry_poses_.clear();
-        visual_odometry_poses_.push_back( tfToGeometryPose(odom_pose) );
-        last_vo_tf = odom_pose;
-    }
-    else if( motion.valid ) // not first frame, motion is always valid, calculate & publish odometry pose.
-    {
-        // Visual odometry
-        tf::Transform rel_vo_tf = motionToTf( motion );
-        rel_vo_tf.setOrigin( tf::Vector3( motion.translation[0], motion.translation[1], motion.translation[2]) );
-        tf::Transform new_vo_tf = last_vo_tf * rel_vo_tf;
-        visual_odometry_poses_.push_back( tfToGeometryPose(new_vo_tf) );
-        last_vo_tf = new_vo_tf;
-        publishVisualOdometryPose();
-        publishVisualOdometryPath();
-    }
-
-
-    // Mapping
-    if( frame->valid_ && do_slam_ ) // always valid
-    {
-        if( mapping_keypoint_ )
-            frame->key_frame_ = gt_mapping_->mappingMix( frame );
-        else
-            frame->key_frame_ = gt_mapping_->mapping( frame );
-    }
-    map_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
-    step_time = ros::Time::now();
-
-    // Upate odom to map tf
-    tf::Transform odom_to_map = frame->pose_ * odom_pose.inverse();
-    double yaw = tf::getYaw( odom_to_map.getRotation() );
-    // Set x, y, yaw
-    map_tf_mutex_.lock();
-    odom_to_map_tf_ = tf::Transform( tf::createQuaternionFromYaw(yaw),
-                                     tf::Vector3(odom_to_map.getOrigin().x(), odom_to_map.getOrigin().y(), 0) );
-    map_tf_mutex_.unlock();
-
-    // Map for visualization
-    if( frame->key_frame_)
-        gt_mapping_->updateMapViewer();
-
-    // Display frame
-    viewer_->removeFrames();
-    if( last_frame_valid && last_frame->valid_ )
-        viewer_->displayFrame( *last_frame, "last_frame", viewer_->vp1() );
-    if( frame->valid_ )
-        viewer_->displayFrame( *frame, "frame", viewer_->vp2() );
-    viewer_->spinFramesOnce();
-    //
-    display_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
-    step_time = ros::Time::now();
-
-    //
-    total_dura = (step_time - start_time).toSec() * 1000.0f;
-    // Print time
-    if( verbose_ )
-        cout << GREEN << "Segment planes = " << frame->segment_planes_.size() << RESET << endl;
-    if( verbose_ )
-        cout << GREEN << "Processing total time: " << total_dura << RESET << endl;
-    if( frame->key_frame_ ){
-        cout << GREEN << "Time:"
-             << " frame: " << MAGENTA << frame_dura
-             << GREEN << ", tracking: " << MAGENTA << track_dura
-             << GREEN << ", mapping: " << MAGENTA << map_dura
-             << GREEN << ", display: " << MAGENTA << display_dura
-             << RESET << endl;
-    }
-
-    // Runtimes, push new one
-    if( frame->key_frame_ && last_frame_valid)
-    {
-        // Runtimes
-        const double total = frame_dura + track_dura + map_dura;
-        runtimes_.push_back( Runtime(true, frame_dura, track_dura, map_dura, total, gt_mapping_->isMapRefined(), gt_mapping_->isKeypointRemoved()) );
-        if( verbose_ )
-            cout << GREEN << " Runtimes size: " << runtimes_.size() << RESET << endl;
-    }
-
-    if( frame->valid_ )    // store key frame
-    {
-        if( !last_frame_valid )
-            last_frame_valid = true;    // set last frame valid
-        else if( !(last_frame->key_frame_) ) // delete last frame if not keyframe
-            delete last_frame;
-        last_frame = frame;
-    }
-    else
-    {
-        delete frame;   // delete invalid frame
-    }
+    return motion.valid;
 }
 
-void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visual_img_msg,
-                                         const sensor_msgs::ImageConstPtr &depth_img_msg,
-                                         CameraParameters & camera)
+bool KinectListener::trackFrameMotion( Frame* last_frame, Frame *frame )
 {
-    static Frame *last_frame;
-    static bool last_frame_valid = false;
-    static tf::Transform last_vo_tf;
-
-    frame_count_++;
-    if( verbose_ ){
-        cout << RESET << "----------------------------------------------------------------------" << endl;
-        cout << BOLDMAGENTA << "no cloud msg: " << depth_img_msg->header.seq << RESET << endl;
-    }else{
-        cout << BOLDMAGENTA << "no cloud msg: " << depth_img_msg->header.seq << RESET << endl;
-    }
-
-    camera_parameters_ = camera;
-
-    // Get Mat Image
-    cv::Mat visual_image = cv_bridge::toCvCopy(visual_img_msg)->image; // to cv image
-    cv::Mat depth_image = cv_bridge::toCvCopy(depth_img_msg)->image; // to cv image
-
-    const ros::Time start_time = ros::Time::now();
-    ros::Time step_time = start_time;
-    double frame_dura, track_dura, map_dura, display_dura;
-    double total_dura;
-
-    // Compute Frame
-    Frame *frame;
-    if( !keypoint_type_.compare("ORB") )
-    {
-        if( plane_segment_method_ == LineBased )
-            frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, line_based_plane_segmentor_);
-        else
-            frame = new Frame( visual_image, depth_image, camera_parameters_, orb_extractor_, organized_plane_segmentor_);
-
-    }
-    else if( !keypoint_type_.compare("SURF") )
-    {
-        if( plane_segment_method_ == LineBased )
-            frame = new Frame( visual_image, depth_image, camera_parameters_, surf_detector_, surf_extractor_, line_based_plane_segmentor_);
-        else
-            frame = new Frame( visual_image, depth_image, camera_parameters_, surf_detector_, surf_extractor_, organized_plane_segmentor_);
-
-    }else
-    {
-        ROS_ERROR_STREAM("keypoint_type_ undefined.");
-        return;
-    }
-    frame->stamp_ = visual_img_msg->header.stamp;
-    frame->valid_ = false;
-    //
-    frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
-    step_time = ros::Time::now();
-
-    // Tracking
     RESULT_OF_MOTION motion;
     motion.valid = false;
-    if( last_frame_valid )  // Do tracking
+    if( last_frame->valid_ )  // Do tracking
     {
         tracker_->track( *last_frame, *frame, motion );
 
@@ -911,129 +680,126 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
             frame->valid_ = true;   // first frame, set valid, add to mapper as first frame
     }
 
-    //
-    track_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
-    step_time = ros::Time::now();
+    return motion.valid;
+}
 
+void KinectListener::recordVisualOdometry( Frame *last_frame, Frame *frame )
+{
     // Publish visual odometry path
-    if( !last_frame_valid && frame->valid_ ) // First frame, valid, set initial pose
+    if( !last_frame->valid_ && frame->valid_ ) // First frame, valid, set initial pose
     {
         frame_count_ = 1;
-        // first frame
-        if( !odom_poses_.size() )   // No true pose, set first frame pose to identity.
-        {
-            frame->pose_ = init_pose_;
-            frame->valid_ = true;
-        }
-        else    // Valid true pose, set first frame pose to it.
-        {
-            frame->pose_ = geometryPoseToTf( odom_poses_[odom_poses_.size()-1] );
-            frame->valid_ = true;
-        }
 
-        if( odom_poses_.size() > 0) // First odometry pose to true pose.
-        {
-            visual_odometry_poses_.clear();
-            visual_odometry_poses_.push_back( odom_poses_[odom_poses_.size()-1]);
-            last_vo_tf = geometryPoseToTf( visual_odometry_poses_[0] );
-        }
-        else if( set_init_pose_ )    // First odometry pose to identity.
+        if( set_init_pose_ )    // First odometry pose to identity.
         {
             visual_odometry_poses_.clear();
             visual_odometry_poses_.push_back( tfToGeometryPose( init_pose_ ) );
-            last_vo_tf = geometryPoseToTf( visual_odometry_poses_[0] );
         }
         else
         {
-            return;
+            // First odometry pose to true pose.
+            visual_odometry_poses_.clear();
+            visual_odometry_poses_.push_back( tfToGeometryPose(frame->pose_) );
         }
+
+        // Odom pose
+        odom_poses_.clear();
+        odom_poses_.push_back( tfToGeometryPose(frame->odom_pose_) );
     }
-    else if( motion.valid ) // not first frame, motion is valid, calculate & publish odometry pose.
+    else if( frame->valid_ ) // not first frame, motion is valid, calculate & publish odometry pose.
     {
         // Visual odometry
-        tf::Transform rel_vo_tf = motionToTf( motion );
-        rel_vo_tf.setOrigin( tf::Vector3( motion.translation[0], motion.translation[1], motion.translation[2]) );
-        tf::Transform new_vo_tf = last_vo_tf * rel_vo_tf;
-        visual_odometry_poses_.push_back( tfToGeometryPose(new_vo_tf) );
-        last_vo_tf = new_vo_tf;
+        visual_odometry_poses_.push_back( tfToGeometryPose(frame->pose_) );
         publishVisualOdometryPose();
         publishVisualOdometryPath();
+
+        // Odom pose
+        odom_poses_.push_back( tfToGeometryPose(frame->odom_pose_) );
+        publishOdomPose();
+        publishOdomPath();
     }
 
-    // Mapping
-    if( frame->valid_ && do_slam_ )
-    {
-        if( mapping_keypoint_ )
-            frame->key_frame_ = gt_mapping_->mappingMix( frame );
-        else
-            frame->key_frame_ = gt_mapping_->mapping( frame );
-    }
-    map_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
-    step_time = ros::Time::now();
+}
 
-//    // Upate odom to map tf
-//    tf::Transform odom_to_map = frame->pose_ * odom_pose.inverse();
-//    double yaw = tf::getYaw( odom_to_map.getRotation() );
-//    // Set x, y, yaw
-//    map_tf_mutex_.lock();
-//    odom_to_map_tf_ = tf::Transform( tf::createQuaternionFromYaw(yaw),
-//                                     tf::Vector3(odom_to_map.getOrigin().x(), odom_to_map.getOrigin().y(), 0) );
-//    map_tf_mutex_.unlock();
+void KinectListener::calculateOdomToMapTF( tf::Transform &map_tf, tf::Transform &odom_tf )
+{
+    tf::Transform odom_to_map = map_tf * odom_tf.inverse();
+    double yaw = tf::getYaw( odom_to_map.getRotation() );
+    // Set x, y, yaw
+    map_tf_mutex_.lock();
+    odom_to_map_tf_ = tf::Transform( tf::createQuaternionFromYaw(yaw),
+                                     tf::Vector3(odom_to_map.getOrigin().x(), odom_to_map.getOrigin().y(), 0) );
+    map_tf_mutex_.unlock();
+}
 
-    // Map for visualization
+void KinectListener::displayMappingResult( Frame* frame )
+{
     if( frame->key_frame_)
+    {
+        viewer_->removeMap();
+        viewer_->displayPath( odom_poses_, "odom_path", 0, 0, 255 );
+        viewer_->displayPath( visual_odometry_poses_, "visual_odom_path", 255, 0, 0 );
         gt_mapping_->updateMapViewer();
+        viewer_->spinMapOnce();
+    }
 
-    // Display frame
-    viewer_->removeFrames();
-    if( last_frame_valid && last_frame->valid_ )
-        viewer_->displayFrame( *last_frame, "last_frame", viewer_->vp1() );
     if( frame->valid_ )
     {
-        viewer_->displayFrame( *frame, "frame", viewer_->vp2() );
-        viewer_->displayKeypoint( frame->visual_image_, frame->feature_locations_2d_ );
+        viewer_->removeFrames();
+        viewer_->displayInputCloud( frame->cloud_, "frame_input_cloud", viewer_->vp2() );
+        viewer_->displayPlanes( frame->cloud_downsampled_, frame->segment_planes_, "frame_planes", viewer_->vp4() );
+        viewer_->spinFramesOnce();
     }
-    viewer_->spinFramesOnce();
-    //
-    display_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
-    step_time = ros::Time::now();
+}
 
-    //
-    total_dura = (step_time - start_time).toSec() * 1000.0f;
-    // Print time
-    if( verbose_ )
-        cout << GREEN << "Processing total time: " << total_dura << endl;
-    if( frame->key_frame_ ){
-        cout << "Time:"
-             << " frame: " << frame_dura
-             << ", tracking: " << track_dura
-             << ", mapping: " << map_dura
-             << ", display: " << display_dura
-             << RESET << endl;
-    }
-
-    // Runtimes, push new one, publish optimized path
-    if( frame->key_frame_ && last_frame_valid)
-    {
-        // Runtimes
-        const double total = frame_dura + track_dura + map_dura;
-        runtimes_.push_back( Runtime(true, frame_dura, track_dura, map_dura, total, gt_mapping_->isMapRefined(), gt_mapping_->isKeypointRemoved()) );
-        if( verbose_ )
-            cout << GREEN << " Runtimes size: " << runtimes_.size() << RESET << endl;
-    }
-
+void KinectListener::storeKeyFrame( Frame* &last_frame, Frame* &frame )
+{
+//    cout << WHITE << " store key frame: " << BLUE << (frame->valid_?"true":"false") << RESET << endl;
 
     if( frame->valid_ )    // store key frame
     {
-        if( !last_frame_valid )
-            last_frame_valid = true;    // set last frame valid
-        else if( !(last_frame->key_frame_) ) // delete last frame if not keyframe
-            delete last_frame;
+        if( !(last_frame->key_frame_) )
+            delete last_frame;      // delete last frame if not keyframe
+
+        // Store current frame
         last_frame = frame;
     }
     else
     {
         delete frame;   // delete invalid frame
+    }
+
+//    cout << YELLOW << " done." << RESET << endl;
+}
+
+void KinectListener::debugFrame( Frame* frame )
+{
+    // Debug frame
+    if( save_message_pcd_ && save_message_pcd_ == frame->header_.seq )
+    {
+        std::string time_str = timeToStr();
+        stringstream ss;
+        ss << frame->header_.seq;
+        pcl::io::savePCDFileASCII( "/home/lizhi/bags/selected/"+time_str+"_"+ss.str()+".pcd", *(frame->cloud_) );
+        save_message_pcd_ = 0;
+
+        cout << " planes size: ";
+        for( int i = 0; i < frame->segment_planes_.size(); i++)
+        {
+            cout << " " << frame->segment_planes_[i].cloud->points.size();
+        }
+        cout << endl;
+
+        ros::Rate loop_rate(10);
+        viewer_->removeFrames();
+        viewer_->displayInputCloud( frame->cloud_, "frame_input_cloud", viewer_->vp2() );
+        viewer_->displayPlanes( frame->cloud_downsampled_, frame->segment_planes_, "frame_planes", viewer_->vp4() );
+        viewer_->spinFramesOnce();
+        while( ros::ok() ){
+            viewer_->spinFramesOnce();
+            ros::spinOnce();
+            loop_rate.sleep();
+        }
     }
 }
 
@@ -1372,6 +1138,13 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
     save_map_full_colored_pcd_ = config.save_map_full_colored_pcd;
     save_structure_pcd_ = config.save_structure_pcd;
     save_octomap_ = config.save_octomap;
+    //
+    save_input_cloud_pcd_ = config.save_input_cloud_pcd;
+    if( config.save_message_pcd != 0 )
+    {
+        save_message_pcd_ = config.save_message_pcd;
+        config.save_message_pcd = 0;
+    }
 
     // Set map frame for mapping
     if( gt_mapping_ )
@@ -1385,7 +1158,12 @@ bool KinectListener::updateViewerOnceCallback( std_srvs::Trigger::Request &req, 
     //
     publishVisualOdometryPose();
     publishVisualOdometryPath();
+    // Map for visualization
+    viewer_->removeMap();
+    viewer_->displayPath( odom_poses_, "odom_path", 0, 0, 255 );
+    viewer_->displayPath( visual_odometry_poses_, "visual_odom_path", 255, 0, 0 );
     gt_mapping_->updateMapViewer();
+    viewer_->spinMapOnce();
     res.success = true;
     res.message = " Update viewer once";
     cout << GREEN << res.message << RESET << endl;
@@ -1494,6 +1272,5 @@ void KinectListener::publishTfTimerCallback(const ros::TimerEvent &event)
 //    trans.setRotation( quter );
     tf_broadcaster_.sendTransform( tf::StampedTransform(trans, ros::Time::now(), map_frame_, odom_frame_ ));
 }
-
 
 } // end of namespace plane_slam

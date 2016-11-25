@@ -20,6 +20,7 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer *viewer, Tracking *tracker)
     , keyframe_angular_threshold_( 5.0f*DEG_TO_RAD )
     , isam2_relinearize_threshold_( 0.05f )
     , isam2_relinearize_skip_( 1 )
+    , plane_observation_sigmas_(0.01, 0.01, 0.01)
     , plane_match_direction_threshold_( 10.0*DEG_TO_RAD )   // 10 degree
     , plane_match_distance_threshold_( 0.1 )    // 0.1meter
     , plane_match_check_overlap_( true )
@@ -33,6 +34,12 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer *viewer, Tracking *tracker)
     , next_point_id_( 0 )
     , next_frame_id_( 0 )
 {
+    //
+    odom_sigmas_ = Eigen::VectorXd(6);
+    odom_sigmas_factor_ = Eigen::VectorXd(6);
+    odom_sigmas_ << 0.05, 0.05, 0.05, 0.05, 0.05, 0.05;
+    odom_sigmas_factor_ << 0.1, 0.1, 0.1, 0.1, 0.1, 0.1;
+
     // reconfigure
     mapping_config_callback_ = boost::bind(&GTMapping::gtMappingReconfigCallback, this, _1, _2);
     mapping_config_server_.setCallback(mapping_config_callback_);
@@ -61,33 +68,6 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer *viewer, Tracking *tracker)
 }
 
 // Only good plane correspondences or point correspondences could be added to global map
-bool GTMapping::mappingMixKeyMessage( Frame *frame )
-{
-    bool success;
-    if( !optimized_poses_list_.size() )    // first frame, add prior
-    {
-        success = addFirstFrameMix( frame );
-    }
-    else    // do mapping
-    {
-        success = doMappingMix( frame );   // do mapping
-    }
-
-    // Throttle memory
-    if( success && throttle_memory_ )
-        frame->throttleMemory();
-
-//    // Map visualization
-//    if( success )
-//        updateMapViewer();
-
-    if( verbose_ )
-        cout << GREEN << " GTMapping, success = " << (success?"true":"false") << "." << RESET << endl;
-
-    return success;
-}
-
-// Only good plane correspondences or point correspondences could be added to global map
 bool GTMapping::mappingMix( Frame *frame )
 {
     bool success;
@@ -109,14 +89,6 @@ bool GTMapping::mappingMix( Frame *frame )
             success = doMappingMix( frame );   // do mapping
         }
     }
-
-    // Throttle memory
-    if( success && throttle_memory_ )
-        frame->throttleMemory();
-
-//    // Map visualization
-//    if( success )
-//        updateMapViewer();
 
     if( verbose_ )
         cout << GREEN << " GTMapping, success = " << (success?"true":"false") << "." << RESET << endl;
@@ -149,18 +121,24 @@ bool GTMapping::doMappingMix( Frame *frame )
     gtsam::Pose3 new_pose = tfToPose3( frame->pose_ );
     gtsam::Pose3 rel_pose = last_estimated_pose_.inverse() * new_pose;
 
+//    cout << " Convert observations...";
+
     // Convert observations to OrientedPlane3
     std::vector<OrientedPlane3> observations;
     for( int i = 0; i < planes.size(); i++)
     {
         PlaneType &plane = planes[i];
+        plane.sigmas = plane_observation_sigmas_;
         observations.push_back( OrientedPlane3(plane.coefficients) );
+
+//        cout << " " << plane.cloud->points.size();
 
         // do voxel grid filter
         voxelGridFilter( plane.cloud, plane.cloud_voxel, plane_inlier_leaf_size_ );
         if( remove_plane_bad_inlier_ )
             removePlaneBadInlier( plane.cloud_voxel );
     }
+//    cout << " Done." << endl;
 
     // Time
     cvt_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
@@ -182,6 +160,8 @@ bool GTMapping::doMappingMix( Frame *frame )
             const PlanePair &pair = pairs[i];
             cout << "  - " << pair.iobs << ", " << pair.ilm << endl;
         }
+    }else{
+        cout << GREEN << " find pairs(obs, lm): " << pairs.size() << RESET << endl;
     }
 
     // Time
@@ -194,8 +174,21 @@ bool GTMapping::doMappingMix( Frame *frame )
 
     // Add odometry factors
     Vector odom_sigmas(6);
-//    odom_sigmas << rel_pose.translation().vector()*0.1, rel_pose.rotation().rpy() * 0.1;
-    odom_sigmas << 0.05, 0.05, 0.05, 0.05, 0.05, 0.05;
+    odom_sigmas = odom_sigmas_;
+//    odom_sigmas << fabs(rel_pose.translation().x())*odom_linear_sigma_factor_,
+//                   0.01,
+//                   fabs(rel_pose.translation().z())*odom_linear_sigma_factor_*0.5,
+//                   0.02,
+//                   fabs(rel_pose.rotation().yaw())*odom_angular_sigma_factor_,
+//                   0.02;
+//    odom_sigmas << odom_linear_sigma_*0.5, odom_linear_sigma_*0.25, odom_linear_sigma_,
+//                   odom_angular_sigma_*0.25, odom_angular_sigma_, odom_angular_sigma_*0.25;
+//    odom_sigmas << odom_linear_sigma_*0.5+fabs(rel_pose.translation().x())*odom_linear_sigma_factor_,
+//                   odom_linear_sigma_*0.25+0.05,
+//                   odom_linear_sigma_+fabs(rel_pose.translation().z())*odom_linear_sigma_factor_*0.5,
+//                   odom_angular_sigma_*0.25+0.01,
+//                   odom_angular_sigma_+fabs(rel_pose.rotation().yaw())*odom_angular_sigma_factor_,
+//                   odom_angular_sigma_*0.25+0.01;
     noiseModel::Diagonal::shared_ptr odometry_noise =
             noiseModel::Diagonal::Sigmas( odom_sigmas );
 //    cout << GREEN << "odom noise dim: " << odometry_noise->dim() << RESET << endl;
@@ -451,9 +444,25 @@ bool GTMapping::doMappingMix( Frame *frame )
     kp_r_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
 
+    // Add additional between factors
+    if( factors_previous_n_frames_ >= 2 ){
+        int idx_max = factors_previous_n_frames_;
+        int idx = 2;
+        while( idx <= idx_max ){
+            addFactorBetweenFrames( frame->id()-idx, frame->id() );
+            idx++;
+        }
+    }
+
     // Update graph
-    isam2_->update(factor_graph_, initial_estimate_, removed_factors_ );
-    isam2_->update(); // call additionally
+    try{
+        isam2_->update(factor_graph_, initial_estimate_, removed_factors_ );}
+    catch(gtsam::IndeterminantLinearSystemException &e){
+        Symbol sym = Symbol(e.nearbyVariable());
+        cout << "ISAM update error: key ch = " << (char)(sym.chr()) << ", index = " << sym.index() << endl;
+        fflush(stdout);
+    }
+//    isam2_->update(); // call additionally
     removed_factors_.clear();
 
     // Time
@@ -507,6 +516,12 @@ bool GTMapping::doMappingMix( Frame *frame )
     // Semantic labelling: floor, wall, door, table
     semanticMapLabel();
 
+    // Merge floor
+    if( merge_floor_plane_ )
+    {
+        mergeFloorPlane();
+    }
+
     // Time
     semantic_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
@@ -537,6 +552,60 @@ bool GTMapping::doMappingMix( Frame *frame )
     return true;
 }
 
+bool GTMapping::addFactorBetweenFrames( int previous_id, int id )
+{
+    if( frames_list_.find( previous_id ) == frames_list_.end()
+            || frames_list_.find( id ) == frames_list_.end() )
+    {
+        return false;
+    }
+
+    double interval = id - previous_id;
+    Frame* preframe = frames_list_.at( previous_id );
+    Frame* frame = frames_list_.at( id );
+
+    //
+    Eigen::Matrix4d estimated_transform = transformTFToMatrix4d( preframe->pose_.inverse() * frame->pose_ );
+    RESULT_OF_MOTION motion;
+    motion.valid = false;
+    tracker_->track( *preframe, *frame, motion, estimated_transform );
+    if( motion.valid )
+    {
+        tf::Transform tf_diff = transformMatrix4dToTF(estimated_transform).inverse() * motionToTf(motion);
+        double rad, distance;
+        calAngleAndDistance( tf_diff, rad, distance );
+        if( rad > (2.0*DEG_TO_RAD) || distance > 0.02 ) // too much difference, there might be a fault
+            return false;
+
+        // Add between factors
+        gtsam::Pose3 rel_pose = motionToPose3( motion );
+        Vector odom_sigmas(6);
+//        odom_sigmas << fabs(rel_pose.translation().x())*odom_linear_sigma_factor_,
+//                       0.01,
+//                       fabs(rel_pose.translation().z())*odom_linear_sigma_factor_*0.5,
+//                       0.02,
+//                       fabs(rel_pose.rotation().yaw())*odom_angular_sigma_factor_,
+//                       0.02;
+//        odom_sigmas << odom_linear_sigma_*0.5, odom_linear_sigma_*0.25, odom_linear_sigma_,
+//                       odom_angular_sigma_*0.25, odom_angular_sigma_, odom_angular_sigma_*0.25;
+        odom_sigmas = odom_sigmas_*interval;
+//        odom_sigmas << odom_linear_sigma_*0.5+fabs(rel_pose.translation().x())*odom_linear_sigma_factor_,
+//                       odom_linear_sigma_*0.25+0.05,
+//                       odom_linear_sigma_+fabs(rel_pose.translation().z())*odom_linear_sigma_factor_*0.5,
+//                       odom_angular_sigma_*0.25+0.01,
+//                       odom_angular_sigma_+fabs(rel_pose.rotation().yaw())*odom_angular_sigma_factor_,
+//                       odom_angular_sigma_*0.25+0.01;
+        noiseModel::Diagonal::shared_ptr odometry_noise =
+                noiseModel::Diagonal::Sigmas( odom_sigmas );
+    //    cout << GREEN << "odom noise dim: " << odometry_noise->dim() << RESET << endl;
+        Key last_key = Symbol('x', preframe->id());
+        Key pose_key = Symbol('x', frame->id() );
+        factor_graph_.push_back(BetweenFactor<Pose3>(last_key, pose_key, rel_pose, odometry_noise));
+    }
+
+    return true;
+}
+
 bool GTMapping::addFirstFrameMix( Frame *frame )
 {
     // check number of planes
@@ -557,6 +626,7 @@ bool GTMapping::addFirstFrameMix( Frame *frame )
     for( int i = 0; i < planes.size(); i++)
     {
         PlaneType &plane = planes[i];
+        plane.sigmas = plane_observation_sigmas_;
         plane.setId( next_plane_id_ );
         next_plane_id_ ++;
 
@@ -679,14 +749,6 @@ bool GTMapping::mapping( Frame *frame )
         }
     }
 
-    // Throttle memory
-    if( success && throttle_memory_ )
-        frame->throttleMemory();
-
-//    // Map visualization
-//    if( success )
-//        updateMapViewer();
-
     cout << GREEN << " GTMapping, success = " << (success?"true":"false") << "." << RESET << endl;
 
     return success;
@@ -716,6 +778,7 @@ bool GTMapping::doMapping( Frame *frame )
     for( int i = 0; i < planes.size(); i++)
     {
         PlaneType &plane = planes[i];
+        plane.sigmas = plane_observation_sigmas_;
         observations.push_back( OrientedPlane3(plane.coefficients) );
 
         // do voxel grid filter
@@ -866,6 +929,7 @@ bool GTMapping::addFirstFrame( Frame *frame )
     for( int i = 0; i < planes.size(); i++)
     {
         PlaneType &plane = planes[i];
+        plane.sigmas = plane_observation_sigmas_;
         plane.setId( next_plane_id_ );
         next_plane_id_ ++;
 
@@ -1258,6 +1322,8 @@ void GTMapping::matchImageFeatures( const Frame &frame,
 {
     ROS_ASSERT( predicted_image_points.size() == predicted_keypoints.size() );
 
+//    cout << " frame keypoint 2d size: " << frame.feature_locations_2d_.size() << endl;
+
     // Bould pointcloud for measurement keypoints
     pcl::PointCloud<pcl::PointUV>::Ptr cloud_2d( new pcl::PointCloud<pcl::PointUV> );
     cloud_2d->is_dense = true;
@@ -1273,6 +1339,8 @@ void GTMapping::matchImageFeatures( const Frame &frame,
         puv.u = kp.pt.x;
         puv.v = kp.pt.y;
     }
+
+//    cout << " cloud 2d size: " << cloud_2d->points.size() << endl;
 
     // Build kdtree
     pcl::KdTreeFLANN<pcl::PointUV> kdtree;
@@ -1719,6 +1787,55 @@ bool GTMapping::refinePlanarMap()
         mergeCoplanarLandmarks( merge_list );
 
     return find_coplanar;
+}
+
+bool GTMapping::mergeFloorPlane()
+{
+    // Find reduplicated floor
+    std::vector<int> fv;
+    int idx_max = -1;
+    size_t max_size = 0;
+    for( std::map<int, PlaneType*>::iterator it = landmarks_list_.begin();
+         it != landmarks_list_.end(); it++)
+    {
+        int idx = it->first;
+        PlaneType &plane = *(it->second);
+        if( plane.semantic_label == "FLOOR" )
+        {
+            fv.push_back( idx );
+            if( plane.cloud_voxel->points.size() > max_size )
+            {
+                max_size = plane.cloud_voxel->points.size();
+                idx_max = idx;
+            }
+        }
+    }
+
+    if( fv.size() < 2 || idx_max < 0 || max_size <= 0 )
+        return false;
+
+    cout << YELLOW << " Find reduplicated floor:" << MAGENTA;
+    for( int i = 0; i < fv.size(); i++)
+    {
+        cout << " " << fv[i];
+    }
+    cout << RESET << endl;
+
+    // Build merge list
+    std::set<int> from_set;
+    std::map<int, std::set<int> > merge_list;   // merge list <to, set<from>>
+    for( int i = 0; i < fv.size(); i++)
+    {
+        if( fv[i] != idx_max )
+        {
+            from_set.insert( fv[i] );
+        }
+    }
+    merge_list[idx_max] = from_set;
+
+    // Merge planes
+    if( merge_list.size() > 0)
+        mergeCoplanarLandmarks( merge_list );
 }
 
 // Compute lost landmark
@@ -2516,13 +2633,14 @@ void GTMapping::updateMapViewer()
     publishOctoMap();
     publishKeypointCloud();
     // Map in pcl visualization
-    viewer_->removeMap();
+//    viewer_->removeMap();
     viewer_->displayCameraFOV( last_estimated_pose_ );
-    viewer_->displayPath( optimized_poses_list_, "optimized_path" );
+    viewer_->displayPath( optimized_poses_list_, "optimized_path", 0, 255, 0 );
     viewer_->displayMapLandmarks( landmarks_list_, "MapPlane" );
     if( viewer_->isDisplayKeypointLandmarks() )
         viewer_->displayMapLandmarks( getKeypointCloud(!(publish_keypoint_cloud_ && keypoint_cloud_publisher_.getNumSubscribers())), "MapPoint");
-    viewer_->spinMapOnce();
+    viewer_->focusOnCamera(last_estimated_pose_tf_ );
+//    viewer_->spinMapOnce();
 }
 
 void GTMapping::reset()
@@ -2880,6 +2998,10 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     keyframe_linear_threshold_ = config.keyframe_linear_threshold;
     keyframe_angular_threshold_ = config.keyframe_angular_threshold * DEG_TO_RAD;
     //
+    Viewer::strToVector<Eigen::Vector3d>(config.plane_observation_sigmas, plane_observation_sigmas_, 3);
+    Viewer::strToVector<Eigen::VectorXd>(config.odom_sigmas, odom_sigmas_, 6);
+    Viewer::strToVector<Eigen::VectorXd>(config.odom_sigmas_factor, odom_sigmas_factor_, 6);
+    //
     isam2_relinearize_threshold_ = config.isam2_relinearize_threshold;
     isam2_relinearize_skip_ = config.isam2_relinearize_skip;
     //
@@ -2899,7 +3021,9 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     plane_inlier_leaf_size_ = config.plane_inlier_leaf_size;
     plane_hull_alpha_ = config.plane_hull_alpha;
     //
+    factors_previous_n_frames_ = config.factors_previous_n_frames;
     refine_planar_map_ = config.refine_planar_map;
+    merge_floor_plane_ = config.merge_floor_plane;
     planar_merge_direction_threshold_ = config.planar_merge_direction_threshold * DEG_TO_RAD;
     planar_merge_distance_threshold_ = config.planar_merge_distance_threshold;
     //
@@ -2936,7 +3060,9 @@ bool GTMapping::optimizeGraphCallback(std_srvs::Trigger::Request &req, std_srvs:
         updateLandmarksInlierAll();    // Update Map
         if( refine_planar_map_ )    // Refine map
             refinePlanarMap();
+        viewer_->removeMap();
         updateMapViewer();  // update visualization
+        viewer_->spinMapOnce();
         res.success = true;
         res.message = " Optimize graph for 10 times, and update map viewer.";
     }
@@ -3014,7 +3140,9 @@ bool GTMapping::removeBadInlierCallback(std_srvs::Trigger::Request &req, std_srv
     else
     {
         removeLandmarksBadInlier();  // remove bad inlier in landmarks
+        viewer_->removeMap();
         updateMapViewer();  // update map visualization
+        viewer_->spinMapOnce();
         //
         res.success = true;
         res.message = " Remove landmark bad inlier.";

@@ -197,8 +197,14 @@ target_link_libraries(plane_slam_node_bagfile
 #    ${catkin_LIBRARIES}
 #)
 
-#add_executable(map_visualizer tools/map_visualizer.cpp)
-#target_link_libraries(map_visualizer
-#    ${catkin_LIBRARIES}
-#    ${PCL_LIBRARIES}
-#)
+add_executable(path_visualizer tools/path_visualizer.cpp)
+target_link_libraries(path_visualizer
+    ${catkin_LIBRARIES}
+    ${PCL_LIBRARIES}
+)
+
+add_executable(map_visualizer tools/map_visualizer.cpp)
+target_link_libraries(map_visualizer
+    ${catkin_LIBRARIES}
+    ${PCL_LIBRARIES}
+)

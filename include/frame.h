@@ -85,8 +85,12 @@ public:
     std::string keypoint_type_;
     // Id
     int id_;
+    // Header, for stamp, use 'stamp_'
+    std_msgs::Header header_;
     // Time Stamp
     ros::Time stamp_;
+    // Odom pose
+    tf::Transform odom_pose_;
     // Robot Pose
     tf::Transform pose_;
     // Sensor data

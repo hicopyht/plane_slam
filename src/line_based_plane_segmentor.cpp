@@ -42,10 +42,16 @@ void LineBasedPlaneSegmentor::operator()(PointCloudTypePtr &input, std::vector<P
     plane_from_line_segment_.setInputCloud( cloud_in );
     plane_from_line_segment_.segment( line_based_planes );
 
+
     // convert format
     for( int i = 0; i < line_based_planes.size(); i++)
     {
         PlaneFromLineSegment::NormalType &normal = line_based_planes[i];
+
+        // TODO: fix problem inlier = 0
+        if( normal.inliers.size() < plane_from_line_segment_.getMinInliers() )
+            continue;
+        //
         PlaneType plane;
         plane.mask = normal.mask;
         plane.centroid = normal.centroid;
@@ -53,9 +59,9 @@ void LineBasedPlaneSegmentor::operator()(PointCloudTypePtr &input, std::vector<P
         plane.coefficients[1] = normal.coefficients[1];
         plane.coefficients[2] = normal.coefficients[2];
         plane.coefficients[3] = normal.coefficients[3];
-        plane.sigmas[0] = 0.01;
-        plane.sigmas[1] = 0.01;
-        plane.sigmas[2] = 0.01;
+        plane.sigmas[0] = 0.0004;
+        plane.sigmas[1] = 0.0004;
+        plane.sigmas[2] = 0.0004;
         plane.inlier = normal.inliers;
         plane.boundary_inlier = normal.boundary_inlier;
         plane.hull_inlier = normal.hull_inlier;
@@ -65,6 +71,7 @@ void LineBasedPlaneSegmentor::operator()(PointCloudTypePtr &input, std::vector<P
         //
         planes.push_back( plane );
     }
+
 }
 
 // update parameters

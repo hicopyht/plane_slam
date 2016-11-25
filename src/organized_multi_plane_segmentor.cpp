@@ -86,9 +86,9 @@ void OrganizedPlaneSegmentor::operator()( const PointCloudTypePtr &input, std::v
         plane.coefficients[1] = coef.values[1];
         plane.coefficients[2] = coef.values[2];
         plane.coefficients[3] = coef.values[3];
-        plane.sigmas[0] = 0.01;
-        plane.sigmas[1] = 0.01;
-        plane.sigmas[2] = 0.01;
+        plane.sigmas[0] = 0.0004;
+        plane.sigmas[1] = 0.0004;
+        plane.sigmas[2] = 0.0004;
         plane.inlier = indices.indices;
         plane.boundary_inlier = boundary.indices;
         plane.hull_inlier = boundary.indices;

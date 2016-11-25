@@ -31,6 +31,7 @@ public:
 
     void displayFrame(const Frame &frame, const std::string &prefix, int viewport);
 
+    void displayInputCloud( const PointCloudTypePtr &cloud, const std::string &id = "rgbd_cloud", int viewport = 0 );
 
     void displayMatched3DKeypoint( const std_vector_of_eigen_vector4f &query,
                                    const std_vector_of_eigen_vector4f &train,
@@ -59,7 +60,7 @@ public:
 
     void displayPath( const std::vector<geometry_msgs::PoseStamped> &poses, const std::string &prefix = "path", double r = 255, double g = 0, double b = 0 );
 
-    void displayPath( const std::map<int, gtsam::Pose3> &optimized_poses, const std::string &prefix = "optimized_path" );
+    void displayPath( const std::map<int, gtsam::Pose3> &optimized_poses, const std::string &prefix = "optimized_path", double r = 255, double g = 0, double b = 0 );
 
     void displayPlanes( const PointCloudTypePtr &input, const std::vector<PlaneType> &planes, const std::string &prefix, int viewport);
 
@@ -78,6 +79,8 @@ public:
 
     void pclViewerPlane( const PointCloudTypePtr &input, const PlaneType &plane, const std::string &id, int viewport, const int number = -1);
 
+    void focusOnCamera( tf::Transform &pose );
+
     const int& vp1() const { return viewer_v1_; }
     const int& vp2() const { return viewer_v2_; }
     const int& vp3() const { return viewer_v3_; }
@@ -85,6 +88,23 @@ public:
 
     const bool& isDisplayKeypointLandmarks() const { return display_point_landmarks_; }
     const bool& isDisplayPlaneLandmarks() const { return display_plane_landmarks_; }
+
+    template <typename DoubleVector>
+    static void strToVector( const std::string &str_vector, DoubleVector &values, int size ){
+        if( std::count(str_vector.begin(), str_vector.end(), ',') != (size -1) )
+            return;
+
+        int loc1 = 0;
+        int loc2;
+        std::string str;
+        for( int i = 0; i < size; i++)
+        {
+            loc2 = str_vector.find(',', loc1);
+            str = str_vector.substr(loc1, loc2-loc1);
+            values[i] = atof(str.c_str());
+            loc1 = loc2 + 1;
+        }
+    }
 
 protected:
     void viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t level);
@@ -108,6 +128,7 @@ private:
     bool auto_spin_map_viewer_;
 
     // parameter frame
+    bool focus_on_camera_;
     bool display_frame_;
     bool display_input_cloud_;
     bool display_line_cloud_;
@@ -135,8 +156,10 @@ private:
     bool display_landmark_label_;
     //
     bool display_camera_fov_;
-    bool display_optimized_path_;
     bool display_pathes_;
+    bool display_optimized_path_;
+    bool display_odom_path_;
+    bool display_visual_odom_path_;
 
 };
 

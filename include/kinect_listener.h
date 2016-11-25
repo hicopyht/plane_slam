@@ -70,13 +70,6 @@ public:
                           CameraParameters& camera,
                           tf::Transform &odom_pose );
 
-    bool isKeyFrame( tf::Transform &odom_pose );
-
-    void trackKeyMessage( const sensor_msgs::ImageConstPtr &visual_img_msg,
-                          const sensor_msgs::ImageConstPtr &depth_img_msg,
-                          CameraParameters & camera,
-                          tf::Transform &odom_pose );
-
     void trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visual_img_msg,
                              const sensor_msgs::ImageConstPtr &depth_img_msg,
                              CameraParameters &camera,
@@ -85,6 +78,29 @@ public:
     void trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visual_img_msg,
                              const sensor_msgs::ImageConstPtr &depth_img_msg,
                              CameraParameters &camera);
+
+    Frame* pointCloudToFrame(const sensor_msgs::PointCloud2ConstPtr &point_cloud,
+                             CameraParameters & camera);
+
+    Frame* depthRgbToFrame(const sensor_msgs::ImageConstPtr &visual_img_msg,
+                           const sensor_msgs::ImageConstPtr &depth_img_msg,
+                           CameraParameters & camera);
+
+    bool isBigOdomChange( tf::Transform rel_odom, double linear_threshold, double angular_threshold );
+
+    void debugFrame( Frame* frame );
+
+    bool trackFrameMotionOdom( Frame* last_frame, Frame* frame );
+
+    bool trackFrameMotion( Frame* last_frame, Frame *frame );
+
+    void recordVisualOdometry( Frame *last_frame, Frame *frame );
+
+    void calculateOdomToMapTF( tf::Transform &map_tf, tf::Transform &odom_tf );
+
+    void displayMappingResult( Frame* frame );
+
+    void storeKeyFrame( Frame* &last_frame, Frame* &frame );
 
     void savePlaneLandmarks( const std::string &filename = "plane_slam_plane_landmarks.txt" );
 
@@ -199,6 +215,8 @@ private:
     bool save_map_full_colored_pcd_;
     bool save_octomap_;
     bool save_structure_pcd_;
+    bool save_input_cloud_pcd_;
+    int save_message_pcd_;
 
     //
     tf::Transform init_pose_;

@@ -144,7 +144,12 @@ int main(int argc, char** argv)
     camera.height = fsp["camera.height"];
     std::string depth_topic = fsp["depth_topic"];
     std::string rgb_topic = fsp["rgb_topic"];
-    std::string use_odom = fsp["use_odom"];
+    std::string tf_topic = fsp["tf"];
+    std::string use_odom_str = fsp["use_odom"];
+    int skip_message = fsp["skip"];
+    if( skip_message <= 0 )
+        skip_message = 1;
+    bool use_odom = !use_odom_str.compare("true");
     float init_pose_x = fsp["initPose.x"];
     float init_pose_y = fsp["initPose.y"];
     float init_pose_z = fsp["initPose.z"];
@@ -152,8 +157,12 @@ int main(int argc, char** argv)
     float init_pose_pitch = fsp["initPose.pitch"];
     float init_pose_yaw = fsp["initPose.yaw"];
     //
+    std::string base_frame  = fsp["base_frame"];
+    std::string odom_frame  = fsp["odom_frame"];
+    //
     cout << GREEN << " Load camera parameters: " << endl;
     cout << "***************************************" << endl;
+    cout << "    skip message = " << skip_message << endl;
     cout << "    camera.fx = " << camera.fx << endl;
     cout << "    camera.fy = " << camera.fy << endl;
     cout << "    camera.cx = " << camera.cx << endl;
@@ -175,14 +184,19 @@ int main(int argc, char** argv)
         depth_topic = "/camera/depth/image";
     if( rgb_topic.empty() )
         rgb_topic = "/camera/rgb/image_color";
+    if( tf_topic.empty() )
+        tf_topic = "/tf";
     std::vector<std::string> topics;
     topics.push_back( depth_topic );
     topics.push_back( rgb_topic );
+    topics.push_back( tf_topic );
 
     // Force odom or not
     bool force_odom = false;
-    if( !use_odom.compare("true"))
+    if( use_odom )
         force_odom = true;
+    tf::Transform relative_transform( tf::Quaternion(-0.5, 0.5, -0.5, 0.5),
+                                     tf::Vector3(-0.144, -0.009, 0.714) );
 
     // Valid duration
     rosbag::View full_view;
@@ -211,6 +225,7 @@ int main(int argc, char** argv)
     }
 
     // Print info
+    cout << GREEN << " Use odom: " << (use_odom?"true":"false") << RESET << endl;
     cout << GREEN << " Depth image topic: " << depth_topic << ", size = " << topic_sizes[0] << RESET << endl;
     cout << GREEN << " Rgb image topic: " << rgb_topic << ", size = " << topic_sizes[1] << RESET << endl;
     cout << GREEN << "##############################################################" << RESET << endl;
@@ -249,6 +264,7 @@ int main(int argc, char** argv)
                              tf::Vector3( init_pose_x, init_pose_y, init_pose_z ) );
     kl.setInitPose( init_pose );
 
+
     // Setup terminal
     setupTerminal();
 
@@ -259,8 +275,11 @@ int main(int argc, char** argv)
     //
     bool valid_depth = false;
     bool valid_rgb = false;
+    bool valid_odom_pose = false;
     sensor_msgs::Image::ConstPtr depth_img_msg;
     sensor_msgs::Image::ConstPtr rgb_img_msg;
+    tf2_msgs::TFMessage::ConstPtr tf_msg;
+    tf::Transform odom_pose;
 
     BOOST_FOREACH(rosbag::MessageInstance const m, view)
     {   
@@ -285,11 +304,37 @@ int main(int argc, char** argv)
             }
         }
 
+        // tf topic
+        if ( use_odom && (m.getTopic() == "/tf" || ("/" + m.getTopic() == "/tf")))
+        {
+            tf_msg = m.instantiate<tf2_msgs::TFMessage>();
+
+            for( int i = 0; i < tf_msg->transforms.size(); i++)
+            {
+                const geometry_msgs::TransformStamped &trans = tf_msg->transforms[i];
+                if( trans.header.frame_id == odom_frame && trans.child_frame_id == base_frame )
+                {
+                    tf::Transform tr;
+                    tf::transformMsgToTF( trans.transform, tr );
+                    odom_pose = tr * relative_transform;
+                    valid_odom_pose = true;
+//                    cout << RED << "Valid odom pose: " << trans.header.seq << RESET << endl;
+                    break;
+                }
+            }
+
+        }
+
+        // No valid odom, continue
+        if( use_odom && !valid_odom_pose )
+            continue;
+
         // depth topic
         if (m.getTopic() == depth_topic || ("/" + m.getTopic() == depth_topic))
         {
             depth_img_msg = m.instantiate<sensor_msgs::Image>();
-            valid_depth = true;
+            if( depth_img_msg->header.seq % skip_message == 0 )
+                valid_depth = true;
 
             // check if synchronous
             if( valid_depth && valid_rgb
@@ -311,8 +356,13 @@ int main(int argc, char** argv)
 
                 // process frame
                 cout << BLUE << "Processing frame " << depth_img_msg->header.seq
+                     << ((use_odom && valid_odom_pose)?"with odom":"")
                      << ", time = " << (m.getTime() - start_time).toSec() << " / " << duration << " seconds." << RESET << endl;
-                kl.trackDepthRgbImage( rgb_img_msg, depth_img_msg, camera );
+                if( use_odom && valid_odom_pose ){
+                    kl.trackDepthRgbImage( rgb_img_msg, depth_img_msg, camera, odom_pose );
+                }else{
+                    kl.trackDepthRgbImage( rgb_img_msg, depth_img_msg, camera );
+                }
                 valid_depth = false;
                 valid_rgb = false;
             }
@@ -345,11 +395,15 @@ int main(int argc, char** argv)
 
                 // process frame
                 cout << BLUE << "Processing frame " << depth_img_msg->header.seq
+                     << ((use_odom && valid_odom_pose)?"with odom":"")
                      << ", time = " << (m.getTime() - start_time).toSec() << " / " << duration << " seconds." << RESET << endl;
-                kl.trackDepthRgbImage( rgb_img_msg, depth_img_msg, camera );
+                if( use_odom && valid_odom_pose ){
+                    kl.trackDepthRgbImage( rgb_img_msg, depth_img_msg, camera, odom_pose );
+                }else{
+                    kl.trackDepthRgbImage( rgb_img_msg, depth_img_msg, camera );
+                }
                 valid_depth = false;
                 valid_rgb = false;
-
             }
         }
 

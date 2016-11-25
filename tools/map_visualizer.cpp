@@ -15,17 +15,22 @@ int main(int argc, char** argv)
 {
     ros::init(argc, argv, "map_visualizer", ros::init_options::AnonymousName);
     ros::NodeHandle nh;
+    double plane_point_size = 1.0;
+    double keypoint_point_size = 4.0;
+
     if( argc < 3)
     {
-        cout <<"Usage: ./map_visualizer plane.pcd keypoint.pcd" << endl;
+        cout <<"Usage: ./map_visualizer plane.pcd keypoint.pcd <keypoint_size>" << endl;
         ROS_ERROR_STREAM("Must define plane&point pcd files.");
         exit(0);
     }
     std::string plane_file = argv[1];
     std::string keypoint_file = argv[2];
-    double plane_point_size = 1.0;
-    double keypoint_point_size = 4.0;
 
+    if( argc >= 4 )
+    {
+        keypoint_point_size = atof(argv[3]);
+    }
 
     // Read PCD file
     ROS_INFO("Reading plane&keypoint pcd files: %s and %s ...", plane_file.c_str(), keypoint_file.c_str() );

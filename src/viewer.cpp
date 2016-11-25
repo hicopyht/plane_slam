@@ -33,6 +33,7 @@ Viewer::Viewer( ros::NodeHandle &nh)
     pcl_viewer_->initCameraParameters();
     pcl_viewer_->setCameraPosition(0.0, 0.0, -0.4, 0, 0, 0.6, 0, -1, 0);
     pcl_viewer_->setBackgroundColor( 1.0, 1.0, 1.0);
+    pcl_viewer_->setSize( 880, 700 );
     pcl_viewer_->setShowFPS(true);
 
     map_viewer_->addCoordinateSystem(1.0);
@@ -44,9 +45,12 @@ Viewer::Viewer( ros::NodeHandle &nh)
     // x,x/view(xyz)/pos(xyz)/up(xyz>)/x/x/x
     // Building A floor 5th
     // 18.4838,39.0089/-8.40921,-12.0519,4.25967/-8.33769,-18.6937,27.1933/-0.00491748,0.960514,0.278188/0.8575/683,384/64,79
-    map_viewer_->setCameraPosition(-8.33769,-18.6937,27.1933,-8.40921,-12.0519,4.25967,-0.00491748,0.960514,0.278188);
+    //map_viewer_->setCameraPosition(-8.33769,-18.6937,27.1933,-8.40921,-12.0519,4.25967,-0.00491748,0.960514,0.278188);
+    //map_viewer_->setCameraPosition(-17.7387,-38.2842,26.9952,-11.0398,-15.4227,1.41248,0.285626,0.676216,0.679079);
+    map_viewer_->setCameraPosition(-20.2139,-39.6031,24.9315,-11.0398,-15.4227,1.41248,0.271842,0.615997,0.739358);
     map_viewer_->setBackgroundColor( 1.0, 1.0, 1.0);
     map_viewer_->setShowFPS(true);
+    map_viewer_->setSize( 880, 700 );
     map_viewer_->setRepresentationToSurfaceForAllActors();
 
     //
@@ -115,6 +119,16 @@ void Viewer::displayFrame(const Frame &frame, const std::string &prefix, int vie
 
     // planes
     displayPlanes( frame.cloud_downsampled_, frame.segment_planes_, prefix+"_"+"planes", viewport );
+}
+
+void Viewer::displayInputCloud( const PointCloudTypePtr &cloud, const std::string &id, int viewport )
+{
+    // Input cloud
+    if( display_input_cloud_ && cloud && cloud->size() > 0 )
+    {
+        pcl_viewer_->addPointCloud( cloud, id, viewport );
+//        pcl_viewer_->setPointCloudRenderingProperties ( pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 1, id, viewport );
+    }
 }
 
 void Viewer::displayMatched3DKeypoint( const std_vector_of_eigen_vector4f &query,
@@ -388,6 +402,12 @@ void Viewer::displayPath( const std::vector<geometry_msgs::PoseStamped> &poses, 
     if( !display_pathes_ )
         return;
 
+    if( prefix == "odom_path" && !display_odom_path_ )
+        return;
+
+    if( prefix == "visual_odom_path" && !display_visual_odom_path_ )
+        return;
+
     for( int i = 1; i < poses.size(); i++)
     {
         const geometry_msgs::PoseStamped &pose1 = poses[i-1];
@@ -402,7 +422,7 @@ void Viewer::displayPath( const std::vector<geometry_msgs::PoseStamped> &poses, 
     }
 }
 
-void Viewer::displayPath( const std::map<int, gtsam::Pose3> &optimized_poses, const std::string &prefix )
+void Viewer::displayPath( const std::map<int, gtsam::Pose3> &optimized_poses, const std::string &prefix, double r, double g, double b )
 {
     if(!display_pathes_ || !display_optimized_path_)
         return;
@@ -435,14 +455,10 @@ void Viewer::displayPath( const std::map<int, gtsam::Pose3> &optimized_poses, co
         p2.x = pose.x();
         p2.y = pose.y();
         p2.z = pose.z();
-        map_viewer_->addLine( p1, p2, 0, 255, 0, ss.str() );
+        map_viewer_->addLine( p1, p2, r, g, b, ss.str() );
         //
         p1 = p2;
     }
-
-//    displayCameraFOV( optimized_poses.at(last_index) );
-
-//    cout << GREEN << " Viewer optimized path in map viewer, pose = " << optimized_poses.size() << RESET << endl;
 }
 
 void Viewer::displayPlanes( const PointCloudTypePtr &input, const std::vector<PlaneType> &planes, const std::string &prefix, int viewport)
@@ -848,9 +864,31 @@ void Viewer::pclViewerPlane( const PointCloudTypePtr &input, const PlaneType &pl
     }
 }
 
+void Viewer::focusOnCamera( tf::Transform &pose )
+{
+    static tf::Transform rel = tf::Transform( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, -0.4) );
+    static tf::Transform rel2 = tf::Transform( tf::createQuaternionFromRPY(0, M_PI_4, 0), tf::Vector3(-3.0, 0, -1.0) );
+    static tf::Transform rel3 = tf::Transform( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, -3.0) );
+
+    if( !focus_on_camera_ )
+        return;
+
+    tf::Transform cp = pose*rel2;
+    tf::Transform vp = cp*rel3;
+    map_viewer_->setCameraPosition(vp.getOrigin().x(), vp.getOrigin().y(), vp.getOrigin().z(),
+                                   cp.getOrigin().x(), cp.getOrigin().y(), cp.getOrigin().z(),
+                                   0.0, 0.0, 1.0);
+
+//    tf::Transform vp = pose * rel;
+//    map_viewer_->setCameraPosition(vp.getOrigin().x(), vp.getOrigin().y(), vp.getOrigin().z(),
+//                                   pose.getOrigin().x(), pose.getOrigin().y(), pose.getOrigin().z(),
+//                                   0.0, 0.0, 1.0);
+}
+
 void Viewer::viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t level)
 {
     // parameter frame
+    focus_on_camera_ = config.focus_on_camera;
     display_frame_ = config.display_frame;
     display_input_cloud_ = config.display_input_cloud;
     display_line_cloud_ = config.display_line_cloud;
@@ -879,8 +917,11 @@ void Viewer::viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t 
     display_landmark_label_ = config.display_landmark_label;
     //
     display_camera_fov_ = config.display_camera_fov;
-    display_optimized_path_ = config.display_optimized_path;
     display_pathes_ = config.display_pathes;
+    display_optimized_path_ = config.display_optimized_path;
+    display_odom_path_ = config.display_odom_path;
+    display_visual_odom_path_ = config.display_visual_odom_path;
+
 
     cout << GREEN <<" Viewer Config." << RESET << endl;
 }

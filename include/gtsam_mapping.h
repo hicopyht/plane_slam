@@ -60,8 +60,6 @@ class GTMapping
 public:
     GTMapping( ros::NodeHandle &nh, Viewer* viewer, Tracking* tracker = NULL);
 
-    bool mappingMixKeyMessage( Frame *frame );
-
     bool mappingMix( Frame *frame );
 
     bool mapping( Frame *frame );
@@ -128,7 +126,11 @@ public:
     // Symbol
     bool isMapRefined() const { return map_refined_; }
     bool isKeypointRemoved() const { return keypoint_removed_; }
-
+    //
+    bool isThrottleMemory() const { return throttle_memory_; }
+    //
+    double getKeyFrameLinearThreshold() const { return keyframe_linear_threshold_; }
+    double getKeyFrameAngularThreshold() const { return keyframe_angular_threshold_; }
 
 protected:
     bool addFirstFrameMix( Frame *frame );
@@ -140,6 +142,8 @@ protected:
     bool doMapping( Frame *frame );
 
     bool isKeyFrame( Frame *frame );
+
+    bool addFactorBetweenFrames( int previous_id, int id );
 
     void semanticMapLabel();
 
@@ -189,6 +193,8 @@ protected:
     bool checkLandmarksOverlap( const PlaneType &lm1, const PlaneType &lm2);
 
     bool refinePlanarMap();
+
+    bool mergeFloorPlane();
 
     void computeLostKeypoints( std::vector<int> &unmatched_landmarks,
                                std::vector<int> &lost_landmarks );
@@ -297,6 +303,12 @@ private:
     bool use_keyframe_;
     double keyframe_linear_threshold_;
     double keyframe_angular_threshold_;
+    //
+    Eigen::Vector3d plane_observation_sigmas_;
+    Eigen::VectorXd odom_sigmas_;
+    Eigen::VectorXd odom_sigmas_factor_;
+    double odom_linear_sigma_factor_;
+    double odom_angular_sigma_factor_;
     // ISMA2
     double isam2_relinearize_threshold_;
     int isam2_relinearize_skip_;
@@ -317,7 +329,9 @@ private:
     double plane_inlier_leaf_size_;
     double plane_hull_alpha_;
     //
+    int factors_previous_n_frames_;
     bool refine_planar_map_;
+    bool merge_floor_plane_;
     double planar_merge_direction_threshold_;
     double planar_merge_distance_threshold_;
     bool remove_plane_bad_inlier_;
