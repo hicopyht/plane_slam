@@ -208,3 +208,8 @@ target_link_libraries(map_visualizer
     ${catkin_LIBRARIES}
     ${PCL_LIBRARIES}
 )
+
+add_executable(runtime_analyze tools/runtime_analyze.cpp)
+target_link_libraries(runtime_analyze
+    ${catkin_LIBRARIES}
+)

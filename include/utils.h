@@ -390,13 +390,16 @@ int bruteForceSearchORB(const uint64_t* v, const uint64_t* search_array, const u
 int bruteForceSearchORB(const uint64_t* v, const std::map<int, KeyPoint*> &keypoints_list,
                         const std::map<int, gtsam::Point3> &predicted_keypoints, int& result_index);
 
+double getIntervalMS( ros::Time &start );
+
 std::string timeToStr();
 
 // Runtimes
 struct Runtime{
 
     Runtime()
-        : key_frame(false)
+        : id(-1)
+        , key_frame(false)
         , frame(0)
         , tracking(0)
         , mapping(0)
@@ -404,8 +407,9 @@ struct Runtime{
         , map_refined_(false)
         , keypoint_removed_(false) {}
 
-    Runtime( bool _key_frame, double _frame, double _track, double _map, double _total )
-        : key_frame(_key_frame)
+    Runtime( int _id, bool _key_frame, double _frame, double _track, double _map, double _total )
+        : id(_id)
+        , key_frame(_key_frame)
         , frame(_frame)
         , tracking(_track)
         , mapping(_map)
@@ -413,8 +417,9 @@ struct Runtime{
         , map_refined_(false)
         , keypoint_removed_(false) {}
 
-    Runtime( bool _key_frame, double _frame, double _track, double _map, double _total, bool refined, bool kp_removed )
-        : key_frame(_key_frame)
+    Runtime( int _id, bool _key_frame, double _frame, double _track, double _map, double _total, bool refined, bool kp_removed )
+        : id(_id)
+        , key_frame(_key_frame)
         , frame(_frame)
         , tracking(_track)
         , mapping(_map)
@@ -472,6 +477,7 @@ struct Runtime{
 //        return rt;
 //    }
 
+    int id;
     bool key_frame;
     double frame;
     double tracking;

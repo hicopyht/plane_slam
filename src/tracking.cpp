@@ -63,52 +63,44 @@ bool Tracking::trackPlanes(const Frame &source, const Frame &target,
     return motion.valid;
 }
 
-bool Tracking::track(const Frame &source, Frame &target,
+bool Tracking::track(const Frame &source, const Frame &target,
                      RESULT_OF_MOTION &motion, const Eigen::Matrix4d estimated_transform)
 {
     ros::Time start_time = ros::Time::now();
-    double pairs_dura, match_f_dura, m_e_dura, display_dura;
+    ros::Time fstart = start_time;
+    double match_kp_dura, match_plane_dura, m_f_dura, m_e_dura, display_dura;
 
     // Find plane correspondences
     const std::vector<PlaneType> &planes = target.segment_planes_;
     const std::vector<PlaneType> &last_planes = source.segment_planes_;
     std::vector<PlanePair> pairs;
-    if( planes.size() > 0 && last_planes.size() > 0 )
-    {
-        ITree::euclidianPlaneCorrespondences( planes, last_planes, pairs, estimated_transform);
-        std::sort( pairs.begin(), pairs.end() );
-    }
+    // Find keypoint correspondences
+    std::vector<cv::DMatch> good_matches;
+    // Spin two threads
+    thread threadKpMatch( &Tracking::findKeypointCorrespondence, this, &source, &target, &good_matches );
+    thread threadPlaneMatch( &Tracking::findPlaneCorrespondence, this, &planes, &last_planes, estimated_transform, &pairs );
+    threadKpMatch.join();
+    threadPlaneMatch.join();
+//    findKeypointCorrespondence( &source, &target, &good_matches );
+//    findPlaneCorrespondence( &planes, &last_planes, estimated_transform, &pairs );
+
     const int pairs_num = pairs.size();
     if( verbose_ )
         cout << GREEN << " Plane pairs = " << pairs_num << RESET << endl;
     //
-    pairs_dura = (ros::Time::now() - start_time).toSec() * 1000;
-    start_time = ros::Time::now();
-
-    // matches keypoint features
-    std::vector<cv::DMatch> good_matches;
-    if( !source.keypoint_type_.compare("ORB") && !target.keypoint_type_.compare("ORB") )
-    {
-        matchImageFeatures( source, target, good_matches,
-                            feature_good_match_threshold_, feature_min_good_match_size_ );
-    }
-    else if( !source.keypoint_type_.compare("SURF") && !target.keypoint_type_.compare("SURF") )
-    {
-        matchSurfFeatures( source, target, good_matches,
-                           feature_good_match_threshold_, feature_min_good_match_size_ );
-    }
+    if( verbose_ )
+        cout << GREEN << " Matches features, good_matches = " << good_matches.size() << RESET << endl;
 
     // Assign good matches to Frame
 //    target.good_matches_ = good_matches;
     //
-    if( verbose_ )
-        cout << GREEN << " Matches features, good_matches = " << good_matches.size() << RESET << endl;
-    //
-    match_f_dura = (ros::Time::now() - start_time).toSec() * 1000;
+    match_kp_dura = keypoint_match_duration_;
+    match_plane_dura = plane_match_duration_;
+    m_f_dura = (ros::Time::now() - start_time).toSec() * 1000;
     start_time = ros::Time::now();
 
-    // Lookfor keypoint matches on the plane
 
+    // Lookfor keypoint matches on the plane
 
 
     // Estimate transform
@@ -116,11 +108,12 @@ bool Tracking::track(const Frame &source, Frame &target,
     std::vector<PlanePair> pl_inlier;
     bool valid = solveRelativeTransform( source, target, pairs, good_matches,
                                          motion, pl_inlier, kp_inlier );
+    m_e_dura = (ros::Time::now() - start_time).toSec() * 1000;
+    start_time = ros::Time::now();
+
     // Assign keypoint inlier to Frame
 //    target.kp_inlier_ = kp_inlier;
 
-    m_e_dura = (ros::Time::now() - start_time).toSec() * 1000;
-    start_time = ros::Time::now();
 
     // Display
     viewer_->displayKeypointMatches( source.visual_image_, source.feature_locations_2d_,
@@ -130,19 +123,55 @@ bool Tracking::track(const Frame &source, Frame &target,
     display_dura = (ros::Time::now() - start_time).toSec() * 1000;
     start_time = ros::Time::now();
 
-    double total_time = pairs_dura + match_f_dura + m_e_dura + display_dura;
+    double total_dura = (ros::Time::now()-fstart).toSec()*1000;
     if( verbose_ ){
-        cout << GREEN << " Tracking total time: " << total_time << endl;
+        cout << GREEN << " Tracking total time: " << total_dura << endl;
         cout << " - Time:"
-             << " pairing: " << pairs_dura
-             << ", kp_matching: " << match_f_dura
+             << " pairing: " << match_kp_dura
+             << ", kp_matching: " << match_plane_dura
+             << ", matching_total: " << m_f_dura
              << ", motion_estimate: " << m_e_dura
              << ", matches display: " << display_dura
              << RESET << endl;
     }
 
+    // Pushback runtimes
+    pushRuntimes( target.header_.seq, pairs.size(), good_matches.size(), match_kp_dura, match_plane_dura,
+                  m_f_dura, m_e_dura, display_dura, total_dura );
+
+
     return valid;
 
+}
+
+void Tracking::findKeypointCorrespondence( const Frame *source, const Frame *target, std::vector<cv::DMatch> *good_matches )
+{
+    ros::Time start_time = ros::Time::now();
+    if( !source->keypoint_type_.compare("ORB") && !target->keypoint_type_.compare("ORB") )
+    {
+        matchImageFeatures( *source, *target, *good_matches,
+                            feature_good_match_threshold_, feature_min_good_match_size_ );
+    }
+    else if( !source->keypoint_type_.compare("SURF") && !target->keypoint_type_.compare("SURF") )
+    {
+        matchSurfFeatures( *source, *target, *good_matches,
+                           feature_good_match_threshold_, feature_min_good_match_size_ );
+    }
+    keypoint_match_duration_ = (ros::Time::now() - start_time).toSec()*1000;
+}
+
+void Tracking::findPlaneCorrespondence( const std::vector<PlaneType> *planes,
+                                        const std::vector<PlaneType> *last_planes,
+                                        const Eigen::Matrix4d estimated_transform,
+                                        std::vector<PlanePair> *pairs )
+{
+    ros::Time start_time = ros::Time::now();
+    if( planes->size() > 0 && last_planes->size() > 0 )
+    {
+        ITree::euclidianPlaneCorrespondences( *planes, *last_planes, *pairs, estimated_transform);
+        std::sort( pairs->begin(), pairs->end() );
+    }
+    plane_match_duration_ = (ros::Time::now() - start_time).toSec()*1000;
 }
 
 
@@ -1783,6 +1812,31 @@ std::vector<cv::DMatch> Tracking::randomChooseMatches( const unsigned int sample
         sampled_matches.push_back(matches[id]);
     }
     return sampled_matches;
+}
+
+void Tracking::saveRuntimes(const std::string &filename)
+{
+    if( track_sequences_.size() == 0 )
+        return;
+
+    cout << WHITE << "Save tracking runtimes: " << filename << "..." << RESET << endl;
+
+    FILE* yaml = std::fopen( filename.c_str(), "w" );
+    fprintf( yaml, "# tracking runtimes file: %s\n", filename.c_str() );
+    fprintf( yaml, "# format: [kp_match] [plane_match] [total_match] [solve_rt] [display] [total] nplanes nkeypoints\n" );
+    fprintf( yaml, "# frame size: %d\n", (track_sequences_.back() - track_sequences_.front() + 1) );
+    fprintf( yaml, "# size: %d\n", track_sequences_.size() );
+
+    for( int i = 0; i < track_sequences_.size(); i++)
+    {
+        fprintf( yaml, "%d %f %f %f %f %f %f %d %d\n", track_sequences_[i], kp_match_durations_[i],
+                 plane_match_durations_[i], match_total_durations_[i],
+                 solve_rt_durations_[i], display_durations_[i], total_durations_[i],
+                 use_n_planes_[i], use_n_keypoints_[i]);
+    }
+
+    fclose(yaml);
+    return;
 }
 
 void Tracking::trackingReconfigCallback(plane_slam::TrackingConfig &config, uint32_t level)

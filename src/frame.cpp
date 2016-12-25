@@ -9,6 +9,7 @@ Frame::Frame()
       camera_params_(),
       pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
       odom_pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
+      world_pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
       keypoint_type_("")
@@ -116,8 +117,14 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
       orb_extractor_( orb_extractor ),
       line_based_plane_segmentor_( line_based_plane_segmentor )
 {
+    ros::Time start_time = ros::Time::now();
+    ros::Time dura_start = start_time;
+
     // Construct organized pointcloud
     PointCloudTypePtr input = image2PointCloud( visual, depth, camera_params );
+    //
+    pointcloud_cvt_duration_ = (ros::Time::now() - dura_start).toSec()*1000;
+    dura_start = ros::Time::now();
 
     // Observation
     visual_image_ = visual; // no copy
@@ -127,6 +134,9 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
 
     // Downsample cloud
     downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
+    //
+    pointcloud_downsample_duration_ = (ros::Time::now() - dura_start).toSec()*1000;
+    dura_start = ros::Time::now();
 
     // Spin 2 threads, one for plane segmentation, another for keypoint extraction.
 //    extractORB();
@@ -135,6 +145,8 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
     thread threadExtract( &Frame::extractORB, this );
     threadSegment.join();
     threadExtract.join();
+
+    total_duration_ = (ros::Time::now() - start_time).toSec()*1000;
 }
 
 
@@ -238,8 +250,14 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
       orb_extractor_( orb_extractor ),
       organized_plane_segmentor_( organized_plane_segmentor )
 {
+    ros::Time start_time = ros::Time::now();
+    ros::Time dura_start = start_time;
+
     // Construct organized pointcloud
     PointCloudTypePtr input = image2PointCloud( visual, depth, camera_params );
+    //
+    pointcloud_cvt_duration_ = (ros::Time::now() - dura_start).toSec()*1000;
+    dura_start = ros::Time::now();
 
     // Observation
     visual_image_ = visual; // no copy
@@ -249,6 +267,10 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
 
     // Downsample cloud
     downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
+    //
+    pointcloud_downsample_duration_ = (ros::Time::now() - dura_start).toSec()*1000;
+    dura_start = ros::Time::now();
+
 
     // Spin 2 threads, one for plane segmentation, another for keypoint extraction.
 //    extractORB();
@@ -257,6 +279,8 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
     thread threadExtract( &Frame::extractORB, this );
     threadSegment.join();
     threadExtract.join();
+
+    total_duration_ = (ros::Time::now() - start_time).toSec()*1000;
 }
 
 void Frame::throttleMemory()
@@ -275,6 +299,8 @@ void Frame::throttleMemory()
 // Feature extraction, using visual image and cloud in VGA resolution
 void Frame::extractSurf()
 {
+    ros::Time start = ros::Time::now();
+
     // Get gray image
     if(visual_image_.type() == CV_8UC3)
         cv::cvtColor( visual_image_, gray_image_, CV_RGB2GRAY );
@@ -293,11 +319,15 @@ void Frame::extractSurf()
 
     // Project Keypoint to 3D
     projectKeypointTo3D( cloud_, feature_locations_2d_, feature_locations_3d_, feature_cloud_);
+
+    //
+    keypoint_extract_duration_ = (ros::Time::now() - start).toSec()*1000;
 }
 
 // Feature Extraction, using visual image and cloud in VGA resolution.
 void Frame::extractORB()
 {
+    ros::Time start = ros::Time::now();
     // Get gray image
     if(visual_image_.type() == CV_8UC3)
         cv::cvtColor( visual_image_, gray_image_, CV_RGB2GRAY );
@@ -308,17 +338,24 @@ void Frame::extractORB()
 
     // Project Keypoint to 3D
     projectKeypointTo3D( cloud_, feature_locations_2d_, feature_locations_3d_, feature_cloud_);
+
+    //
+    keypoint_extract_duration_ = (ros::Time::now() - start).toSec()*1000;
 }
 
 // Plane segmentation, using downsampled pointcloud in QVGA resolution.
 void Frame::lineBasedPlaneSegment()
 {
+    ros::Time start = ros::Time::now();
     (*line_based_plane_segmentor_)( cloud_downsampled_, segment_planes_, camera_params_downsampled_ );
+    plane_segment_duration_ = (ros::Time::now() - start).toSec()*1000;
 }
 
 void Frame::organizedPlaneSegment()
 {
+    ros::Time start = ros::Time::now();
     (*organized_plane_segmentor_)( cloud_downsampled_, segment_planes_ );
+    plane_segment_duration_ = (ros::Time::now() - start).toSec()*1000;
 }
 
 void Frame::downsampleOrganizedCloud( const PointCloudTypePtr &input, CameraParameters &in_camera,

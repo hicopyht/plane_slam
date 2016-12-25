@@ -66,6 +66,13 @@ public:
     PointCloudTypePtr image2PointCloud( const cv::Mat &rgb_img, const cv::Mat &depth_img,
                                         const CameraParameters& camera );
 
+    // Runtimes
+    double pointcloud_cvt_duration_;
+    double pointcloud_downsample_duration_;
+    double plane_segment_duration_;
+    double keypoint_extract_duration_;
+    double total_duration_;
+
 private:
     cv::FeatureDetector* surf_detector_;
     cv::DescriptorExtractor* surf_extractor_;
@@ -91,8 +98,10 @@ public:
     ros::Time stamp_;
     // Odom pose
     tf::Transform odom_pose_;
-    // Robot Pose
+    // Robot pose
     tf::Transform pose_;
+    // World pose
+    tf::Transform world_pose_;
     // Sensor data
     cv::Mat visual_image_;  // visual image
     cv::Mat gray_image_;    // gray image
@@ -116,6 +125,7 @@ public:
     std::vector<int> good_features_;
     // Planes
     std::vector<PlaneType> segment_planes_;
+
 };
 
 } // end of namespace plane_slam

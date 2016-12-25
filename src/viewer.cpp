@@ -374,9 +374,61 @@ vtkSmartPointer<vtkPolyData> Viewer::createCameraFOVPolygon( const gtsam::Pose3 
     return polygonPolyData;
 }
 
+vtkSmartPointer<vtkPolyData> Viewer::createCameraFOVPolygonSimple()
+{
+    double z = 0.4; // meter
+    double y = tan(DEG_TO_RAD*45.0/2.0) * z;
+    double x = tan(DEG_TO_RAD*58.0/2.0) * z;
+
+    /// Setup four points
+    vtkSmartPointer<vtkPoints> points = vtkSmartPointer<vtkPoints>::New();
+    points->InsertNextPoint(0.0, 0.0, 0.0);
+    points->InsertNextPoint(-x, -y, z);
+    points->InsertNextPoint(x, -y, z);
+    points->InsertNextPoint(x, y, z);
+    points->InsertNextPoint(-x, y, z);
+
+    // Create the polygon
+    vtkSmartPointer<vtkPolygon> polygon1 = vtkSmartPointer<vtkPolygon>::New();
+    polygon1->GetPointIds()->SetNumberOfIds(4);
+    polygon1->GetPointIds()->SetId(0, 0);
+    polygon1->GetPointIds()->SetId(1, 1);
+    polygon1->GetPointIds()->SetId(2, 2);
+    polygon1->GetPointIds()->SetId(3, 0);
+    //
+    vtkSmartPointer<vtkPolygon> polygon2 = vtkSmartPointer<vtkPolygon>::New();
+    polygon2->GetPointIds()->SetNumberOfIds(4);
+    polygon2->GetPointIds()->SetId(0, 0);
+    polygon2->GetPointIds()->SetId(1, 3);
+    polygon2->GetPointIds()->SetId(2, 4);
+    polygon2->GetPointIds()->SetId(3, 0);
+    //
+    vtkSmartPointer<vtkPolygon> polygon3 = vtkSmartPointer<vtkPolygon>::New();
+    polygon3->GetPointIds()->SetNumberOfIds(4);
+    polygon3->GetPointIds()->SetId(0, 1);
+    polygon3->GetPointIds()->SetId(1, 2);
+    polygon3->GetPointIds()->SetId(2, 3);
+    polygon3->GetPointIds()->SetId(3, 4);
+    //
+
+    // Add the polygon to a list of polygons
+    vtkSmartPointer<vtkCellArray> polygons = vtkSmartPointer<vtkCellArray>::New();
+    polygons->InsertNextCell(polygon1);
+    polygons->InsertNextCell(polygon2);
+    polygons->InsertNextCell(polygon3);
+
+    // Create a PolyData
+    vtkSmartPointer<vtkPolyData> polygonPolyData = vtkSmartPointer<vtkPolyData>::New();
+    polygonPolyData->SetPoints(points);
+    polygonPolyData->SetPolys(polygons);
+
+    return polygonPolyData;
+}
+
 void Viewer::displayCameraFOV(  const gtsam::Pose3 pose )
 {
-    static vtkSmartPointer<vtkPolyData> polygonPolyData = createCameraFOVPolygon( pose );
+//    static vtkSmartPointer<vtkPolyData> polygonPolyData = createCameraFOVPolygon( pose );
+    static vtkSmartPointer<vtkPolyData> polygonPolyData = createCameraFOVPolygonSimple();
 
     if( display_camera_fov_ )
     {
@@ -406,6 +458,9 @@ void Viewer::displayPath( const std::vector<geometry_msgs::PoseStamped> &poses, 
         return;
 
     if( prefix == "visual_odom_path" && !display_visual_odom_path_ )
+        return;
+
+    if( prefix == "true_path" && !display_true_path_ )
         return;
 
     for( int i = 1; i < poses.size(); i++)
@@ -921,6 +976,7 @@ void Viewer::viewerReconfigCallback( plane_slam::ViewerConfig &config, uint32_t 
     display_optimized_path_ = config.display_optimized_path;
     display_odom_path_ = config.display_odom_path;
     display_visual_odom_path_ = config.display_visual_odom_path;
+    display_true_path_ = config.display_true_path;
 
 
     cout << GREEN <<" Viewer Config." << RESET << endl;

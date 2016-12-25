@@ -33,6 +33,17 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer *viewer, Tracking *tracker)
     , next_plane_id_( 0 )
     , next_point_id_( 0 )
     , next_frame_id_( 0 )
+    , convert_duration_(0)
+    , plane_match_duration_(0)
+    , keypoint_match_duration_(0)
+    , add_delete_duration_(0)
+    , optimize_duration_(0)
+    , refine_duration_(0)
+    , update_lm_duration_(0)
+    , update_inlier_duration_(0)
+    , update_octomap_duration_(0)
+    , display_duration_(0)
+    , total_duration_(0)
 {
     //
     odom_sigmas_ = Eigen::VectorXd(6);
@@ -70,6 +81,7 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer *viewer, Tracking *tracker)
 // Only good plane correspondences or point correspondences could be added to global map
 bool GTMapping::mappingMix( Frame *frame )
 {
+    ros::Time dura_start = ros::Time::now();
     bool success;
     if( !optimized_poses_list_.size() )    // first frame, add prior
     {
@@ -90,6 +102,8 @@ bool GTMapping::mappingMix( Frame *frame )
         }
     }
 
+    total_duration_ = (ros::Time::now()-dura_start).toSec()*1000;
+
     if( verbose_ )
         cout << GREEN << " GTMapping, success = " << (success?"true":"false") << "." << RESET << endl;
 
@@ -101,6 +115,8 @@ bool GTMapping::mappingMix( Frame *frame )
 // adding it to iSAM.
 bool GTMapping::doMappingMix( Frame *frame )
 {
+    ros::Time dura_start = ros::Time::now();
+    double duration_tmp1 = 0, duration_tmp2 = 0;
     //
     if( !landmarks_list_.size() )
     {
@@ -143,6 +159,7 @@ bool GTMapping::doMappingMix( Frame *frame )
     // Time
     cvt_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
+    //
 
     /// 1: plane features
     // Get predicted-observation
@@ -346,6 +363,10 @@ bool GTMapping::doMappingMix( Frame *frame )
             // Add initial guess
             initial_estimate_.insert<Point3>( kp_key, p1_w );
         }
+
+        // Time
+        kp_add_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
+        step_time = ros::Time::now();
     }
     else
     {
@@ -549,6 +570,16 @@ bool GTMapping::doMappingMix( Frame *frame )
          << ", label: " << MAGENTA << semantic_dura << RESET
          << endl;
 
+    convert_duration_ = cvt_dura;
+    plane_match_duration_ = plane_m_dura;
+    keypoint_match_duration_ = kp_m_dura+kp_gm_dura;
+    add_delete_duration_ = plane_add_dura+kp_add_dura+kp_r_dura;
+    optimize_duration_ = optimize_dura;
+    update_lm_duration_ = update_dura;
+    update_inlier_duration_ = inlier_dura;
+    update_octomap_duration_ = octomap_dura;
+    refine_duration_ = refine_dura;
+
     return true;
 }
 
@@ -608,6 +639,8 @@ bool GTMapping::addFactorBetweenFrames( int previous_id, int id )
 
 bool GTMapping::addFirstFrameMix( Frame *frame )
 {
+    ros::Time dura_start = ros::Time::now();
+
     // check number of planes
     if( frame->segment_planes_.size() == 0 )
         return false;
@@ -641,6 +674,9 @@ bool GTMapping::addFirstFrameMix( Frame *frame )
             voxelGridFilter( plane.cloud, plane.cloud_voxel, plane_inlier_leaf_size_ );
     }
 
+    convert_duration_ = getIntervalMS(dura_start);
+    plane_match_duration_ = getIntervalMS(dura_start);
+    keypoint_match_duration_ = getIntervalMS(dura_start);
 
     // Add a prior factor
     Key x0 = Symbol('x', frame->id());
@@ -699,6 +735,8 @@ bool GTMapping::addFirstFrameMix( Frame *frame )
         landmarks_list_[plane.id()] = lm;
     }
 
+    add_delete_duration_ = getIntervalMS(dura_start);
+
     /// 2: Point features
     // For first frame, no point feature is added.
 
@@ -711,11 +749,19 @@ bool GTMapping::addFirstFrameMix( Frame *frame )
 //    isam2_->update( graph_, initial_estimate_ );
 //    updateOptimizedResult();
 
+    optimize_duration_ = getIntervalMS(dura_start);
+    refine_duration_ = getIntervalMS(dura_start);
+    update_lm_duration_ = getIntervalMS(dura_start);
+
 //    // Clear the factor graph and values for the next iteration
 //    graph_.resize(0);
 //    initial_estimate_.clear();
 //    //
+
     updateLandmarksInlierAll();
+    //
+    update_inlier_duration_ = getIntervalMS(dura_start);
+    update_octomap_duration_ = getIntervalMS(dura_start);
 
     last_estimated_pose_ = init_pose;
     last_estimated_pose_tf_ = pose3ToTF( last_estimated_pose_ );
@@ -729,6 +775,7 @@ bool GTMapping::addFirstFrameMix( Frame *frame )
 
 bool GTMapping::mapping( Frame *frame )
 {
+    ros::Time dura_start = ros::Time::now();
     bool success;
     if( !optimized_poses_list_.size() )    // first frame, add prior
     {
@@ -748,6 +795,8 @@ bool GTMapping::mapping( Frame *frame )
             success = doMapping( frame );   // do mapping
         }
     }
+
+    total_duration_ = (ros::Time::now()-dura_start).toSec()*1000;
 
     cout << GREEN << " GTMapping, success = " << (success?"true":"false") << "." << RESET << endl;
 
@@ -2626,6 +2675,7 @@ void GTMapping::publishMatchedKeypoints( const std_vector_of_eigen_vector4f &fea
 
 void GTMapping::updateMapViewer()
 {
+    ros::Time dura_start = ros::Time::now();
     // Pose, Path, MapCloud, Octomap
     publishOptimizedPose();
     publishOptimizedPath();
@@ -2635,12 +2685,13 @@ void GTMapping::updateMapViewer()
     // Map in pcl visualization
 //    viewer_->removeMap();
     viewer_->displayCameraFOV( last_estimated_pose_ );
-    viewer_->displayPath( optimized_poses_list_, "optimized_path", 0, 255, 0 );
+    viewer_->displayPath( optimized_poses_list_, "optimized_path", 1.0, 0, 0 );
     viewer_->displayMapLandmarks( landmarks_list_, "MapPlane" );
     if( viewer_->isDisplayKeypointLandmarks() )
         viewer_->displayMapLandmarks( getKeypointCloud(!(publish_keypoint_cloud_ && keypoint_cloud_publisher_.getNumSubscribers())), "MapPoint");
     viewer_->focusOnCamera(last_estimated_pose_tf_ );
 //    viewer_->spinMapOnce();
+    display_duration_ = getIntervalMS(dura_start);
 }
 
 void GTMapping::reset()
@@ -2984,6 +3035,8 @@ std::vector<geometry_msgs::PoseStamped> GTMapping::getOptimizedPath()
     for( std::map<int, gtsam::Pose3>::iterator it = optimized_poses_list_.begin();
             it != optimized_poses_list_.end(); it++)
     {
+        geometry_msgs::PoseStamped pose = pose3ToGeometryPose( it->second );
+        pose.header = frames_list_.at(it->first)->header_;
         poses.push_back( pose3ToGeometryPose( it->second ) );
     }
     return poses;

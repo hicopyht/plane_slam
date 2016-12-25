@@ -55,6 +55,7 @@ public:
     void displayMapLandmarks( const std::vector<PlaneType> &landmarks, const std::string &prefix = "landmark" );
 
     vtkSmartPointer<vtkPolyData> createCameraFOVPolygon( const gtsam::Pose3 &pose );
+    vtkSmartPointer<vtkPolyData> createCameraFOVPolygonSimple();
 
     void displayCameraFOV(  const gtsam::Pose3 pose );
 
@@ -160,6 +161,7 @@ private:
     bool display_optimized_path_;
     bool display_odom_path_;
     bool display_visual_odom_path_;
+    bool display_true_path_;
 
 };
 

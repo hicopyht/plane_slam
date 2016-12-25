@@ -894,6 +894,14 @@ int bruteForceSearchORB(const uint64_t* v, const std::map<int, KeyPoint*> &keypo
     return min_distance;
 }
 
+double getIntervalMS( ros::Time &start )
+{
+    ros::Time stop = ros::Time::now();
+    double dura = (stop-start).toSec()*1000.0;
+    start = stop;
+    return dura;
+}
+
 std::string timeToStr()
 {
     std::stringstream msg;

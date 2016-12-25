@@ -110,7 +110,8 @@ public:
     std::vector<geometry_msgs::PoseStamped> getOptimizedPath();
     // Get landmarks
     const std::map<int, PlaneType*> &getLandmark() { return landmarks_list_; }
-    const std::map<int, KeyPoint*> &getKeypointLandmark() { return keypoints_list_; }
+    const std::map<int, KeyPoint*> &getKeypointLandmark(){ return keypoints_list_; }
+    const std::map<int, Frame*> &getFrames() { return frames_list_; }
     // Get map cloud
     PointCloudTypePtr getMapCloud( bool force = false );
     PointCloudTypePtr getMapFullCloud( bool colored = false );
@@ -131,6 +132,19 @@ public:
     //
     double getKeyFrameLinearThreshold() const { return keyframe_linear_threshold_; }
     double getKeyFrameAngularThreshold() const { return keyframe_angular_threshold_; }
+
+    // Runtimes
+    double convert_duration_;
+    double plane_match_duration_;
+    double keypoint_match_duration_;
+    double add_delete_duration_;
+    double optimize_duration_;
+    double refine_duration_;
+    double update_lm_duration_;
+    double update_inlier_duration_;
+    double update_octomap_duration_;
+    double display_duration_;
+    double total_duration_;
 
 protected:
     bool addFirstFrameMix( Frame *frame );

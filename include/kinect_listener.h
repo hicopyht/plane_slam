@@ -68,7 +68,7 @@ public:
 
     void trackPointCloud( const sensor_msgs::PointCloud2ConstPtr &point_cloud,
                           CameraParameters& camera,
-                          tf::Transform &odom_pose );
+                          tf::Transform odom_pose );
 
     void trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visual_img_msg,
                              const sensor_msgs::ImageConstPtr &depth_img_msg,
@@ -111,6 +111,12 @@ public:
 
     void saveRuntimes( const std::string &filename = "runtimes.txt" );
 
+    void saveFrameRuntimes(const std::string &filename);
+
+    void saveMappingRuntimes(const std::string &filename);
+
+    void saveKeyKrameSequence( const std::string &filename = "frames.txt" );
+
     void cvtCameraParameter( const sensor_msgs::CameraInfoConstPtr &cam_info_msg,
                              CameraParameters &camera);
 
@@ -140,12 +146,13 @@ protected:
 private:
     bool getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time &t = ros::Time(0) );
 
+    bool getTfPose( tf::Transform &pose, const std::string &source_frame, const std::string &target_frame, const ros::Time& t = ros::Time(0));
+
+    void publishTruePose();
+    void publishTruePath();
     void publishOdomPose();
-
     void publishOdomPath();
-
     void publishVisualOdometryPose();
-
     void publishVisualOdometryPath();
 
 private:
@@ -176,6 +183,8 @@ private:
     message_filters::Synchronizer<CloudSyncPolicy>* cloud_sync_;
     message_filters::Synchronizer<NoCloudSyncPolicy>* no_cloud_sync_;
     //
+    ros::Publisher true_pose_publisher_;
+    ros::Publisher true_path_publisher_;
     ros::Publisher odom_pose_publisher_;
     ros::Publisher odom_path_publisher_;
     ros::Publisher visual_odometry_pose_publisher_;
@@ -200,11 +209,13 @@ private:
     bool do_visual_odometry_;
     bool do_mapping_;
     bool do_slam_;
-    bool force_odom_;
+    bool get_true_pose_;
+    bool get_odom_pose_;
     bool mapping_key_message_;
     bool use_odom_tracking_;
     bool mapping_keypoint_;
     string camera_frame_;
+    string world_frame_;
     string map_frame_;
     string base_frame_;
     string odom_frame_;
@@ -220,9 +231,12 @@ private:
 
     //
     tf::Transform init_pose_;
+    // Buffer for true pose
+    tf::Transform true_pose_;
     // Camera Parameters
     CameraParameters camera_parameters_;
     // Path
+    std::vector<geometry_msgs::PoseStamped> true_poses_;
     std::vector<geometry_msgs::PoseStamped> odom_poses_;
     std::vector<geometry_msgs::PoseStamped> visual_odometry_poses_;
 
@@ -235,6 +249,65 @@ private:
     double map_tf_freq_;
     boost::mutex map_tf_mutex_;
     tf::Transform odom_to_map_tf_;
+
+
+    // Frame runtimes
+    std::vector<int> frame_sequences_;
+    std::vector<int> frame_plane_size_;
+    std::vector<int> frame_keypoint_size_;
+    std::vector<double> pointcloud_cvt_durations_;
+    std::vector<double> pointcloud_downsample_durations_;
+    std::vector<double> plane_segment_durations_;
+    std::vector<double> kp_extract_durations_;
+    std::vector<double> frame_total_durations_;
+
+    void pushFrameRuntimes( int seq, int n_plane, int n_kp, double cvt, double ds, double segment, double extract, double total )
+    {
+        frame_sequences_.push_back( seq );
+        frame_plane_size_.push_back( n_plane );
+        frame_keypoint_size_.push_back( n_kp );
+        pointcloud_cvt_durations_.push_back( cvt );
+        pointcloud_downsample_durations_.push_back( ds );
+        plane_segment_durations_.push_back( segment );
+        kp_extract_durations_.push_back( extract );
+        frame_total_durations_.push_back( total );
+    }
+
+    // Mapping runtimes
+    std::vector<int> mapping_sequences_;
+    std::vector<double> mapping_convert_durations_;
+    std::vector<double> mapping_plane_match_durations_;
+    std::vector<double> mapping_kp_match_durations_;
+    std::vector<double> mapping_add_delete_durations_;
+    std::vector<double> mapping_optimize_durations_;
+    std::vector<double> mapping_refine_durations_;
+    std::vector<double> mapping_update_lm_durations_;
+    std::vector<double> mapping_update_inlier_durations_;
+    std::vector<double> mapping_update_octomap_durations_;
+    std::vector<double> mapping_display_durations_;
+    std::vector<double> mapping_total_durations_;
+
+
+
+
+    void pushMappintRuntimes( int seq, double &cvt, double &plane_match,
+                              double &kp_match, double &add_delete, double &optimize,
+                              double &refine, double &update_lm, double &update_inlier,
+                              double &update_octomap, double &display, double &total )
+    {
+        mapping_sequences_.push_back( seq );
+        mapping_convert_durations_.push_back( cvt );
+        mapping_plane_match_durations_.push_back( plane_match );
+        mapping_kp_match_durations_.push_back( kp_match );
+        mapping_add_delete_durations_.push_back( add_delete );
+        mapping_optimize_durations_.push_back( optimize );
+        mapping_refine_durations_.push_back( refine );
+        mapping_update_lm_durations_.push_back( update_lm );
+        mapping_update_inlier_durations_.push_back( update_inlier );
+        mapping_update_octomap_durations_.push_back( update_octomap );
+        mapping_display_durations_.push_back( display );
+        mapping_total_durations_.push_back( total );
+    }
 };
 
 } // end of namespace plane_slam

@@ -23,12 +23,23 @@ public:
     bool trackPlanes(const Frame &source, const Frame &target, RESULT_OF_MOTION &motion,
                      const Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4) );
 
-    bool track( const Frame &source, Frame &target, RESULT_OF_MOTION &motion,
+    bool track( const Frame &source, const Frame &target, RESULT_OF_MOTION &motion,
                 const Eigen::Matrix4d estimated_transform = Eigen::MatrixXd::Identity(4,4) );
+
+    void findPlaneCorrespondence( const std::vector<PlaneType> *planes,
+                                  const std::vector<PlaneType> *last_planes,
+                                  const Eigen::Matrix4d estimated_transform,
+                                  std::vector<PlanePair> *pairs );
+
+    void findKeypointCorrespondence( const Frame *source, const Frame *target, std::vector<cv::DMatch> *good_matches );
 
     void inline setVerbose( bool verbose ) { verbose_ = verbose; }
 
+    void saveRuntimes( const std::string &filename );
+
 public:
+
+
     bool solveRelativeTransformPlanes( const Frame &source,
                                        const Frame &target,
                                        const std::vector<PlanePair> &pairs,
@@ -221,6 +232,36 @@ private:
     int pnp_iterations_;
     int pnp_min_inlier_;
     double pnp_repreject_error_;
+
+    // Runtimes
+    double keypoint_match_duration_;
+    double plane_match_duration_;
+    //
+    std::vector<int> track_sequences_;
+    std::vector<int> use_n_planes_;
+    std::vector<int> use_n_keypoints_;
+    std::vector<double> kp_match_durations_;
+    std::vector<double> plane_match_durations_;
+    std::vector<double> match_total_durations_;
+    std::vector<double> solve_rt_durations_;
+    std::vector<double> display_durations_;
+    std::vector<double> total_durations_;
+
+    void pushRuntimes( int seq, int n_plane, int n_kp, double kp_m, double plane_m,
+                       double m_f_dura, double solve_rt,
+                       double display, double track )
+    {
+        track_sequences_.push_back( seq );
+        use_n_planes_.push_back( n_plane );
+        use_n_keypoints_.push_back( n_kp );
+        kp_match_durations_.push_back( kp_m );
+        plane_match_durations_.push_back( plane_m );
+        match_total_durations_.push_back( m_f_dura );
+        solve_rt_durations_.push_back( solve_rt );
+        display_durations_.push_back( display );
+        total_durations_.push_back( track );
+    }
+
 };
 
 } // end of namespace plane_slam
