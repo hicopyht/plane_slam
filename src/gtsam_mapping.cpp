@@ -18,7 +18,7 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer *viewer, Tracking *tracker)
     , use_keyframe_( true )
     , keyframe_linear_threshold_( 0.05f )
     , keyframe_angular_threshold_( 5.0f*DEG_TO_RAD )
-    , isam2_relinearize_threshold_( 0.05f )
+    , isam2_relinearize_threshold_( 0.01f )
     , isam2_relinearize_skip_( 1 )
     , plane_observation_sigmas_(0.01, 0.01, 0.01)
     , plane_match_direction_threshold_( 10.0*DEG_TO_RAD )   // 10 degree
@@ -115,8 +115,6 @@ bool GTMapping::mappingMix( Frame *frame )
 // adding it to iSAM.
 bool GTMapping::doMappingMix( Frame *frame )
 {
-    ros::Time dura_start = ros::Time::now();
-    double duration_tmp1 = 0, duration_tmp2 = 0;
     //
     if( !landmarks_list_.size() )
     {
@@ -191,21 +189,13 @@ bool GTMapping::doMappingMix( Frame *frame )
 
     // Add odometry factors
     Vector odom_sigmas(6);
-    odom_sigmas = odom_sigmas_;
-//    odom_sigmas << fabs(rel_pose.translation().x())*odom_linear_sigma_factor_,
-//                   0.01,
-//                   fabs(rel_pose.translation().z())*odom_linear_sigma_factor_*0.5,
-//                   0.02,
-//                   fabs(rel_pose.rotation().yaw())*odom_angular_sigma_factor_,
-//                   0.02;
-//    odom_sigmas << odom_linear_sigma_*0.5, odom_linear_sigma_*0.25, odom_linear_sigma_,
-//                   odom_angular_sigma_*0.25, odom_angular_sigma_, odom_angular_sigma_*0.25;
-//    odom_sigmas << odom_linear_sigma_*0.5+fabs(rel_pose.translation().x())*odom_linear_sigma_factor_,
-//                   odom_linear_sigma_*0.25+0.05,
-//                   odom_linear_sigma_+fabs(rel_pose.translation().z())*odom_linear_sigma_factor_*0.5,
-//                   odom_angular_sigma_*0.25+0.01,
-//                   odom_angular_sigma_+fabs(rel_pose.rotation().yaw())*odom_angular_sigma_factor_,
-//                   odom_angular_sigma_*0.25+0.01;
+//    odom_sigmas = odom_sigmas_;
+    odom_sigmas << fabs(rel_pose.translation().x()*odom_sigmas_factor_(0)),
+            fabs(rel_pose.translation().y()*odom_sigmas_factor_(1)),
+            fabs(rel_pose.translation().z()*odom_sigmas_factor_(2)),
+            fabs(rel_pose.rotation().xyz()(0)*odom_sigmas_factor_(3)),
+            fabs(rel_pose.rotation().xyz()(1)*odom_sigmas_factor_(4)),
+            fabs(rel_pose.rotation().xyz()(2)*odom_sigmas_factor_(5));
     noiseModel::Diagonal::shared_ptr odometry_noise =
             noiseModel::Diagonal::Sigmas( odom_sigmas );
 //    cout << GREEN << "odom noise dim: " << odometry_noise->dim() << RESET << endl;
@@ -2183,7 +2173,7 @@ void GTMapping::updateOptimizedResultMix()
             it != optimized_poses_list_.end(); it++)
     {
         gtsam::Pose3 pose3 = values.at( Symbol('x', it->first) ).cast<gtsam::Pose3>();
-        if( !pose3.equals(it->second) )
+        if( !pose3.equals(it->second, 1e-4) )
             frames_optimized_.insert( it->first );
         it->second = pose3;
         frames_list_[it->first]->pose_ = pose3ToTF( pose3 );
@@ -2236,7 +2226,7 @@ void GTMapping::updateOptimizedResult()
             it != optimized_poses_list_.end(); it++)
     {
         gtsam::Pose3 pose3 = values.at( Symbol('x', it->first) ).cast<gtsam::Pose3>();
-        if( !pose3.equals(it->second) )
+        if( !pose3.equals(it->second, 1e-4) )
             frames_optimized_.insert( it->first );
         it->second = pose3;
         frames_list_[it->first]->pose_ = pose3ToTF( pose3 );

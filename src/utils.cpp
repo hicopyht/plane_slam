@@ -9,7 +9,9 @@ bool isValidPoint(const PointType &p)
 
 void calAngleAndDistance( const Eigen::Isometry3d& t, double& rad, double& dist )
 {
-    rad = acos((t.rotation().trace() -1)/2 );
+//    rad = acos((t.rotation().trace() -1)/2 );
+    tf::Transform trans = transformMatrix4dToTF( t.matrix() );
+    rad = fabs(trans.getRotation().getAngle());
     dist = t.translation().norm();
 }
 
