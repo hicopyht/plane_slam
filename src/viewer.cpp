@@ -530,9 +530,9 @@ void Viewer::displayPlanes( const PointCloudTypePtr &input, const std::vector<Pl
 }
 
 void Viewer::displayLinesAndNormals( const PointCloudTypePtr &input,
-                                            std::vector<PlaneFromLineSegment::LineType> &lines,
-                                            std::vector<PlaneFromLineSegment::NormalType> &normals,
-                                            int viewport)
+                                    std::vector<line_based_plane_segment::LineType> &lines,
+                                    std::vector<line_based_plane_segment::NormalType> &normals,
+                                    int viewport)
 {
     if(display_input_cloud_)
     {
@@ -691,9 +691,9 @@ void Viewer::pclViewerLandmark( const PlaneType &plane, const std::string &id, c
 
 }
 
-void Viewer::pclViewerLineRegion( const PointCloudTypePtr &input, PlaneFromLineSegment::LineType &line, const std::string &id, int viewpoint)
+void Viewer::pclViewerLineRegion( const PointCloudTypePtr &input, line_based_plane_segment::LineType &line, const std::string &id, int viewpoint)
 {
-    PointCloudTypePtr cloud = getPointCloudFromIndices( input, line.inliers );
+    PointCloudTypePtr cloud = getPointCloudFromIndices( input, line.indices );
 
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZRGBA> color(cloud, rng.uniform(0.0, 255.0), rng.uniform(0.0, 255.0), rng.uniform(0.0, 255.0));
     pcl_viewer_->addPointCloud(cloud, color, id, viewpoint);
@@ -701,7 +701,7 @@ void Viewer::pclViewerLineRegion( const PointCloudTypePtr &input, PlaneFromLineS
 
 }
 
-void Viewer::pclViewerNormal( const PointCloudTypePtr &input, PlaneFromLineSegment::NormalType &normal, const std::string &id, int viewpoint)
+void Viewer::pclViewerNormal( const PointCloudTypePtr &input, line_based_plane_segment::NormalType &normal, const std::string &id, int viewpoint)
 {
     double r = rng.uniform(0.0, 255.0);
     double g = rng.uniform(0.0, 255.0);
@@ -716,7 +716,7 @@ void Viewer::pclViewerNormal( const PointCloudTypePtr &input, PlaneFromLineSegme
         if( p1.z == 0 && p1.x == 0 && p1.y == 0 )
         {
             Eigen::Vector4f cen;
-            pcl::compute3DCentroid( *input, normal.inliers, cen);
+            pcl::compute3DCentroid( *input, normal.indices, cen);
             p1.x = cen[0];
             p1.y = cen[1];
             p1.z = cen[2];
@@ -732,9 +732,9 @@ void Viewer::pclViewerNormal( const PointCloudTypePtr &input, PlaneFromLineSegme
     // add inlier
     PointCloudTypePtr cloud (new PointCloudType );
 
-    for(int i = 0; i < normal.inliers.size(); i++)
+    for(int i = 0; i < normal.indices.size(); i++)
     {
-        cloud->points.push_back( input->points[normal.inliers[i]] );
+        cloud->points.push_back( input->points[normal.indices[i]] );
     }
     cloud->is_dense = false;
     cloud->height = 1;

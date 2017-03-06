@@ -42,9 +42,10 @@
   <buildtool_depend>catkin</buildtool_depend>
   <build_depend>cv_bridge</build_depend>
   <build_depend>dynamic_reconfigure</build_depend>
+  <build_depend>image_transport</build_depend>
   <build_depend>message_filters</build_depend>
   <build_depend>pcl_ros</build_depend>
-  <build_depend>plane_from_line</build_depend>
+  <build_depend>line_based_plane_segment</build_depend>
   <build_depend>roscpp</build_depend>
   <build_depend>sensor_msgs</build_depend>
   <build_depend>tf</build_depend>
@@ -53,9 +54,10 @@
   <build_depend>octomap</build_depend>
   <run_depend>cv_bridge</run_depend>
   <run_depend>dynamic_reconfigure</run_depend>
+  <run_depend>image_transport</run_depend>
   <run_depend>message_filters</run_depend>
   <run_depend>pcl_ros</run_depend>
-  <run_depend>plane_from_line</run_depend>
+  <run_depend>line_based_plane_segment</run_depend>
   <run_depend>roscpp</run_depend>
   <run_depend>sensor_msgs</run_depend>
   <run_depend>tf</run_depend>

@@ -34,7 +34,7 @@ Frame::Frame( PointCloudTypePtr &input, CameraParameters &camera_params,
     camera_params_ = camera_params;
 
     // Downsample cloud
-    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
+    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QQVGA );
 
     // Only segment planes
     lineBasedPlaneSegment();
@@ -59,7 +59,7 @@ Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camer
     camera_params_ = camera_params;
 
     // Downsample cloud
-    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
+    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QQVGA );
 
     // Spin 2 threads, one for plane segmentation, another for keypoint extraction.
     thread threadSegment( &Frame::lineBasedPlaneSegment, this );
@@ -93,7 +93,7 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
     camera_params_ = camera_params;
 
     // Downsample cloud
-    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
+    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QQVGA );
 
     // Spin 2 threads, one for plane segmentation, another for keypoint extraction.
 //    extractORB();
@@ -133,7 +133,7 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
     camera_params_ = camera_params;
 
     // Downsample cloud
-    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
+    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QQVGA );
     //
     pointcloud_downsample_duration_ = (ros::Time::now() - dura_start).toSec()*1000;
     dura_start = ros::Time::now();
@@ -167,7 +167,7 @@ Frame::Frame( PointCloudTypePtr &input, CameraParameters &camera_params,
     camera_params_ = camera_params;
 
     // Downsample cloud
-    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
+    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QQVGA );
 
     // Only segment planes
     organizedPlaneSegment();
@@ -192,7 +192,7 @@ Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camer
     camera_params_ = camera_params;
 
     // Downsample cloud
-    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
+    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QQVGA );
 
     // Spin 2 threads, one for plane segmentation, another for keypoint extraction.
     thread threadSegment( &Frame::organizedPlaneSegment, this );
@@ -226,7 +226,7 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
     camera_params_ = camera_params;
 
     // Downsample cloud
-    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
+    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QQVGA );
 
     // Spin 2 threads, one for plane segmentation, another for keypoint extraction.
 //    extractORB();
@@ -266,7 +266,7 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
     camera_params_ = camera_params;
 
     // Downsample cloud
-    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QVGA );
+    downsampleOrganizedCloud( cloud_, camera_params_, cloud_downsampled_, camera_params_downsampled_, QQVGA );
     //
     pointcloud_downsample_duration_ = (ros::Time::now() - dura_start).toSec()*1000;
     dura_start = ros::Time::now();
@@ -294,6 +294,7 @@ void Frame::throttleMemory()
     //
     cloud_->clear();
 //    cloud_downsampled_->clear();
+    feature_cloud_->clear();
 }
 
 // Feature extraction, using visual image and cloud in VGA resolution

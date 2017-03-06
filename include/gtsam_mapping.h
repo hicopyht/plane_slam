@@ -163,6 +163,12 @@ protected:
 
     void labelPlane( PlaneType *plane );
 
+    PlaneType createFloorPlane(PlaneType &plane,
+                               pcl::octree::OctreePointCloud<PointType>::Ptr &plane_octree,
+                               const float minx = -50.0, const float miny = -50.0,
+                               const float maxx = 50.0, const float maxy = 50.0,
+                               const float leafsize = 0.1, const int id = 0);
+
     void matchKeypointWithMap( const Frame &frame,
                                std::vector<cv::DMatch> &matches,
                                std::vector<int> &unmatched_landmarks );
@@ -209,6 +215,8 @@ protected:
     bool refinePlanarMap();
 
     bool mergeFloorPlane();
+
+    bool addFloorConstrain(int idx);
 
     void computeLostKeypoints( std::vector<int> &unmatched_landmarks,
                                std::vector<int> &lost_landmarks );
@@ -301,6 +309,10 @@ private:
 //    std::map<int, gtsam::OrientedPlane3> optimized_landmarks_list_last_; // last optimized
     octomap::OcTree *octree_map_;
 
+    // Floor plane
+    PlaneType* floor_plane_;
+    pcl::octree::OctreePointCloud<PointType>::Ptr floor_octree_;
+
     // Symbol
     bool map_refined_;
     bool keypoint_removed_;
@@ -326,6 +338,7 @@ private:
     // ISMA2
     double isam2_relinearize_threshold_;
     int isam2_relinearize_skip_;
+    ISAM2Params::Factorization isam2_factorization_;
     //
     int min_keypoint_correspondences_;
     double keypoint_match_search_radius_;
@@ -346,6 +359,7 @@ private:
     int factors_previous_n_frames_;
     bool refine_planar_map_;
     bool merge_floor_plane_;
+    bool add_floor_constrain_;
     double planar_merge_direction_threshold_;
     double planar_merge_distance_threshold_;
     bool remove_plane_bad_inlier_;

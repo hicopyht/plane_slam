@@ -55,17 +55,17 @@ int main(int argc, char** argv)
     pcl_viewer->addPointCloud( cloud, "pcd_cloud" );
     pcl_viewer->setPointCloudRenderingProperties ( pcl::visualization::PCL_VISUALIZER_POINT_SIZE, point_size, "pcd_cloud" );
 
-    pcl_viewer->spin();
+//    pcl_viewer->spin();
 
-//    // Spin in loop
-//    ros::Rate loop_rate( 20 );
-//    while( ros::ok() && !pcl_viewer->wasStopped() )
-//    {
-//        pcl_viewer->spinOnce(40);
-//        ros::spinOnce();
-//        loop_rate.sleep();
-//    }
-//    pcl_viewer->close();
+    // Spin in loop
+    ros::Rate loop_rate( 20 );
+    while( ros::ok() && !pcl_viewer->wasStopped() )
+    {
+        pcl_viewer->spinOnce();
+        ros::spinOnce();
+        loop_rate.sleep();
+    }
+    pcl_viewer->close();
 
     ros::shutdown();
 }

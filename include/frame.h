@@ -6,7 +6,6 @@
 #include <opencv2/core/core.hpp>
 #include <pcl/pcl_base.h>
 #include <gtsam/geometry/Pose3.h>
-#include <plane_from_line/plane_from_line_segment.h>
 #include "orb_extractor.h"
 #include "line_based_plane_segmentor.h"
 #include "organized_multi_plane_segmentor.h"

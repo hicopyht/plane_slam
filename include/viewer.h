@@ -66,17 +66,17 @@ public:
     void displayPlanes( const PointCloudTypePtr &input, const std::vector<PlaneType> &planes, const std::string &prefix, int viewport);
 
     void displayLinesAndNormals( const PointCloudTypePtr &input,
-                                 std::vector<PlaneFromLineSegment::LineType> &lines,
-                                 std::vector<PlaneFromLineSegment::NormalType> &normals,
+                                 std::vector<line_based_plane_segment::LineType> &lines,
+                                 std::vector<line_based_plane_segment::NormalType> &normals,
                                  int viewport);
 
     void pclViewerLandmark( const KeyPoint &keypoint, const std::string &id, const int number = -1 );
 
     void pclViewerLandmark( const PlaneType &plane, const std::string &id, const int number = -1);
 
-    void pclViewerLineRegion( const PointCloudTypePtr &input, PlaneFromLineSegment::LineType &line, const std::string &id, int viewpoint);
+    void pclViewerLineRegion( const PointCloudTypePtr &input, line_based_plane_segment::LineType &line, const std::string &id, int viewpoint);
 
-    void pclViewerNormal( const PointCloudTypePtr &input, PlaneFromLineSegment::NormalType &normal, const std::string &id, int viewpoint);
+    void pclViewerNormal( const PointCloudTypePtr &input, line_based_plane_segment::NormalType &normal, const std::string &id, int viewpoint);
 
     void pclViewerPlane( const PointCloudTypePtr &input, const PlaneType &plane, const std::string &id, int viewport, const int number = -1);
 

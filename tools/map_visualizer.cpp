@@ -70,7 +70,7 @@ int main(int argc, char** argv)
     ros::Rate loop_rate( 10 );
     while( ros::ok() && !pcl_viewer->wasStopped() )
     {
-        pcl_viewer->spinOnce(10);
+        pcl_viewer->spinOnce();
         ros::spinOnce();
         loop_rate.sleep();
     }

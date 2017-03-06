@@ -614,8 +614,8 @@ Frame* KinectListener::depthRgbToFrame(const sensor_msgs::ImageConstPtr &visual_
         return (new Frame());
     }
     //
-    frame->header_ = depth_img_msg->header;
-    frame->stamp_ = depth_img_msg->header.stamp;
+    frame->header_ = visual_img_msg->header;
+    frame->stamp_ = visual_img_msg->header.stamp;
     frame->valid_ = false;
 
     if( get_true_pose_ )

@@ -15,6 +15,10 @@ OrganizedPlaneSegmentor::OrganizedPlaneSegmentor( ros::NodeHandle &nh ):
   , distance_threshold_(0.02)
   , project_bounding_points_(true)
 {
+    // reconfigure gui
+    organized_segment_config_callback_ = boost::bind(&OrganizedPlaneSegmentor::organizedSegmentReconfigCallback, this, _1, _2);
+    organized_segment_config_server_.setCallback(organized_segment_config_callback_);
+
     updateOrganizedSegmentParameters();
 }
 
@@ -69,6 +73,8 @@ void OrganizedPlaneSegmentor::operator()( const PointCloudTypePtr &input, std::v
     OrganizedPlaneSegmentResult segment_result;
     segment( input, segment_result );
 
+//    cout << BOLDWHITE << "OMPS planes = " << BOLDCYAN << segment_result.regions.size() << RESET << endl;
+
     // convert format
     for( int i = 0; i < segment_result.regions.size(); i++)
     {
@@ -86,9 +92,9 @@ void OrganizedPlaneSegmentor::operator()( const PointCloudTypePtr &input, std::v
         plane.coefficients[1] = coef.values[1];
         plane.coefficients[2] = coef.values[2];
         plane.coefficients[3] = coef.values[3];
-        plane.sigmas[0] = 0.0004;
-        plane.sigmas[1] = 0.0004;
-        plane.sigmas[2] = 0.0004;
+        plane.sigmas[0] = 0.008;
+        plane.sigmas[1] = 0.008;
+        plane.sigmas[2] = 0.008;
         plane.inlier = indices.indices;
         plane.boundary_inlier = boundary.indices;
         plane.hull_inlier = boundary.indices;

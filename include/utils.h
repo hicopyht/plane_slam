@@ -32,7 +32,7 @@
 #include <gtsam/geometry/OrientedPlane3.h>
 #include <gtsam/sam/BearingRangeFactor.h>
 
-#include <plane_from_line/plane_from_line_segment.h>
+#include <line_based_plane_segmentation.h>
 
 #include <Eigen/Core>
 #include <Eigen/Geometry>
@@ -40,6 +40,7 @@
 #include <vector>
 #include <stdlib.h>
 #include <thread>
+#include <boost/date_time/posix_time/posix_time.hpp>
 
 using namespace std;
 using namespace Eigen;
@@ -47,7 +48,7 @@ using namespace Eigen;
 const double DEG_TO_RAD = ( M_PI / 180.0 );
 const double RAD_TO_DEG = ( 180.0 / M_PI );
 
-typedef PlaneFromLineSegment::CAMERA_PARAMETERS  CameraParameters;
+typedef line_based_plane_segment::CAMERA_INFO CameraParameters;
 
 typedef pcl::PointCloud< pcl::PointXYZ > PointCloudXYZ;
 typedef PointCloudXYZ::Ptr PointCloudXYZPtr;

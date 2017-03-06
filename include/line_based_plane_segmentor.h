@@ -3,8 +3,8 @@
 
 #include <ros/ros.h>
 #include <dynamic_reconfigure/server.h>
-#include <plane_from_line/plane_from_line_segment.h>
 #include <plane_slam/LineBasedSegmentConfig.h>
+#include <line_based_plane_segmentation.h>
 #include "utils.h"
 
 namespace plane_slam
@@ -27,43 +27,49 @@ private:
     dynamic_reconfigure::Server<plane_slam::LineBasedSegmentConfig>::CallbackType line_based_segment_config_callback_;
     //
     CameraParameters camera_parameters_;
-    PlaneFromLineSegment plane_from_line_segment_;
+    line_based_plane_segment::LineBasedPlaneSegmentation plane_segmentor_;
     bool is_update_line_based_parameters_;
     //
     // LineBased segment
     bool use_horizontal_line_;
     bool use_verticle_line_;
-    unsigned y_skip_;
-    unsigned x_skip_;
+    int y_interval_;
+    int x_interval_;
+
+    /** \brief Line extraction */
     float line_point_min_distance_;
-    bool use_depth_noise_model_;
-    float scan_rho_constant_error_;
-    float scan_rho_distance_error_;
-    float scan_rho_quadratic_error_;
-    unsigned slide_window_size_;
-    unsigned line_min_inliers_;
-    float line_fitting_threshold_;
+    float line_fitting_angular_threshold_;
+    int line_fitting_min_indices_;
+
+    /** \brief Normals per line */
     int normals_per_line_;
-    bool normal_use_depth_dependent_smoothing_;
-    float normal_max_depth_change_factor_;
-    unsigned normal_smoothing_size_;
+    int normal_smoothing_size_;
     float normal_min_inliers_percentage_;
     float normal_maximum_curvature_;
-    //
-    bool remove_duplicate_candidate_;
-    float duplicate_candidate_normal_thresh_;
-    float duplicate_candidate_distance_thresh_;
-    //
-    int plane_segment_criterion_;
-    float k_curvature_;
-    float k_inlier_;
-    unsigned min_inliers_;
+
+    /** \brief Remove duplicate candidate if True */
+    bool remove_reduplicate_candidate_;
+    float reduplicate_candidate_normal_thresh_;
+    float reduplicate_candidate_distance_thresh_;
+
+    /** \brief Plane extraction */
+    int min_inliers_;
     float max_curvature_;
     float distance_threshold_;
     float neighbor_threshold_;
+    float angular_threshold_;
+
+    /** \brief Refine Plane segmentation result. Note: Not Valid. */
+    bool solve_over_segment_;
+    bool refine_plane_;
     bool optimize_coefficients_;
     bool project_points_;
     bool extract_boundary_;
+
+    /** \brief Normal cloud estimation */
+    int normal_estimate_method_;
+    float normal_estimate_depth_change_factor_;
+    float normal_estimate_smoothing_size_;
 };
 
 } // end of namespace plane_slam

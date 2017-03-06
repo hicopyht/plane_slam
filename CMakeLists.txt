@@ -28,11 +28,12 @@ SET(ROS_BUILD_TYPE Release)
 find_package(catkin REQUIRED COMPONENTS
   cv_bridge
   dynamic_reconfigure
+  image_transport
   message_filters
   octomap_ros
   octomap
   pcl_ros
-  plane_from_line
+  line_based_plane_segment
   roscpp
   sensor_msgs
   tf
@@ -155,6 +156,7 @@ target_link_libraries( ${PROJECT_NAME}
     ${CppUnitLite_LIBS}
     ${catkin_LIBRARIES}
     gtsam
+    line_based_plane_segment
 )
 add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_gencfg)
 
@@ -197,19 +199,39 @@ target_link_libraries(plane_slam_node_bagfile
 #    ${catkin_LIBRARIES}
 #)
 
-add_executable(path_visualizer tools/path_visualizer.cpp)
-target_link_libraries(path_visualizer
+#add_executable(path_visualizer tools/path_visualizer.cpp)
+#target_link_libraries(path_visualizer
+#    ${catkin_LIBRARIES}
+#    ${PCL_LIBRARIES}
+#)
+
+#add_executable(map_visualizer tools/map_visualizer.cpp)
+#target_link_libraries(map_visualizer
+#    ${catkin_LIBRARIES}
+#    ${PCL_LIBRARIES}
+#)
+
+#add_executable(runtime_analyze tools/runtime_analyze.cpp)
+#target_link_libraries(runtime_analyze
+#    ${catkin_LIBRARIES}
+#)
+
+#add_executable(gmapping_pose tools/gmapping_pose.cpp)
+#target_link_libraries(gmapping_pose
+#    ${catkin_LIBRARIES}
+#)
+
+#add_executable(path_odom_to_map tools/path_odom_to_map.cpp)
+#target_link_libraries(path_odom_to_map
+#    ${catkin_LIBRARIES}
+#)
+
+add_executable(rgb_seq_stamp tools/rgb_seq_stamp.cpp)
+target_link_libraries(rgb_seq_stamp
     ${catkin_LIBRARIES}
-    ${PCL_LIBRARIES}
 )
 
-add_executable(map_visualizer tools/map_visualizer.cpp)
-target_link_libraries(map_visualizer
-    ${catkin_LIBRARIES}
-    ${PCL_LIBRARIES}
-)
-
-add_executable(runtime_analyze tools/runtime_analyze.cpp)
-target_link_libraries(runtime_analyze
+add_executable(orb_map_cloud tools/orb_map_cloud.cpp)
+target_link_libraries(orb_map_cloud
     ${catkin_LIBRARIES}
 )

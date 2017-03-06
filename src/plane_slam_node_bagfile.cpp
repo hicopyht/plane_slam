@@ -134,7 +134,7 @@ int main(int argc, char** argv)
     }
 
     // Get camera parameters
-    PlaneFromLineSegment::CAMERA_PARAMETERS camera;
+    CameraParameters camera;
     camera.fx = fsp["camera.fx"];
     camera.fy = fsp["camera.fy"];
     camera.cx = fsp["camera.cx"];

@@ -19,7 +19,8 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer *viewer, Tracking *tracker)
     , keyframe_linear_threshold_( 0.05f )
     , keyframe_angular_threshold_( 5.0f*DEG_TO_RAD )
     , isam2_relinearize_threshold_( 0.01f )
-    , isam2_relinearize_skip_( 1 )
+    , isam2_relinearize_skip_(1)
+    , isam2_factorization_(ISAM2Params::Factorization::QR)
     , plane_observation_sigmas_(0.01, 0.01, 0.01)
     , plane_match_direction_threshold_( 10.0*DEG_TO_RAD )   // 10 degree
     , plane_match_distance_threshold_( 0.1 )    // 0.1meter
@@ -189,13 +190,13 @@ bool GTMapping::doMappingMix( Frame *frame )
 
     // Add odometry factors
     Vector odom_sigmas(6);
-//    odom_sigmas = odom_sigmas_;
-    odom_sigmas << fabs(rel_pose.translation().x()*odom_sigmas_factor_(0)),
-            fabs(rel_pose.translation().y()*odom_sigmas_factor_(1)),
-            fabs(rel_pose.translation().z()*odom_sigmas_factor_(2)),
-            fabs(rel_pose.rotation().xyz()(0)*odom_sigmas_factor_(3)),
-            fabs(rel_pose.rotation().xyz()(1)*odom_sigmas_factor_(4)),
-            fabs(rel_pose.rotation().xyz()(2)*odom_sigmas_factor_(5));
+    odom_sigmas = odom_sigmas_;
+//    odom_sigmas << fabs(rel_pose.translation().x()*odom_sigmas_factor_(0)),
+//            fabs(rel_pose.translation().y()*odom_sigmas_factor_(1)),
+//            fabs(rel_pose.translation().z()*odom_sigmas_factor_(2)),
+//            fabs(rel_pose.rotation().xyz()(0)*odom_sigmas_factor_(3)),
+//            fabs(rel_pose.rotation().xyz()(1)*odom_sigmas_factor_(4)),
+//            fabs(rel_pose.rotation().xyz()(2)*odom_sigmas_factor_(5));
     noiseModel::Diagonal::shared_ptr odometry_noise =
             noiseModel::Diagonal::Sigmas( odom_sigmas );
 //    cout << GREEN << "odom noise dim: " << odometry_noise->dim() << RESET << endl;
@@ -639,8 +640,16 @@ bool GTMapping::addFirstFrameMix( Frame *frame )
     gtsam::Pose3 init_pose = tfToPose3( frame->pose_ );
 
     // set ids
+    next_frame_id_ = 0;
     frame->setId( next_frame_id_ );
     next_frame_id_++;
+
+    //
+    next_plane_id_ = 0;
+    floor_plane_ = new PlaneType();
+    createFloorPlane(*floor_plane_, floor_octree_);
+    floor_plane_->setId(next_plane_id_);
+    next_plane_id_++;
 
     //
     double radius = plane_inlier_leaf_size_ * 5;
@@ -683,13 +692,13 @@ bool GTMapping::addFirstFrameMix( Frame *frame )
 
     /// 1: Plane features
     // Add a prior landmark
+
     Key l0 = Symbol('l', planes[0].id() );
     OrientedPlane3 lm0(planes[0].coefficients);
     OrientedPlane3 glm0 = lm0.transform(init_pose.inverse());
     noiseModel::Diagonal::shared_ptr lm_noise = noiseModel::Diagonal::Sigmas( (Vector(2) << planes[0].sigmas[0], planes[0].sigmas[1]).finished() );
     factor_graph_.push_back( OrientedPlane3DirectionPrior( l0, glm0.planeCoefficients(), lm_noise) );
     //
-
 
     // Add new landmark
     for(int i = 0; i < planes.size(); i++)
@@ -1084,7 +1093,13 @@ void GTMapping::semanticMapLabel()
     {
         PlaneType *lm = it->second;
         if( lm->semantic_label.empty() ) // No label, labelling it
+        {
             labelPlane( lm );
+            if(add_floor_constrain_ && lm->semantic_label == "FLOOR")
+            {
+                addFloorConstrain(lm->id());
+            }
+        }
     }
 }
 
@@ -1127,6 +1142,43 @@ void GTMapping::labelPlane( PlaneType *plane )
         plane->semantic_label = "DOOR";
         return;
     }
+}
+
+PlaneType GTMapping::createFloorPlane(PlaneType &plane,
+                                      pcl::octree::OctreePointCloud<PointType>::Ptr &plane_octree,
+                                      const float minx, const float miny,
+                                      const float maxx, const float maxy,
+                                      const float leafsize, const int id)
+{
+    plane.setId(id);
+    plane.semantic_label = "ZERO";
+    plane.coefficients << 0, 0, 1, 0;
+    plane.sigmas << 1e-6, 1e-6, 1e-6;
+    plane.color.Red = rng_.uniform(0,255);
+    plane.color.Green = rng_.uniform(0,255);
+    plane.color.Blue = rng_.uniform(0,255);
+    plane.color.Alpha = 255;
+    PointType pt;
+    pt.x = 0; pt.y = 0; pt.z = 0;
+    pt.rgba = plane.color.float_value;
+    for(float y = miny; y < maxy; y+=leafsize)
+    {
+        pt.y = y;
+        for(float x = minx; x < maxx; x+=leafsize)
+        {
+            pt.x = x;
+            plane.cloud_voxel->points.push_back(pt);
+        }
+    }
+    plane.cloud_voxel->height = 1;
+    plane.cloud_voxel->width = plane.cloud_voxel->points.size();
+    plane.cloud_voxel->is_dense = true;
+
+    // build octree
+    float resolution = leafsize;
+    plane_octree = pcl::octree::OctreePointCloud<PointType>::Ptr(new pcl::octree::OctreePointCloud<PointType>(resolution));
+    plane_octree->setInputCloud( plane.cloud_voxel );
+    plane_octree->addPointsFromInputCloud();
 }
 
 // Use this function
@@ -1875,6 +1927,18 @@ bool GTMapping::mergeFloorPlane()
     // Merge planes
     if( merge_list.size() > 0)
         mergeCoplanarLandmarks( merge_list );
+}
+
+bool GTMapping::addFloorConstrain(int idx)
+{
+
+//    PlanePair &pair = pairs[i];
+//    PlaneType &obs = planes[pair.iobs];
+//    unpairs[pair.iobs] = 0;
+//    obs.setId( pair.ilm );
+//    Key ln =  Symbol( 'l', obs.id() );
+//    noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( obs.sigmas );
+//    factor_graph_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
 }
 
 // Compute lost landmark
@@ -2693,7 +2757,7 @@ void GTMapping::reset()
     // Construct new
     isam2_parameters_.relinearizeThreshold = isam2_relinearize_threshold_; // 0.1
     isam2_parameters_.relinearizeSkip = isam2_relinearize_skip_; // 1
-    isam2_parameters_.factorization = ISAM2Params::Factorization::QR;
+    isam2_parameters_.factorization = isam2_factorization_;
     isam2_parameters_.print( "ISAM2 parameters:" );
     isam2_ = new ISAM2( isam2_parameters_ );
 
@@ -3027,7 +3091,7 @@ std::vector<geometry_msgs::PoseStamped> GTMapping::getOptimizedPath()
     {
         geometry_msgs::PoseStamped pose = pose3ToGeometryPose( it->second );
         pose.header = frames_list_.at(it->first)->header_;
-        poses.push_back( pose3ToGeometryPose( it->second ) );
+        poses.push_back( pose );
     }
     return poses;
 }
@@ -3047,6 +3111,7 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     //
     isam2_relinearize_threshold_ = config.isam2_relinearize_threshold;
     isam2_relinearize_skip_ = config.isam2_relinearize_skip;
+    isam2_factorization_ = ISAM2Params::Factorization(config.isam2_factorization);
     //
     min_keypoint_correspondences_ = config.min_keypoint_correspondences;
     keypoint_match_search_radius_ = config.keypoint_match_search_radius;
@@ -3067,6 +3132,7 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     factors_previous_n_frames_ = config.factors_previous_n_frames;
     refine_planar_map_ = config.refine_planar_map;
     merge_floor_plane_ = config.merge_floor_plane;
+    add_floor_constrain_ = config.add_floor_constrain;
     planar_merge_direction_threshold_ = config.planar_merge_direction_threshold * DEG_TO_RAD;
     planar_merge_distance_threshold_ = config.planar_merge_distance_threshold;
     //
