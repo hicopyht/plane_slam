@@ -163,11 +163,11 @@ protected:
 
     void labelPlane( PlaneType *plane );
 
-    PlaneType createFloorPlane(PlaneType &plane,
-                               pcl::octree::OctreePointCloud<PointType>::Ptr &plane_octree,
-                               const float minx = -50.0, const float miny = -50.0,
-                               const float maxx = 50.0, const float maxy = 50.0,
-                               const float leafsize = 0.1, const int id = 0);
+    void createFloorPlane(PlaneType* &plane,
+                          pcl::octree::OctreePointCloud<PointType>::Ptr &plane_octree,
+                          const float minx = -50.0, const float miny = -50.0,
+                          const float maxx = 50.0, const float maxy = 50.0,
+                          const float leafsize = 0.1);
 
     void matchKeypointWithMap( const Frame &frame,
                                std::vector<cv::DMatch> &matches,

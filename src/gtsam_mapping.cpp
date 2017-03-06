@@ -640,16 +640,15 @@ bool GTMapping::addFirstFrameMix( Frame *frame )
     gtsam::Pose3 init_pose = tfToPose3( frame->pose_ );
 
     // set ids
-    next_frame_id_ = 0;
     frame->setId( next_frame_id_ );
     next_frame_id_++;
 
     //
-    next_plane_id_ = 0;
-    floor_plane_ = new PlaneType();
-    createFloorPlane(*floor_plane_, floor_octree_);
+    createFloorPlane(floor_plane_, floor_octree_);
     floor_plane_->setId(next_plane_id_);
     next_plane_id_++;
+    //
+    next_plane_id_ = 0;
 
     //
     double radius = plane_inlier_leaf_size_ * 5;
@@ -1144,40 +1143,41 @@ void GTMapping::labelPlane( PlaneType *plane )
     }
 }
 
-PlaneType GTMapping::createFloorPlane(PlaneType &plane,
-                                      pcl::octree::OctreePointCloud<PointType>::Ptr &plane_octree,
-                                      const float minx, const float miny,
-                                      const float maxx, const float maxy,
-                                      const float leafsize, const int id)
+void GTMapping::createFloorPlane(PlaneType* &plane,
+                                 pcl::octree::OctreePointCloud<PointType>::Ptr &plane_octree,
+                                 const float minx, const float miny,
+                                 const float maxx, const float maxy,
+                                 const float leafsize)
 {
-    plane.setId(id);
-    plane.semantic_label = "ZERO";
-    plane.coefficients << 0, 0, 1, 0;
-    plane.sigmas << 1e-6, 1e-6, 1e-6;
-    plane.color.Red = rng_.uniform(0,255);
-    plane.color.Green = rng_.uniform(0,255);
-    plane.color.Blue = rng_.uniform(0,255);
-    plane.color.Alpha = 255;
+    plane = new PlaneType();
+    plane->setId(0);
+    plane->semantic_label = "ZERO";
+    plane->coefficients << 0, 0, 1, 0;
+    plane->sigmas << 1e-6, 1e-6, 1e-6;
+    plane->color.Red = rng_.uniform(0,255);
+    plane->color.Green = rng_.uniform(0,255);
+    plane->color.Blue = rng_.uniform(0,255);
+    plane->color.Alpha = 255;
     PointType pt;
     pt.x = 0; pt.y = 0; pt.z = 0;
-    pt.rgba = plane.color.float_value;
+    pt.rgba = plane->color.float_value;
     for(float y = miny; y < maxy; y+=leafsize)
     {
         pt.y = y;
         for(float x = minx; x < maxx; x+=leafsize)
         {
             pt.x = x;
-            plane.cloud_voxel->points.push_back(pt);
+            plane->cloud_voxel->points.push_back(pt);
         }
     }
-    plane.cloud_voxel->height = 1;
-    plane.cloud_voxel->width = plane.cloud_voxel->points.size();
-    plane.cloud_voxel->is_dense = true;
+    plane->cloud_voxel->height = 1;
+    plane->cloud_voxel->width = plane->cloud_voxel->points.size();
+    plane->cloud_voxel->is_dense = true;
 
     // build octree
     float resolution = leafsize;
     plane_octree = pcl::octree::OctreePointCloud<PointType>::Ptr(new pcl::octree::OctreePointCloud<PointType>(resolution));
-    plane_octree->setInputCloud( plane.cloud_voxel );
+    plane_octree->setInputCloud( plane->cloud_voxel );
     plane_octree->addPointsFromInputCloud();
 }
 

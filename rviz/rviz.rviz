@@ -25,7 +25,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: PlanarMap
+    SyncSource: KeypointCloud
 Visualization Manager:
   Class: ""
   Displays:
@@ -267,8 +267,8 @@ Visualization Manager:
       Axis: Z
       Channel Name: intensity
       Class: rviz/PointCloud2
-      Color: 255; 255; 255
-      Color Transformer: ""
+      Color: 0; 0; 0
+      Color Transformer: FlatColor
       Decay Time: 0
       Enabled: true
       Invert Rainbow: false
@@ -277,13 +277,13 @@ Visualization Manager:
       Min Color: 0; 0; 0
       Min Intensity: 0
       Name: PCDCloud
-      Position Transformer: ""
+      Position Transformer: XYZ
       Queue Size: 10
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.01
+      Size (m): 0.04
       Style: Flat Squares
-      Topic: ""
+      Topic: /pcd_cloud
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
@@ -468,22 +468,22 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/XYOrbit
-      Distance: 3.76907
+      Distance: 14.1107
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.06
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 22.7089
-        Y: -1.24974
-        Z: 4.52995e-06
+        X: 7.92128
+        Y: -5.71288
+        Z: 7.04943e-06
       Name: Current View
       Near Clip Distance: 0.01
-      Pitch: 0.494801
+      Pitch: 0.530202
       Target Frame: <Fixed Frame>
       Value: XYOrbit (rviz)
-      Yaw: 6.0267
+      Yaw: 4.62668
     Saved: ~
 Window Geometry:
   Displays:
