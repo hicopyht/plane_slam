@@ -150,13 +150,13 @@ add_library( ${PROJECT_NAME}
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries( ${PROJECT_NAME}
+    gtsam
+    line_based_plane_segment
     ${OpenCV_LIBS}
     ${EIGEN3_LIBS}
     ${PCL_LIBRARIES}
     ${CppUnitLite_LIBS}
     ${catkin_LIBRARIES}
-    gtsam
-    line_based_plane_segment
 )
 add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_gencfg)
 
@@ -221,10 +221,10 @@ target_link_libraries(plane_slam_node_bagfile
 #    ${catkin_LIBRARIES}
 #)
 
-#add_executable(path_odom_to_map tools/path_odom_to_map.cpp)
-#target_link_libraries(path_odom_to_map
-#    ${catkin_LIBRARIES}
-#)
+add_executable(path_odom_to_map tools/path_odom_to_map.cpp)
+target_link_libraries(path_odom_to_map
+    ${catkin_LIBRARIES}
+)
 
 add_executable(rgb_seq_stamp tools/rgb_seq_stamp.cpp)
 target_link_libraries(rgb_seq_stamp

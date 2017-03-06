@@ -1962,7 +1962,7 @@ void GTMapping::computeLostKeypoints( std::vector<int> &unmatched_landmarks,
             }
             else
             {
-                if( kp->unmatched_count * 1.5 > kp->predicted_count )
+                if( kp->unmatched_count * 1.25 > kp->predicted_count )
                     lost_landmarks.push_back( idx );
             }
         }

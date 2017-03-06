@@ -141,6 +141,12 @@ int main(int argc, char** argv)
     std::string map_to_odom_file;
     std::string out_file;
 
+    tf::Quaternion qt(-0.5, 0.5, -0.5, 0.5);
+    tf::Matrix3x3 m(qt);
+    double r, p, y;
+    m.getRPY(r, p, y);
+    cout << " RPY: " << r << " " << p << " " << y << endl;
+
     if(argc < 4)
     {
         cout << "Usage: ./path_odom_to_map odomPathFile mapToOdomFile outFile" << endl;
