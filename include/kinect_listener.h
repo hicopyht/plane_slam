@@ -19,6 +19,7 @@
 #include <tf_conversions/tf_eigen.h>
 #include <nav_msgs/Path.h>
 #include <std_srvs/Trigger.h>
+#include <std_srvs/SetBool.h>
 //
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
@@ -124,6 +125,15 @@ public:
 
     inline void setInitPose( tf::Transform init_tf ) { init_pose_ = init_tf; set_init_pose_ = true; }
 
+    inline void setBagPause(bool pause)
+    {
+        if(pause_bag_)
+        {
+            set_bool_srv_.request.data = pause;
+            bag_set_pause_sc_.call(set_bool_srv_.request, set_bool_srv_.response);
+        }
+    }
+
 protected:
     void noCloudCallback (const sensor_msgs::ImageConstPtr& visual_img_msg,
                          const sensor_msgs::ImageConstPtr& depth_img_msg,
@@ -194,6 +204,10 @@ private:
     ros::ServiceServer save_slam_result_all_ss_;
 
     //
+    ros::ServiceClient bag_set_pause_sc_;
+    std_srvs::SetBool set_bool_srv_;
+
+    //
     std::string keypoint_type_;
     cv::FeatureDetector* surf_detector_;
     cv::DescriptorExtractor* surf_extractor_;
@@ -228,6 +242,7 @@ private:
     bool save_structure_pcd_;
     bool save_input_cloud_pcd_;
     int save_message_pcd_;
+    bool pause_bag_;
 
     //
     tf::Transform init_pose_;

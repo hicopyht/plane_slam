@@ -163,6 +163,8 @@ protected:
 
     void labelPlane( PlaneType *plane );
 
+    int checkFloorPlane(std::vector<PlaneType> &planes);
+
     void createFloorPlane(PlaneType* &plane,
                           pcl::octree::OctreePointCloud<PointType>::Ptr &plane_octree,
                           const float minx = -50.0, const float miny = -50.0,
@@ -327,6 +329,7 @@ private:
     bool verbose_;
     bool throttle_memory_;
     bool use_keyframe_;
+    bool initialize_with_floor_;
     double keyframe_linear_threshold_;
     double keyframe_angular_threshold_;
     //
@@ -362,6 +365,7 @@ private:
     bool add_floor_constrain_;
     double planar_merge_direction_threshold_;
     double planar_merge_distance_threshold_;
+    double planar_merge_overlap_alpha_;
     bool remove_plane_bad_inlier_;
     double planar_bad_inlier_alpha_;
     //

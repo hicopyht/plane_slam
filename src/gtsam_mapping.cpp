@@ -644,13 +644,6 @@ bool GTMapping::addFirstFrameMix( Frame *frame )
     next_frame_id_++;
 
     //
-    createFloorPlane(floor_plane_, floor_octree_);
-    floor_plane_->setId(next_plane_id_);
-    next_plane_id_++;
-    //
-    next_plane_id_ = 0;
-
-    //
     double radius = plane_inlier_leaf_size_ * 5;
     int min_neighbors = M_PI * radius *radius
                     / (plane_inlier_leaf_size_ * plane_inlier_leaf_size_) *  planar_bad_inlier_alpha_;
@@ -672,6 +665,12 @@ bool GTMapping::addFirstFrameMix( Frame *frame )
             voxelGridFilter( plane.cloud, plane.cloud_voxel, plane_inlier_leaf_size_ );
     }
 
+    // check if there is floor plane
+//    cout << BOLDWHITE << " Floor idx: " << BOLDCYAN << idxf << RESET << endl;
+    if(initialize_with_floor_ && checkFloorPlane(planes) < 0)
+        return false;
+
+    //
     convert_duration_ = getIntervalMS(dura_start);
     plane_match_duration_ = getIntervalMS(dura_start);
     keypoint_match_duration_ = getIntervalMS(dura_start);
@@ -1141,6 +1140,30 @@ void GTMapping::labelPlane( PlaneType *plane )
         plane->semantic_label = "DOOR";
         return;
     }
+}
+
+int GTMapping::checkFloorPlane(std::vector<PlaneType> &planes)
+{
+    for( int i = 0; i < planes.size(); i++)
+    {
+        PlaneType &plane = planes[i];
+//        cout << BOLDWHITE << "  - " << GREEN << plane.coefficients[0]
+//             << " " << plane.coefficients[1] << " " << plane.coefficients[2]
+//             << " " << plane.coefficients[3] << RESET << endl;
+
+        // In camera frame: -0.00146288 -0.999659 0.0260861 0.714005
+        if(fabs(plane.coefficients[0]) < 0.05
+                && fabs(plane.coefficients[1]) > 0.95
+                && fabs(plane.coefficients[2]) < 0.05)
+        {
+            plane.coefficients << 0.0, -1.0, 0.0, 0.714;
+            PointCloudTypePtr cloud_filtered( new PointCloudType );
+            projectPoints(*plane.cloud_voxel, plane.coefficients, *cloud_filtered);
+            plane.cloud_voxel->swap(*cloud_filtered);
+            return i;
+        }
+    }
+    return -1;
 }
 
 void GTMapping::createFloorPlane(PlaneType* &plane,
@@ -1692,6 +1715,9 @@ bool GTMapping::checkOverlap( const PointCloudTypePtr &landmark_cloud,
 // indices of lm1 must bigger than that of lm2
 bool GTMapping::checkLandmarksOverlap( const PlaneType &lm1, const PlaneType &lm2)
 {
+    if(lm2.cloud_voxel->size() == 0)
+        return false;
+
     // project lm2 inlier to lm1 plane
     PointCloudTypePtr cloud_projected( new PointCloudType );
     projectPoints( *lm2.cloud_voxel, lm1.coefficients, *cloud_projected );
@@ -1703,6 +1729,7 @@ bool GTMapping::checkLandmarksOverlap( const PlaneType &lm1, const PlaneType &lm
     octreeD.addPointsFromInputCloud();
 
     // check if occupied
+    const int thresh = std::max(5, (int)(planar_merge_overlap_alpha_* cloud_projected->points.size()));
     int collision = 0;
     PointCloudType::iterator it = cloud_projected->begin();
     for( ; it != cloud_projected->end(); it++)
@@ -1711,7 +1738,7 @@ bool GTMapping::checkLandmarksOverlap( const PlaneType &lm1, const PlaneType &lm
         if( octreeD.isVoxelOccupiedAtPoint( pt ) )
         {
             collision ++;
-            if(collision > 3)
+            if(collision >= thresh)
                 return true;
         }
     }
@@ -3102,6 +3129,7 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     //
     throttle_memory_ = config.throttle_memory;
     use_keyframe_ = config.use_keyframe;
+    initialize_with_floor_ = config.initialize_with_floor;
     keyframe_linear_threshold_ = config.keyframe_linear_threshold;
     keyframe_angular_threshold_ = config.keyframe_angular_threshold * DEG_TO_RAD;
     //
@@ -3135,6 +3163,7 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     add_floor_constrain_ = config.add_floor_constrain;
     planar_merge_direction_threshold_ = config.planar_merge_direction_threshold * DEG_TO_RAD;
     planar_merge_distance_threshold_ = config.planar_merge_distance_threshold;
+    planar_merge_overlap_alpha_ = config.planar_merge_overlap_alpha;
     //
     remove_plane_bad_inlier_ = config.remove_plane_bad_inlier;
     planar_bad_inlier_alpha_ = config.planar_bad_inlier_alpha;

@@ -222,16 +222,14 @@ target_link_libraries(plane_slam_node_bagfile
 #)
 
 add_executable(path_odom_to_map tools/path_odom_to_map.cpp)
-target_link_libraries(path_odom_to_map
-    ${catkin_LIBRARIES}
-)
+target_link_libraries(path_odom_to_map ${catkin_LIBRARIES})
 
 add_executable(rgb_seq_stamp tools/rgb_seq_stamp.cpp)
-target_link_libraries(rgb_seq_stamp
-    ${catkin_LIBRARIES}
-)
+target_link_libraries(rgb_seq_stamp ${catkin_LIBRARIES})
 
 add_executable(orb_map_cloud tools/orb_map_cloud.cpp)
-target_link_libraries(orb_map_cloud
-    ${catkin_LIBRARIES}
-)
+target_link_libraries(orb_map_cloud ${catkin_LIBRARIES})
+
+add_executable(octomap_publisher tools/octomap_publisher.cpp)
+target_link_libraries(octomap_publisher ${catkin_LIBRARIES})
+

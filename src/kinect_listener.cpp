@@ -72,6 +72,9 @@ KinectListener::KinectListener() :
     save_slam_result_simple_ss_ = nh_.advertiseService("save_slam_result", &KinectListener::saveSlamResultSimpleCallback, this );
     save_slam_result_all_ss_ = nh_.advertiseService("save_slam_result_all", &KinectListener::saveSlamResultCallback, this );
 
+    //
+    bag_set_pause_sc_ = nh_.serviceClient<std_srvs::SetBool>("set_pause");
+
     // config subscribers
     if( !topic_point_cloud_.empty() && !topic_image_visual_.empty() && !topic_camera_info_.empty() ) // pointcloud2
     {
@@ -122,12 +125,16 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
                                 const sensor_msgs::CameraInfoConstPtr& cam_info_msg)
 {
     static int skip = 0;
+
+    setBagPause(true);
+
     camera_frame_ = depth_img_msg->header.frame_id;
 
     skip = (skip + 1) % skip_message_;
     if( skip )
     {
         cout << BLUE << " Skip message." << RESET << endl;
+        setBagPause(false);
         return;
     }
 
@@ -148,6 +155,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
         }
         else
         {
+            setBagPause(false);
             return;
         }
     }
@@ -166,6 +174,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
         }
         else
         {
+            setBagPause(false);
             return;
         }
     }
@@ -183,6 +192,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
         trackDepthRgbImage( visual_img_msg, depth_img_msg, camera );
     }
 
+    setBagPause(false);
 }
 
 void KinectListener::cloudCallback (const sensor_msgs::ImageConstPtr& visual_img_msg,
@@ -1403,6 +1413,7 @@ void KinectListener::planeSlamReconfigCallback(plane_slam::PlaneSlamConfig &conf
         save_message_pcd_ = config.save_message_pcd;
         config.save_message_pcd = 0;
     }
+    pause_bag_ = config.pause_bag;
 
     // Set map frame for mapping
     if( gt_mapping_ )
