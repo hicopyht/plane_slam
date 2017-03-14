@@ -76,7 +76,7 @@ find_package(TBB)
 # Build plane slam node
 #option(BUILD_PLANE_SLAM     "Enable/Disable building of plane slam node"       ON)
 #option(BUILD_TOOLS_NODE  "Enable/Disable building of tools node" OFF)
-SET(BUILD_PLANE_SLAM OFF)
+SET(BUILD_PLANE_SLAM ON)
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -226,7 +226,7 @@ target_link_libraries(rgb_seq_stamp ${catkin_LIBRARIES})
 #target_link_libraries(octomap_publisher ${catkin_LIBRARIES})
 
 add_executable(assign_path tools/assign_path.cpp)
-target_link_libraries(assign_path ${EIGEN3_LIBS} ${PCL_INCLUDE_DIRS} ${catkin_LIBRARIES})
+target_link_libraries(assign_path ${EIGEN3_LIBS} ${PCL_LIBRARIES} ${catkin_LIBRARIES})
 
 add_executable(transform_point_cloud tools/transform_point_cloud.cpp)
-target_link_libraries(transform_point_cloud ${EIGEN3_LIBS} ${PCL_INCLUDE_DIRS} ${catkin_LIBRARIES})
+target_link_libraries(transform_point_cloud ${EIGEN3_LIBS} ${PCL_LIBRARIES} ${catkin_LIBRARIES})
