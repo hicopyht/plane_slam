@@ -94,8 +94,8 @@ public:
     RecordRgbdStamp()
         : nh_()
         , private_nh_("~")
-        , topic_image_visual_("/head_kinect/rgb/image_rect_color")
-        , topic_image_depth_("/head_kinect/depth_registered/image")
+        , topic_image_visual_("/camera/rgb/image_color")
+        , topic_image_depth_("/camera/depth/image")
         , subscriber_queue_size_(4)
     {
         save_sequence_ss_ = nh_.advertiseService("save_sequence", &RecordRgbdStamp::saveDataCallback, this);
@@ -122,7 +122,7 @@ protected:
 
     bool saveDataCallback(std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res)
     {
-        saveData2();
+        saveData();
         res.message = "Save sequence data to file.";
         res.success = true;
         cout << "Save sequence to file."<< endl;

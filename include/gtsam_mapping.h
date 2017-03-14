@@ -366,6 +366,9 @@ private:
     double planar_merge_direction_threshold_;
     double planar_merge_distance_threshold_;
     double planar_merge_overlap_alpha_;
+    double floor_plane_height_threshold_;
+    double floor_plane_angular_threshold_;
+    double wall_plane_angular_threshold_;
     bool remove_plane_bad_inlier_;
     double planar_bad_inlier_alpha_;
     //

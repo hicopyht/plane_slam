@@ -230,7 +230,7 @@ bool GTMapping::doMappingMix( Frame *frame )
             obs.setId( next_plane_id_ );
             next_plane_id_++;
             Key ln = Symbol('l', obs.id());
-            noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( obs.sigmas );
+            noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( obs.sigmas*3.0 );
             factor_graph_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
 
             // Add initial guess
@@ -710,7 +710,7 @@ bool GTMapping::addFirstFrameMix( Frame *frame )
              << ", " << plane.centroid.y << ", " << plane.centroid.z << RESET << endl;
 
         // Add observation factor
-        noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( plane.sigmas );
+        noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( plane.sigmas*3.0 );
         factor_graph_.push_back( OrientedPlane3Factor(plane.coefficients, obs_noise, x0, ln) );
 
         // Add initial guesses to all observed landmarks
@@ -1117,19 +1117,19 @@ void GTMapping::labelPlane( PlaneType *plane )
 //         << ", indices:" << size << RESET << endl;
 
     // Labelling "FLOOR"
-    if( theta < (5.0*DEG_TO_RAD) && (plane->centroid.z < 0.15) ) // theta < 5deg, cen_z < 0.15m
+    if( theta < floor_plane_angular_threshold_ && (plane->centroid.z < floor_plane_height_threshold_) ) // theta < 5deg, cen_z < 0.15m
     {
         plane->semantic_label = "FLOOR";
         return;
     }
     // Labelling "WALL"
-    if( theta > (82.0*DEG_TO_RAD) && theta < (98.0*DEG_TO_RAD) && size > min_wall_indices )
+    if( fabs(theta - M_PI_2) < wall_plane_angular_threshold_ && size > min_wall_indices )
     {
         plane->semantic_label = "WALL";
         return;
     }
     // Labelling "TABLE"
-    if( theta < (5.0*DEG_TO_RAD) && (d > 0.4) && (d < 1.0) ) // theta < 5deg, 0.4m < d < 1m
+    if( theta < (5.0*DEG_TO_RAD) && (d > 0.5) && (d < 1.0) ) // theta < 5deg, 0.4m < d < 1m
     {
         plane->semantic_label = "TABLE";
         return;
@@ -3164,6 +3164,9 @@ void GTMapping::gtMappingReconfigCallback(plane_slam::GTMappingConfig &config, u
     planar_merge_direction_threshold_ = config.planar_merge_direction_threshold * DEG_TO_RAD;
     planar_merge_distance_threshold_ = config.planar_merge_distance_threshold;
     planar_merge_overlap_alpha_ = config.planar_merge_overlap_alpha;
+    floor_plane_height_threshold_ = config.floor_plane_height_threshold;
+    floor_plane_angular_threshold_ = config.floor_plane_angular_threshold*DEG_TO_RAD;
+    wall_plane_angular_threshold_ = config.wall_plane_angular_threshold*DEG_TO_RAD;
     //
     remove_plane_bad_inlier_ = config.remove_plane_bad_inlier;
     planar_bad_inlier_alpha_ = config.planar_bad_inlier_alpha;

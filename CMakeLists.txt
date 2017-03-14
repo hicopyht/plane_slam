@@ -73,6 +73,11 @@ include_directories(${GTSAM_INCLUDE_DIR})
 find_package(TBB)
 
 
+# Build plane slam node
+#option(BUILD_PLANE_SLAM     "Enable/Disable building of plane slam node"       ON)
+#option(BUILD_TOOLS_NODE  "Enable/Disable building of tools node" OFF)
+SET(BUILD_PLANE_SLAM OFF)
+
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
 ################################################
@@ -133,54 +138,45 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
-#Declare a C++ library
-add_library( ${PROJECT_NAME}
-    src/kinect_listener.cpp
-    src/viewer.cpp
-    src/gtsam_mapping.cpp
-    src/tracking.cpp
-    src/frame.cpp
-    src/line_based_plane_segmentor.cpp
-    src/organized_multi_plane_segmentor.cpp
-    src/orb_extractor.cpp
-    src/utils.cpp
-    src/itree.cpp
-    src/feature_adjuster.cpp
-)
 
-## Specify libraries to link a library or executable target against
-target_link_libraries( ${PROJECT_NAME}
-    gtsam
-    line_based_plane_segment
-    ${OpenCV_LIBS}
-    ${EIGEN3_LIBS}
-    ${PCL_LIBRARIES}
-    ${CppUnitLite_LIBS}
-    ${catkin_LIBRARIES}
-)
-add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_gencfg)
+if(BUILD_PLANE_SLAM)
+    add_library( ${PROJECT_NAME}
+        src/kinect_listener.cpp
+        src/viewer.cpp
+        src/gtsam_mapping.cpp
+        src/tracking.cpp
+        src/frame.cpp
+        src/line_based_plane_segmentor.cpp
+        src/organized_multi_plane_segmentor.cpp
+        src/orb_extractor.cpp
+        src/utils.cpp
+        src/itree.cpp
+        src/feature_adjuster.cpp
+    )
 
-## Declare a C++ executable
-add_executable(plane_slam_node src/plane_slam_node.cpp)
-## Add cmake target dependencies of the executable
-## same as for the library above
-#add_dependencies(plane_segment ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-add_dependencies(plane_slam_node ${PROJECT_NAME}_gencfg)
-## Specify libraries to link a library or executable target against
-target_link_libraries(plane_slam_node
-    ${PROJECT_NAME}
-)
+    ## Specify libraries to link a library or executable target against
+    target_link_libraries( ${PROJECT_NAME}
+        gtsam
+        line_based_plane_segment
+        ${OpenCV_LIBS}
+        ${EIGEN3_LIBS}
+        ${PCL_LIBRARIES}
+        ${CppUnitLite_LIBS}
+        ${catkin_LIBRARIES}
+    )
+    add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_gencfg)
 
-## Declare a C++ executable
-add_executable(plane_slam_node_bagfile src/plane_slam_node_bagfile.cpp)
-## Add cmake target dependencies of the executable
-## same as for the library above
-#add_dependencies(plane_segment ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-add_dependencies(plane_slam_node_bagfile ${PROJECT_NAME}_gencfg)
-## Specify libraries to link a library or executable target against
-target_link_libraries(plane_slam_node_bagfile
-    ${PROJECT_NAME}
-)
+    ## Declare a C++ executable
+    add_executable(plane_slam_node src/plane_slam_node.cpp)
+    add_dependencies(plane_slam_node ${PROJECT_NAME}_gencfg)
+    target_link_libraries(plane_slam_node ${PROJECT_NAME})
+
+    ## Declare a C++ executable
+    add_executable(plane_slam_node_bagfile src/plane_slam_node_bagfile.cpp)
+    add_dependencies(plane_slam_node_bagfile ${PROJECT_NAME}_gencfg)
+    target_link_libraries(plane_slam_node_bagfile  ${PROJECT_NAME})
+endif()
+
 
 #add_executable(pcd_publisher tools/pcd_publisher.cpp)
 #target_link_libraries(pcd_publisher
@@ -212,24 +208,25 @@ target_link_libraries(plane_slam_node_bagfile
 #)
 
 #add_executable(runtime_analyze tools/runtime_analyze.cpp)
-#target_link_libraries(runtime_analyze
-#    ${catkin_LIBRARIES}
-#)
+#target_link_libraries(runtime_analyze  ${catkin_LIBRARIES})
 
 #add_executable(gmapping_pose tools/gmapping_pose.cpp)
-#target_link_libraries(gmapping_pose
-#    ${catkin_LIBRARIES}
-#)
+#target_link_libraries(gmapping_pose ${catkin_LIBRARIES})
 
-add_executable(path_odom_to_map tools/path_odom_to_map.cpp)
-target_link_libraries(path_odom_to_map ${catkin_LIBRARIES})
+#add_executable(path_odom_to_map tools/path_odom_to_map.cpp)
+#target_link_libraries(path_odom_to_map ${catkin_LIBRARIES})
 
 add_executable(rgb_seq_stamp tools/rgb_seq_stamp.cpp)
 target_link_libraries(rgb_seq_stamp ${catkin_LIBRARIES})
 
-add_executable(orb_map_cloud tools/orb_map_cloud.cpp)
-target_link_libraries(orb_map_cloud ${catkin_LIBRARIES})
+#add_executable(orb_map_cloud tools/orb_map_cloud.cpp)
+#target_link_libraries(orb_map_cloud ${catkin_LIBRARIES})
 
-add_executable(octomap_publisher tools/octomap_publisher.cpp)
-target_link_libraries(octomap_publisher ${catkin_LIBRARIES})
+#add_executable(octomap_publisher tools/octomap_publisher.cpp)
+#target_link_libraries(octomap_publisher ${catkin_LIBRARIES})
 
+add_executable(assign_path tools/assign_path.cpp)
+target_link_libraries(assign_path ${EIGEN3_LIBS} ${PCL_INCLUDE_DIRS} ${catkin_LIBRARIES})
+
+add_executable(transform_point_cloud tools/transform_point_cloud.cpp)
+target_link_libraries(transform_point_cloud ${EIGEN3_LIBS} ${PCL_INCLUDE_DIRS} ${catkin_LIBRARIES})
