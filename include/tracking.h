@@ -207,13 +207,16 @@ protected:
     void trackingReconfigCallback(plane_slam::TrackingConfig &config, uint32_t level);
 
 private:
-    bool verbose_;
-    //
-    Viewer * viewer_;
+
+
     //
     ros::NodeHandle nh_;
     dynamic_reconfigure::Server<plane_slam::TrackingConfig> tracking_config_server_;
     dynamic_reconfigure::Server<plane_slam::TrackingConfig>::CallbackType tracking_config_callback_;
+    //
+    bool verbose_;
+    //
+    Viewer * viewer_;
     // Feature match
     double feature_good_match_threshold_;
     int feature_min_good_match_size_;

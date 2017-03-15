@@ -89,6 +89,33 @@ typedef union
   */
 struct PlaneType
 {
+    PlaneType() : valid(true)
+      , cloud( new PointCloudType)
+      , cloud_boundary( new PointCloudType)
+      , cloud_hull( new PointCloudType)
+      , cloud_voxel( new PointCloudType)
+      , mask()
+      , feature_descriptors()
+    {
+        color.Blue = 255; color.Green = 255; color.Red = 255; color.Alpha = 255;
+    }
+
+    PlaneType( bool is_valid ) : valid(is_valid)
+      , cloud( new PointCloudType)
+      , cloud_boundary( new PointCloudType)
+      , cloud_hull( new PointCloudType)
+      , cloud_voxel( new PointCloudType)
+      , mask()
+      , feature_descriptors()
+    {
+        color.Blue = 255; color.Green = 255; color.Red = 255; color.Alpha = 255;
+    }
+
+    void setId( int _id ) { landmark_id = _id; }
+    int &id() { return landmark_id;}
+
+
+    bool valid;
     int landmark_id;
     PointType centroid;
     Eigen::Vector4d coefficients;
@@ -102,7 +129,7 @@ struct PlaneType
     PointCloudTypePtr cloud_hull;
     PointCloudTypePtr cloud_voxel;
     RGBValue color;
-    bool valid;
+
     //
     cv::Mat mask;
     std::vector<cv::KeyPoint> feature_locations_2d;
@@ -110,34 +137,10 @@ struct PlaneType
     cv::Mat feature_descriptors;
     // semantic label
     std::string semantic_label; // NONE or "", FLOOR, WALL, DOOR, TABLE
-
-    PlaneType() : cloud( new PointCloudType)
-      , cloud_boundary( new PointCloudType)
-      , cloud_hull( new PointCloudType)
-      , cloud_voxel( new PointCloudType)
-      , mask()
-      , valid(true)
-    {   color.Blue = 255; color.Green = 255; color.Red = 255; color.Alpha = 255;}
-
-    PlaneType( bool is_valid ) : cloud( new PointCloudType)
-      , cloud_boundary( new PointCloudType)
-      , cloud_hull( new PointCloudType)
-      , cloud_voxel( new PointCloudType)
-      , mask()
-      , valid(is_valid)
-    {   color.Blue = 255; color.Green = 255; color.Red = 255; color.Alpha = 255;}
-
-    void setId( int _id ) { landmark_id = _id; }
-    int &id() { return landmark_id;}
 };
 
 struct PlanePair
 {
-    unsigned int iobs;
-    unsigned int ilm;
-
-    double distance;
-
     PlanePair() : iobs(-1), ilm(-1), distance(1e6) {}
     PlanePair(unsigned int _iobs, unsigned int _ilm) : iobs(_iobs), ilm(_ilm), distance(1e6) {}
     PlanePair(unsigned int _iobs, unsigned int _ilm, double _dis) : iobs(_iobs), ilm(_ilm), distance(_dis) {}
@@ -147,6 +150,10 @@ struct PlanePair
     {
         return distance < m.distance;
     }
+
+    unsigned int iobs;
+    unsigned int ilm;
+    double distance;
 };
 
 //// Keypoint
@@ -164,7 +171,13 @@ struct KeyPoint
     int predicted_count;
     int unmatched_count;
 
-    KeyPoint() : valid(true), initialized(false), predicted_count(0), unmatched_count(0), translation(0, 0, 0) {
+    KeyPoint()
+        : translation(0, 0, 0)
+        , valid(true)
+        , initialized(false)
+        , predicted_count(0)
+        , unmatched_count(0)
+    {
         descriptor[0] = random(); descriptor[1] = random(); descriptor[2] = random(); descriptor[3] = random();
         color.long_value = 0xFFFFFFFF;
     }
@@ -175,13 +188,6 @@ struct KeyPoint
 // PnP Result
 struct RESULT_OF_MOTION
 {
-    Eigen::Matrix3d rotation;
-    Eigen::Vector3d translation;
-    bool valid;
-    int inlier;
-    double score;
-    double rmse;
-
     RESULT_OF_MOTION() : valid(true),inlier(0), score(0), rmse(1e9)
     {
         rotation = Eigen::Matrix3d::Identity();
@@ -215,6 +221,13 @@ struct RESULT_OF_MOTION
         rotation = tr.topLeftCorner(3,3).cast<double>();
         translation = tr.col(3).head<3>().cast<double>();
     }
+
+    Eigen::Matrix3d rotation;
+    Eigen::Vector3d translation;
+    bool valid;
+    int inlier;
+    double score;
+    double rmse;
 };
 
 void calAngleAndDistance(const Eigen::Isometry3d& t, double& rad, double& dist);

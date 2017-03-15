@@ -6,13 +6,13 @@ namespace plane_slam
 Frame::Frame()
     : valid_(false),
       key_frame_(false),
-      camera_params_(),
+      keypoint_type_(""),
       pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
       odom_pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
       world_pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
+      camera_params_(),
       cloud_downsampled_( new PointCloudType ),
-      feature_cloud_( new PointCloudXYZ ),
-      keypoint_type_("")
+      feature_cloud_( new PointCloudXYZ )
 {
 
 }
@@ -21,12 +21,12 @@ Frame::Frame( PointCloudTypePtr &input, CameraParameters &camera_params,
               LineBasedPlaneSegmentor* line_based_plane_segmentor)
     : valid_(false),
       key_frame_(false),
-      camera_params_(),
+      keypoint_type_(""),
       pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
       odom_pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
+      camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
-      keypoint_type_(""),
       line_based_plane_segmentor_(line_based_plane_segmentor)
 {
     // Observation
@@ -44,12 +44,12 @@ Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camer
               ORBextractor* orb_extractor, LineBasedPlaneSegmentor* line_based_plane_segmentor)
     : valid_(false),
       key_frame_(false),
-      camera_params_(),
+      keypoint_type_( "ORB" ),
       pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
       odom_pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
+      camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
-      keypoint_type_( "ORB" ),
       orb_extractor_(orb_extractor),
       line_based_plane_segmentor_(line_based_plane_segmentor)
 {
@@ -73,12 +73,12 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
               LineBasedPlaneSegmentor* line_based_plane_segmentor )
     : valid_(false),
       key_frame_(false),
-      camera_params_(),
+      keypoint_type_( "SURF" ),
       pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
       odom_pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
+      camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
-      keypoint_type_( "SURF" ),
       surf_detector_( surf_detector ),
       surf_extractor_( surf_extractor ),
       line_based_plane_segmentor_(line_based_plane_segmentor)
@@ -108,12 +108,12 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
               ORBextractor* orb_extractor, LineBasedPlaneSegmentor* line_based_plane_segmentor )
     : valid_(false),
       key_frame_(false),
-      camera_params_(),
+      keypoint_type_( "ORB" ),
       pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
       odom_pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
+      camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
-      keypoint_type_( "ORB" ),
       orb_extractor_( orb_extractor ),
       line_based_plane_segmentor_( line_based_plane_segmentor )
 {
@@ -154,12 +154,12 @@ Frame::Frame( PointCloudTypePtr &input, CameraParameters &camera_params,
               OrganizedPlaneSegmentor* organized_plane_segmentor)
     : valid_(false),
       key_frame_(false),
-      camera_params_(),
+      keypoint_type_(""),
       pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
       odom_pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
+      camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
-      keypoint_type_(""),
       organized_plane_segmentor_(organized_plane_segmentor)
 {
     // Observation
@@ -177,12 +177,12 @@ Frame::Frame( cv::Mat &visual, PointCloudTypePtr &input, CameraParameters &camer
               ORBextractor* orb_extractor, OrganizedPlaneSegmentor* organized_plane_segmentor)
     : valid_(false),
       key_frame_(false),
-      camera_params_(),
+      keypoint_type_( "ORB" ),
       pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
       odom_pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
+      camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
-      keypoint_type_( "ORB" ),
       orb_extractor_(orb_extractor),
       organized_plane_segmentor_(organized_plane_segmentor)
 {
@@ -206,12 +206,12 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
               OrganizedPlaneSegmentor* organized_plane_segmentor )
     : valid_(false),
       key_frame_(false),
-      camera_params_(),
+      keypoint_type_( "SURF" ),
       pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
       odom_pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
+      camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
-      keypoint_type_( "SURF" ),
       surf_detector_( surf_detector ),
       surf_extractor_( surf_extractor ),
       organized_plane_segmentor_(organized_plane_segmentor)
@@ -241,12 +241,12 @@ Frame::Frame( cv::Mat &visual, cv::Mat &depth, CameraParameters &camera_params,
               ORBextractor* orb_extractor, OrganizedPlaneSegmentor* organized_plane_segmentor)
     : valid_(false),
       key_frame_(false),
-      camera_params_(),
+      keypoint_type_( "ORB" ),
       pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
       odom_pose_( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, 0) ),
+      camera_params_(),
       cloud_downsampled_( new PointCloudType ),
       feature_cloud_( new PointCloudXYZ ),
-      keypoint_type_( "ORB" ),
       orb_extractor_( orb_extractor ),
       organized_plane_segmentor_( organized_plane_segmentor )
 {
@@ -371,9 +371,9 @@ void Frame::downsampleOrganizedCloud( const PointCloudTypePtr &input, CameraPara
     output->height = height;
     output->is_dense = false;
     output->points.resize( width * height);
-    for( size_t i = 0, y = 0; i < height; i++, y+=skip)
+    for( int i = 0, y = 0; i < height; i++, y+=skip)
     {
-        for( size_t j = 0, x = 0; j < width; j++, x+=skip)
+        for( int j = 0, x = 0; j < width; j++, x+=skip)
         {
             output->points[i*width + j] = input->points[input->width*y + x];
         }
@@ -409,7 +409,7 @@ void Frame::projectKeypointTo3D( const PointCloudTypePtr &cloud,
     if(feature_cloud->size())
     feature_cloud->clear();
 
-    for(int i = 0; i < locations_2d.size(); i++)
+    for(size_t i = 0; i < locations_2d.size(); i++)
     {
     cv::Point2f p2d = locations_2d[i].pt;
 

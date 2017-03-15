@@ -5,8 +5,8 @@ namespace plane_slam
 
 LineBasedPlaneSegmentor::LineBasedPlaneSegmentor( ros::NodeHandle &nh )
     : private_nh_(nh),
-      plane_segmentor_("/home/lizhi/bags/rgbd/config/QQVGA.yaml"),
       line_based_segment_config_server_( ros::NodeHandle( private_nh_, "LineBasedSegment" ) ),
+      plane_segmentor_("/home/lizhi/bags/rgbd/config/QQVGA.yaml"),
       is_update_line_based_parameters_( true )
 {
     // reconfigure gui
@@ -35,7 +35,7 @@ void LineBasedPlaneSegmentor::operator()(PointCloudTypePtr &input, std::vector<P
 
 
     // convert format
-    for( int i = 0; i < line_based_planes.size(); i++)
+    for( size_t i = 0; i < line_based_planes.size(); i++)
     {
         line_based_plane_segment::PlaneType &pl = line_based_planes[i];
         //

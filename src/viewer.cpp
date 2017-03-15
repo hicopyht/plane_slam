@@ -10,12 +10,12 @@ Viewer::Viewer( ros::NodeHandle &nh)
     : nh_(nh)
     , viewer_config_server_( ros::NodeHandle( nh_, "Viewer" ) )
     , pcl_viewer_( new pcl::visualization::PCLVisualizer("3D Viewer"))
-    , map_viewer_( new pcl::visualization::PCLVisualizer("Map Viewer"))
     , viewer_v1_(1)
     , viewer_v2_(2)
     , viewer_v3_(3)
     , viewer_v4_(4)
     , rng(12345)
+    , map_viewer_( new pcl::visualization::PCLVisualizer("Map Viewer"))
 {
     viewer_config_callback_ = boost::bind(&Viewer::viewerReconfigCallback, this, _1, _2);
     viewer_config_server_.setCallback(viewer_config_callback_);
@@ -152,7 +152,7 @@ void Viewer::displayMatched3DKeypoint( const std_vector_of_eigen_vector4f &query
     train_cloud->width = matches.size();
     //
     PointCloudXYZ::iterator query_it = query_cloud->begin(), train_it = train_cloud->begin();
-    for(int i = 0; i < matches.size(); i++, query_it++, train_it++)
+    for(size_t i = 0; i < matches.size(); i++, query_it++, train_it++)
     {
         if( query_it == query_cloud->end() )
             break;
@@ -192,7 +192,7 @@ void Viewer::display3DKeypoint( const std_vector_of_eigen_vector4f &feature_loca
     cloud->width = feature_location_3d.size();
 
     PointCloudXYZ::iterator it = cloud->begin();
-    for(int i = 0; i < feature_location_3d.size(); i++, it++)
+    for(size_t i = 0; i < feature_location_3d.size(); i++, it++)
     {
         if( it == cloud->end() )
             break;
@@ -285,7 +285,7 @@ void Viewer::displayMapLandmarks( const std::vector<PlaneType> &landmarks, const
         map_viewer_->addText(prefix, 300, 3, prefix+"_text");
 
         int invalid_count = 0;
-        for(int i = 0; i < landmarks.size(); i++)
+        for(size_t i = 0; i < landmarks.size(); i++)
         {
             const PlaneType & plane = landmarks[i];
             if( !plane.valid )
@@ -463,7 +463,7 @@ void Viewer::displayPath( const std::vector<geometry_msgs::PoseStamped> &poses, 
     if( prefix == "true_path" && !display_true_path_ )
         return;
 
-    for( int i = 1; i < poses.size(); i++)
+    for( size_t i = 1; i < poses.size(); i++)
     {
         const geometry_msgs::PoseStamped &pose1 = poses[i-1];
         const geometry_msgs::PoseStamped &pose2 = poses[i];
@@ -520,7 +520,7 @@ void Viewer::displayPlanes( const PointCloudTypePtr &input, const std::vector<Pl
 {
     if(display_plane_)
     {
-        for(int j = 0; j < planes.size(); j++)
+        for(size_t j = 0; j < planes.size(); j++)
         {
             stringstream ss;
             ss << "_" << j;
@@ -543,7 +543,7 @@ void Viewer::displayLinesAndNormals( const PointCloudTypePtr &input,
 
     if(display_line_cloud_)
     {
-        for(int j = 0; j < lines.size(); j++)
+        for(size_t j = 0; j < lines.size(); j++)
         {
             stringstream ss;
             ss << "line_" << j;
@@ -553,7 +553,7 @@ void Viewer::displayLinesAndNormals( const PointCloudTypePtr &input,
 
     if(display_normal_)
     {
-        for(int j = 0; j < normals.size(); j++)
+        for(size_t j = 0; j < normals.size(); j++)
         {
             stringstream ss;
             ss << "normal_" << j;
@@ -674,10 +674,10 @@ void Viewer::pclViewerLandmark( const PlaneType &plane, const std::string &id, c
         double g = rng.uniform(0.0, 1.0);
         double b = rng.uniform(0.0, 1.0);
 
-        const int num = plane.cloud_hull->size();
+        const size_t num = plane.cloud_hull->size();
         if( num >= 3)
         {
-            for(int i = 1; i < num; i++)
+            for(size_t i = 1; i < num; i++)
             {
                 stringstream ss;
                 ss << id << "_hull_line_" << i;
@@ -732,7 +732,7 @@ void Viewer::pclViewerNormal( const PointCloudTypePtr &input, line_based_plane_s
     // add inlier
     PointCloudTypePtr cloud (new PointCloudType );
 
-    for(int i = 0; i < normal.indices.size(); i++)
+    for(size_t i = 0; i < normal.indices.size(); i++)
     {
         cloud->points.push_back( input->points[normal.indices[i]] );
     }
@@ -877,10 +877,10 @@ void Viewer::pclViewerPlane( const PointCloudTypePtr &input, const PlaneType &pl
         g = rng.uniform(0.0, 1.0);
         b = rng.uniform(0.0, 1.0);
 
-        const int num = plane.cloud_hull->size();
+        const size_t num = plane.cloud_hull->size();
         if( num >= 3)
         {
-            for(int i = 1; i < num; i++)
+            for(size_t i = 1; i < num; i++)
             {
                 stringstream ss;
                 ss << id << "_hull_line_" << i;
@@ -903,10 +903,10 @@ void Viewer::pclViewerPlane( const PointCloudTypePtr &input, const PlaneType &pl
         g = rng.uniform(0.0, 1.0);
         b = rng.uniform(0.0, 1.0);
 
-        const int num = cloud_hull->size();
+        const size_t num = cloud_hull->size();
         if( num >= 3)
         {
-            for(int i = 1; i < num; i++)
+            for(size_t i = 1; i < num; i++)
             {
                 stringstream ss;
                 ss << id << "_hull_line_" << i;
@@ -921,7 +921,7 @@ void Viewer::pclViewerPlane( const PointCloudTypePtr &input, const PlaneType &pl
 
 void Viewer::focusOnCamera( tf::Transform &pose )
 {
-    static tf::Transform rel = tf::Transform( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, -0.4) );
+//    static tf::Transform rel = tf::Transform( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, -0.4) );
     static tf::Transform rel2 = tf::Transform( tf::createQuaternionFromRPY(0, M_PI_4, 0), tf::Vector3(-3.0, 0, -1.0) );
     static tf::Transform rel3 = tf::Transform( tf::Quaternion(0, 0, 0, 1.0), tf::Vector3(0, 0, -3.0) );
 

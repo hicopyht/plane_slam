@@ -18,9 +18,10 @@ else()
    message(FATAL_ERROR "The compiler ${CMAKE_CXX_COMPILER} has no C++11 support. Please use a different C++ compiler.")
 endif()
 
+
 #SET( CMAKE_BUILD_TYPE RelWithDebInfo )
 SET(CMAKE_BUILD_TYPE Release)
-SET(ROS_BUILD_TYPE Release)
+
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -39,8 +40,6 @@ find_package(catkin REQUIRED COMPONENTS
   tf
 )
 
-## System dependencies are found with CMake's conventions
-# find_package(Boost REQUIRED COMPONENTS system)
 
 LIST( APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules )
 
@@ -48,7 +47,7 @@ LIST( APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules )
 find_package(Boost REQUIRED COMPONENTS system)
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV 2.4.8 REQUIRED)
-find_package(PCL 1.7 REQUIRED)
+find_package(PCL 1.7 REQUIRED COMPONENTS common io octree kdtree filters features registration surface segmentation visualization)
 
 link_libraries(${OpenCV_LIBS})
 include_directories(SYSTEM ${OpenCV_INCLUDE_DIRS})
@@ -70,27 +69,14 @@ find_package(GTSAM REQUIRED) # Uses installed package
 include_directories(${GTSAM_INCLUDE_DIR})
 #
 # Find TBB
-find_package(TBB)
+# find_package(TBB)
 
 
 # Build plane slam node
 #option(BUILD_PLANE_SLAM     "Enable/Disable building of plane slam node"       ON)
 #option(BUILD_TOOLS_NODE  "Enable/Disable building of tools node" OFF)
-SET(BUILD_PLANE_SLAM ON)
+SET(BUILD_PLANE_SLAM 1)
 
-################################################
-## Declare ROS dynamic reconfigure parameters ##
-################################################
-
-## To declare and build dynamic reconfigure parameters within this
-## package, follow these steps:
-## * In the file package.xml:
-##   * add a build_depend and a run_depend tag for "dynamic_reconfigure"
-## * In this file (CMakeLists.txt):
-##   * add "dynamic_reconfigure" to
-##     find_package(catkin REQUIRED COMPONENTS ...)
-##   * uncomment the "generate_dynamic_reconfigure_options" section below
-##     and list every .cfg file to be processed
 
 ## Generate dynamic reconfigure parameters in the 'cfg' folder
 generate_dynamic_reconfigure_options(
@@ -138,9 +124,17 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
+# PCL visualizer generates various compiler warnings related to unused and
+# uninitialised local variables. To avoid having to individually suppress these
+# warnings around the #include statments for PCL headers across all GCC/Clang
+# versions, we tell CMake to treat PCL headers as system headers.  This
+# results in all compiler warnings from them being suppressed.
+include_directories(SYSTEM ${PCL_INCLUDE_DIRS})
+
+
 
 if(BUILD_PLANE_SLAM)
-    add_library( ${PROJECT_NAME}
+    set(SOURCE_FILES
         src/kinect_listener.cpp
         src/viewer.cpp
         src/gtsam_mapping.cpp
@@ -152,6 +146,10 @@ if(BUILD_PLANE_SLAM)
         src/utils.cpp
         src/itree.cpp
         src/feature_adjuster.cpp
+    )
+
+    add_library( ${PROJECT_NAME}
+        ${SOURCE_FILES}
     )
 
     ## Specify libraries to link a library or executable target against
@@ -172,9 +170,14 @@ if(BUILD_PLANE_SLAM)
     target_link_libraries(plane_slam_node ${PROJECT_NAME})
 
     ## Declare a C++ executable
-    add_executable(plane_slam_node_bagfile src/plane_slam_node_bagfile.cpp)
-    add_dependencies(plane_slam_node_bagfile ${PROJECT_NAME}_gencfg)
-    target_link_libraries(plane_slam_node_bagfile  ${PROJECT_NAME})
+    add_executable(plane_slam_rgbd src/plane_slam_rgbd.cpp)
+    add_dependencies(plane_slam_rgbd ${PROJECT_NAME}_gencfg)
+    target_link_libraries(plane_slam_rgbd  ${PROJECT_NAME})
+
+    ## Declare a C++ executable
+    add_executable(plane_slam_bagfile src/plane_slam_bagfile.cpp)
+    add_dependencies(plane_slam_bagfile ${PROJECT_NAME}_gencfg)
+    target_link_libraries(plane_slam_bagfile  ${PROJECT_NAME})
 endif()
 
 

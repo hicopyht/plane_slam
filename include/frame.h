@@ -72,22 +72,13 @@ public:
     double keypoint_extract_duration_;
     double total_duration_;
 
-private:
-    cv::FeatureDetector* surf_detector_;
-    cv::DescriptorExtractor* surf_extractor_;
-    ORBextractor *orb_extractor_;
-    LineBasedPlaneSegmentor *line_based_plane_segmentor_;
-    OrganizedPlaneSegmentor *organized_plane_segmentor_;
-    // Surf detector/extractor
-
-
-
 public:
-    // Key frame
-    bool key_frame_;
     // Valid
     bool valid_;    // for first frame, valid is under the condition that the number of planes is not zero,
                     // for other frame, valid is under the condition that relative motion respect to previous frame is valid.
+    // Key frame
+    bool key_frame_;
+    //
     std::string keypoint_type_;
     // Id
     int id_;
@@ -95,10 +86,10 @@ public:
     std_msgs::Header header_;
     // Time Stamp
     ros::Time stamp_;
-    // Odom pose
-    tf::Transform odom_pose_;
     // Robot pose
     tf::Transform pose_;
+    // Odom pose
+    tf::Transform odom_pose_;
     // World pose
     tf::Transform world_pose_;
     // Sensor data
@@ -124,6 +115,14 @@ public:
     std::vector<int> good_features_;
     // Planes
     std::vector<PlaneType> segment_planes_;
+
+private:
+    cv::FeatureDetector* surf_detector_;
+    cv::DescriptorExtractor* surf_extractor_;
+    ORBextractor *orb_extractor_;
+    LineBasedPlaneSegmentor *line_based_plane_segmentor_;
+    OrganizedPlaneSegmentor *organized_plane_segmentor_;
+    // Surf detector/extractor
 
 };
 

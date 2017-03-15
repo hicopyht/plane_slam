@@ -3,9 +3,9 @@
 
 OrganizedPlaneSegmentor::OrganizedPlaneSegmentor( ros::NodeHandle &nh ):
     private_nh_(nh)
+  , organized_segment_config_server_( ros::NodeHandle( private_nh_, "OrganizedSegment" ) )
   , ne_()
   , mps_()
-  , organized_segment_config_server_( ros::NodeHandle( private_nh_, "OrganizedSegment" ) )
   , is_update_organized_parameters_( true )
   , ne_method_(0)
   , ne_max_depth_change_factor_(0.02)
@@ -76,7 +76,7 @@ void OrganizedPlaneSegmentor::operator()( const PointCloudTypePtr &input, std::v
 //    cout << BOLDWHITE << "OMPS planes = " << BOLDCYAN << segment_result.regions.size() << RESET << endl;
 
     // convert format
-    for( int i = 0; i < segment_result.regions.size(); i++)
+    for( size_t i = 0; i < segment_result.regions.size(); i++)
     {
         pcl::ModelCoefficients &coef = segment_result.model_coeffs[i];
         pcl::PointIndices &indices = segment_result.inlier_indices[i];

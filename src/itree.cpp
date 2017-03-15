@@ -18,7 +18,7 @@ bool ITree::euclidianPlaneCorrespondences( const vector<PlaneType> &planes,
     /// 1: Transform
     vector<PlaneType> predict_planes;
     const Eigen::Matrix4d transform = estimated_transform;
-    for(int i = 0; i < last_planes.size(); i++)
+    for(size_t i = 0; i < last_planes.size(); i++)
     {
         const PlaneType &plane = last_planes[i];
         PlaneType p = plane;
@@ -31,11 +31,11 @@ bool ITree::euclidianPlaneCorrespondences( const vector<PlaneType> &planes,
     const double direction_thresh = direction_threshold * DEG_TO_RAD;
     const double distance_thresh = distance_threshold;
     Eigen::VectorXd paired = Eigen::VectorXd::Zero( predict_planes.size() );
-    for( int i = 0; i < planes.size(); i++)
+    for( size_t i = 0; i < planes.size(); i++)
     {
         const PlaneType &plane = planes[i];
         //
-        for( int j = 0; j < predict_planes.size(); j++)
+        for( size_t j = 0; j < predict_planes.size(); j++)
         {
             if( paired[j] ) // already paired
                 continue;
@@ -63,7 +63,7 @@ bool ITree::euclidianPlaneCorrespondences( const vector<PlaneType> &planes,
     }
 
 //    cout << MAGENTA << " plane pairs = " << pairs.size() << " (iobs, ilm, distance): " << endl;
-//    for( int i = 0; i < pairs.size(); i++)
+//    for( size_t i = 0; i < pairs.size(); i++)
 //    {
 //        cout << " - " << i << ": (" << pairs[i].iobs << ", " << pairs[i].ilm
 //             << ", " << pairs[i].distance << ")" << endl;

@@ -125,16 +125,23 @@ public:
 
     inline void setInitPose( tf::Transform init_tf ) { init_pose_ = init_tf; set_init_pose_ = true; }
 
+    // Hz <= 15
     inline void setBagPause(bool pause)
     {
         if(pause_bag_)
         {
+//            cout << BOLDWHITE << " - Bag pause: " << CYAN << (pause?"true":"false") << RESET << endl;
             set_bool_srv_.request.data = pause;
             bag_set_pause_sc_.call(set_bool_srv_.request, set_bool_srv_.response);
         }
     }
 
-protected:
+    std::string getRgbTopicName() const { return visual_sub_->getTopic();}
+    std::string getDepthTopicName() const { return visual_sub_->getTopic();}
+    std::string getCameraInfoTopicName() const { return cinfo_sub_->getTopic();}
+    void setTransform(const tf::StampedTransform &trans) { tf_listener_.setTransform(trans);}
+
+public:
     void noCloudCallback (const sensor_msgs::ImageConstPtr& visual_img_msg,
                          const sensor_msgs::ImageConstPtr& depth_img_msg,
                          const sensor_msgs::CameraInfoConstPtr& cam_info_msg);
@@ -143,6 +150,7 @@ protected:
                         const sensor_msgs::PointCloud2ConstPtr& point_cloud,
                         const sensor_msgs::CameraInfoConstPtr& cam_info_msg);
 
+protected:
     void planeSlamReconfigCallback( plane_slam::PlaneSlamConfig &config, uint32_t level);
 
     bool updateViewerOnceCallback( std_srvs::Trigger::Request &req, std_srvs::Trigger::Response &res );

@@ -4,24 +4,28 @@ namespace plane_slam
 {
 
 GTMapping::GTMapping(ros::NodeHandle &nh, Viewer *viewer, Tracking *tracker)
-    : nh_(nh)
-    , viewer_( viewer )
+    : viewer_( viewer )
     , tracker_( tracker )
-    , map_frame_("/world")
+    , nh_(nh)
     , mapping_config_server_( ros::NodeHandle( nh_, "GTMapping" ) )
     , isam2_parameters_()
+    , isam2_factorization_(ISAM2Params::Factorization::QR)
     , factor_graph_()
     , initial_estimate_()
+    , next_plane_id_( 0 )
+    , next_point_id_( 0 )
+    , next_frame_id_( 0 )
     , map_cloud_( new PointCloudType )
     , keypoints_cloud_( new PointCloudType )
     , octree_map_( new octomap::OcTree( 0.025 ) )
+    , map_frame_("/world")
+    , rng_(12345)
     , use_keyframe_( true )
     , keyframe_linear_threshold_( 0.05f )
     , keyframe_angular_threshold_( 5.0f*DEG_TO_RAD )
+    , plane_observation_sigmas_(0.01, 0.01, 0.01)
     , isam2_relinearize_threshold_( 0.01f )
     , isam2_relinearize_skip_(1)
-    , isam2_factorization_(ISAM2Params::Factorization::QR)
-    , plane_observation_sigmas_(0.01, 0.01, 0.01)
     , plane_match_direction_threshold_( 10.0*DEG_TO_RAD )   // 10 degree
     , plane_match_distance_threshold_( 0.1 )    // 0.1meter
     , plane_match_check_overlap_( true )
@@ -30,10 +34,6 @@ GTMapping::GTMapping(ros::NodeHandle &nh, Viewer *viewer, Tracking *tracker)
     , plane_hull_alpha_( 0.5 )
     , octomap_resolution_( 0.025f )
     , octomap_max_depth_range_( 4.0f )
-    , rng_(12345)
-    , next_plane_id_( 0 )
-    , next_point_id_( 0 )
-    , next_frame_id_( 0 )
     , convert_duration_(0)
     , plane_match_duration_(0)
     , keypoint_match_duration_(0)
@@ -140,7 +140,7 @@ bool GTMapping::doMappingMix( Frame *frame )
 
     // Convert observations to OrientedPlane3
     std::vector<OrientedPlane3> observations;
-    for( int i = 0; i < planes.size(); i++)
+    for( size_t i = 0; i < planes.size(); i++)
     {
         PlaneType &plane = planes[i];
         plane.sigmas = plane_observation_sigmas_;
@@ -171,7 +171,7 @@ bool GTMapping::doMappingMix( Frame *frame )
     // Print pairs info
     if( verbose_ ){
         cout << GREEN << " find pairs(obs, lm): " << pairs.size() << RESET << endl;
-        for( int i = 0; i < pairs.size(); i++)
+        for( size_t i = 0; i < pairs.size(); i++)
         {
             const PlanePair &pair = pairs[i];
             cout << "  - " << pair.iobs << ", " << pair.ilm << endl;
@@ -209,7 +209,7 @@ bool GTMapping::doMappingMix( Frame *frame )
     /// 3: plane features
     // Add factor to existed landmark
     Eigen::VectorXi unpairs = Eigen::VectorXi::Ones( planes.size() );
-    for( int i = 0; i < pairs.size(); i++)
+    for( size_t i = 0; i < pairs.size(); i++)
     {
         PlanePair &pair = pairs[i];
         PlaneType &obs = planes[pair.iobs];
@@ -305,7 +305,7 @@ bool GTMapping::doMappingMix( Frame *frame )
         // Define the camera calibration parameters
         Frame* frame_last = frames_list_[frame->id()-1];
         Eigen::Matrix4d toWorldLast = transformTFToMatrix4d(frame_last->pose_);
-        Eigen::Matrix4d toWorld = transformTFToMatrix4d(frame->pose_);
+//        Eigen::Matrix4d toWorld = transformTFToMatrix4d(frame->pose_);
         const int matches_size = frame->kp_inlier_.size();
         uint64_t* descriptor_value =  reinterpret_cast<uint64_t*>(frame->feature_descriptors_.data);
 
@@ -381,12 +381,12 @@ bool GTMapping::doMappingMix( Frame *frame )
         /// Add factor to existed landmark
         std::map<int, bool> matched_obs;    // frame->kp_inlier's element is matched or not
         // Construct matched map, initially set all: false
-        for( int i = 0; i < frame->kp_inlier_.size(); i++)
+        for( size_t i = 0; i < frame->kp_inlier_.size(); i++)
         {
             matched_obs[frame->kp_inlier_[i].trainIdx] = false;
         }
         std::map<int, bool>::iterator matched_it;
-        for( int i = 0; i < matches.size(); i++)
+        for( size_t i = 0; i < matches.size(); i++)
         {
             cv::DMatch &m = matches[i];
             // Set observation matched: true
@@ -647,7 +647,7 @@ bool GTMapping::addFirstFrameMix( Frame *frame )
     double radius = plane_inlier_leaf_size_ * 5;
     int min_neighbors = M_PI * radius *radius
                     / (plane_inlier_leaf_size_ * plane_inlier_leaf_size_) *  planar_bad_inlier_alpha_;
-    for( int i = 0; i < planes.size(); i++)
+    for( size_t i = 0; i < planes.size(); i++)
     {
         PlaneType &plane = planes[i];
         plane.sigmas = plane_observation_sigmas_;
@@ -699,7 +699,7 @@ bool GTMapping::addFirstFrameMix( Frame *frame )
     //
 
     // Add new landmark
-    for(int i = 0; i < planes.size(); i++)
+    for(size_t i = 0; i < planes.size(); i++)
     {
         PlaneType &plane = planes[i];
         Key ln = Symbol('l', plane.id() );
@@ -821,7 +821,7 @@ bool GTMapping::doMapping( Frame *frame )
 
     // Convert observations to OrientedPlane3
     std::vector<OrientedPlane3> observations;
-    for( int i = 0; i < planes.size(); i++)
+    for( size_t i = 0; i < planes.size(); i++)
     {
         PlaneType &plane = planes[i];
         plane.sigmas = plane_observation_sigmas_;
@@ -843,7 +843,7 @@ bool GTMapping::doMapping( Frame *frame )
     // Print pairs info
     if( verbose_ ){
         cout << GREEN << " find pairs(obs, lm): " << pairs.size() << RESET << endl;
-        for( int i = 0; i < pairs.size(); i++)
+        for( size_t i = 0; i < pairs.size(); i++)
         {
             const PlanePair &pair = pairs[i];
             cout << "  - " << pair.iobs << ", " << pair.ilm << endl;
@@ -869,7 +869,7 @@ bool GTMapping::doMapping( Frame *frame )
 
     // Add factor to exist landmark
     Eigen::VectorXi unpairs = Eigen::VectorXi::Ones( planes.size() );
-    for( int i = 0; i < pairs.size(); i++)
+    for( size_t i = 0; i < pairs.size(); i++)
     {
         PlanePair &pair = pairs[i];
         PlaneType &obs = planes[pair.iobs];
@@ -972,7 +972,7 @@ bool GTMapping::addFirstFrame( Frame *frame )
     double radius = plane_inlier_leaf_size_ * 5;
     int min_neighbors = M_PI * radius *radius
                     / (plane_inlier_leaf_size_ * plane_inlier_leaf_size_) *  planar_bad_inlier_alpha_;
-    for( int i = 0; i < planes.size(); i++)
+    for( size_t i = 0; i < planes.size(); i++)
     {
         PlaneType &plane = planes[i];
         plane.sigmas = plane_observation_sigmas_;
@@ -1012,7 +1012,7 @@ bool GTMapping::addFirstFrame( Frame *frame )
     factor_graph_.push_back( OrientedPlane3DirectionPrior( l0, glm0.planeCoefficients(), lm_noise) );
 
     // Add new landmark
-    for(int i = 0; i < planes.size(); i++)
+    for(size_t i = 0; i < planes.size(); i++)
     {
         PlaneType &plane = planes[i];
         Key ln = Symbol('l', plane.id() );
@@ -1144,7 +1144,7 @@ void GTMapping::labelPlane( PlaneType *plane )
 
 int GTMapping::checkFloorPlane(std::vector<PlaneType> &planes)
 {
-    for( int i = 0; i < planes.size(); i++)
+    for( size_t i = 0; i < planes.size(); i++)
     {
         PlaneType &plane = planes[i];
 //        cout << BOLDWHITE << "  - " << GREEN << plane.coefficients[0]
@@ -1234,7 +1234,7 @@ void GTMapping::matchKeypointWithMap( const Frame &frame, std::vector<cv::DMatch
 
 //    // Print matches info
 //    cout << BLUE << "  Good matches " << good_matches.size() << ":" << endl;
-//    for( int i = 0; i < good_matches.size(); i++)
+//    for( size_t i = 0; i < good_matches.size(); i++)
 //    {
 //        cv::DMatch &m = good_matches[i];
 //        cout << MAGENTA << m.queryIdx << "\t" << YELLOW << m.trainIdx << "\t" << WHITE << m.distance << endl;
@@ -1244,7 +1244,7 @@ void GTMapping::matchKeypointWithMap( const Frame &frame, std::vector<cv::DMatch
     // Find repeated matches with observation
     std::vector<std::vector<int> > repeated_matches; //
     std::map<int, int> repeated_index; // (query, idx<vector> )
-    for( int i = 0; i < good_matches.size(); i++)
+    for( size_t i = 0; i < good_matches.size(); i++)
     {
         cv::DMatch &m = good_matches[i];
         //
@@ -1273,12 +1273,12 @@ void GTMapping::matchKeypointWithMap( const Frame &frame, std::vector<cv::DMatch
 //            continue;
 
 //        cout << YELLOW << good_matches[vmm[0]].queryIdx << "\t" <<  MAGENTA;
-//        for( int i = 0; i < vmm.size(); i++)
+//        for( size_t i = 0; i < vmm.size(); i++)
 //        {
 //            cout << " " << good_matches[vmm[i]].trainIdx;
 //        }
 //        cout << "\t" << BLUE;
-//        for( int i = 0; i < vmm.size(); i++)
+//        for( size_t i = 0; i < vmm.size(); i++)
 //        {
 //            cout << " " << good_matches[vmm[i]].distance;
 //        }
@@ -1300,7 +1300,7 @@ void GTMapping::matchKeypointWithMap( const Frame &frame, std::vector<cv::DMatch
             // find best one
             float min_distance = 1e6;
             int result_index = -1;
-            for( int i = 0; i < vmm.size(); i++)
+            for( int i = 0; i < (int)vmm.size(); i++)
             {
                 cv::DMatch &m = good_matches[vmm[i]];
                 if( m.distance < min_distance )
@@ -1314,7 +1314,7 @@ void GTMapping::matchKeypointWithMap( const Frame &frame, std::vector<cv::DMatch
                 matches.push_back( good_matches[vmm[result_index]] );
             }
             // unmatched landmarks
-            for( int i = 0; i < vmm.size(); i++)
+            for( int i = 0; i < (int)vmm.size(); i++)
             {
                 if( i != result_index )
                     unmatched_landmarks.push_back( good_matches[vmm[i]].trainIdx );
@@ -1324,7 +1324,7 @@ void GTMapping::matchKeypointWithMap( const Frame &frame, std::vector<cv::DMatch
 
 //    // Printf info
 //    cout << BLUE << "  Final unmatched landmarks size = " << unmatched_landmarks.size() << ":";
-//    for( int i = 0; i < unmatched_landmarks.size(); i++)
+//    for( size_t i = 0; i < unmatched_landmarks.size(); i++)
 //    {
 //        cout <<" " << unmatched_landmarks[i];
 //    }
@@ -1332,7 +1332,7 @@ void GTMapping::matchKeypointWithMap( const Frame &frame, std::vector<cv::DMatch
 
 //    // Print matches info
 //    cout << BLUE << "  matches " << matches.size() << ":" << endl;
-//    for( int i = 0; i < matches.size(); i++)
+//    for( size_t i = 0; i < matches.size(); i++)
 //    {
 //        cv::DMatch &m = matches[i];
 //        cout << MAGENTA << m.queryIdx << "\t" << YELLOW << m.trainIdx << "\t" << WHITE << m.distance << endl;
@@ -1343,7 +1343,7 @@ void GTMapping::matchKeypointWithMap( const Frame &frame, std::vector<cv::DMatch
     publishMatchedKeypoints( frame.feature_locations_3d_, predicted_keypoints, matches );
 
     // Mark unmatched
-    for( int i = 0; i < unmatched_landmarks.size(); i++ )
+    for( size_t i = 0; i < unmatched_landmarks.size(); i++ )
     {
         KeyPoint *kp = keypoints_list_.at(unmatched_landmarks[i]);
         if( kp )
@@ -1487,7 +1487,7 @@ void GTMapping::matchImageFeatures( const Frame &frame,
         int min_distance = 1 + 256;//More than maximum distance
 //        float min_squared_dist = 1e6;
 //        cout << MAGENTA << train_idx << ": ";
-        for(unsigned int i = 0; i < count; i++)
+        for(int i = 0; i < count; i++)
         {
             int &query_idx = point_idx_radius[i];
 //            float &squared_dist = points_squared_dist_radius[i];
@@ -1532,7 +1532,7 @@ void GTMapping::matchImageFeatures( const Frame &frame,
 
 //    // Printf info
 //    cout << BLUE << "  Unmatched landmarks size = " << unmatched_landmarks.size() << ":";
-//    for( int i = 0; i < unmatched_landmarks.size(); i++)
+//    for( size_t i = 0; i < unmatched_landmarks.size(); i++)
 //    {
 //        cout <<" " << unmatched_landmarks[i];
 //    }
@@ -1612,7 +1612,7 @@ void GTMapping::matchObservationWithPredicted( std::map<int, gtsam::OrientedPlan
                                             std::vector<PlanePair> &pairs)
 {
 //    Eigen::VectorXd paired = Eigen::VectorXd::Zero( predicted_observations.size() );
-    for( int i = 0; i < observations.size(); i++)
+    for( size_t i = 0; i < observations.size(); i++)
     {
         const PlaneType &observed = observed_planes[i];
         const OrientedPlane3 &obs = observations[i];
@@ -1656,7 +1656,7 @@ void GTMapping::matchObservationWithPredicted( std::map<int, gtsam::OrientedPlan
             if( (fabs(dr_error) < plane_match_direction_threshold_)
                     && (ds_error < plane_match_distance_threshold_) )
             {
-                if( glm->cloud_voxel->size() > max_size )
+                if( glm->cloud_voxel->size() > (size_t)max_size )
                 {
                     if( plane_match_check_overlap_ && !checkOverlap( glm->cloud_voxel, glm->coefficients, observed.cloud_voxel, pose ) )
                         continue;
@@ -1842,9 +1842,9 @@ bool GTMapping::refinePlanarMap()
 
             }
 
-        } // end of for( int j = i+1; j < num; j++)
+        } // end of for( size_t j = i+1; j < num; j++)
 
-    } // end of for( int i = 0; i < (num - 1 ); i++)
+    } // end of for( size_t i = 0; i < (num - 1 ); i++)
 
     if( verbose_ )
         cout << YELLOW << " Find co-planar pairs: " << remove_list.size() << RESET << endl;
@@ -1933,7 +1933,7 @@ bool GTMapping::mergeFloorPlane()
         return false;
 
     cout << YELLOW << " Find reduplicated floor:" << MAGENTA;
-    for( int i = 0; i < fv.size(); i++)
+    for( size_t i = 0; i < fv.size(); i++)
     {
         cout << " " << fv[i];
     }
@@ -1942,7 +1942,7 @@ bool GTMapping::mergeFloorPlane()
     // Build merge list
     std::set<int> from_set;
     std::map<int, std::set<int> > merge_list;   // merge list <to, set<from>>
-    for( int i = 0; i < fv.size(); i++)
+    for( size_t i = 0; i < fv.size(); i++)
     {
         if( fv[i] != idx_max )
         {
@@ -1954,6 +1954,8 @@ bool GTMapping::mergeFloorPlane()
     // Merge planes
     if( merge_list.size() > 0)
         mergeCoplanarLandmarks( merge_list );
+
+    return (merge_list.size() > 0);
 }
 
 bool GTMapping::addFloorConstrain(int idx)
@@ -1966,6 +1968,7 @@ bool GTMapping::addFloorConstrain(int idx)
 //    Key ln =  Symbol( 'l', obs.id() );
 //    noiseModel::Diagonal::shared_ptr obs_noise = noiseModel::Diagonal::Sigmas( obs.sigmas );
 //    factor_graph_.push_back( OrientedPlane3Factor(obs.coefficients, obs_noise, pose_key, ln) );
+    return true;
 }
 
 // Compute lost landmark
@@ -1995,7 +1998,7 @@ void GTMapping::computeLostKeypoints( std::vector<int> &unmatched_landmarks,
         }
     }
 
-//    for( int i = 0; i < unmatched_landmarks.size(); i++ )
+//    for( size_t i = 0; i < unmatched_landmarks.size(); i++ )
 //    {
 //        KeyPoint* kp = keypoints_list_.at( unmatched_landmarks[i] );
 //        if( kp->predicted_count >= 5 )
@@ -2025,7 +2028,7 @@ void GTMapping::removeKeypoints( std::vector<int> &lost_landmarks, FactorIndices
 
     //
     FastVector<Key> remove_keys;
-    for( int i = 0; i < lost_landmarks.size(); i++ )
+    for( size_t i = 0; i < lost_landmarks.size(); i++ )
     {
         const int &idx = lost_landmarks[i];
         Key key_kp = Symbol( 'p', idx );
@@ -2064,7 +2067,7 @@ void GTMapping::removeKeypoints( std::vector<int> &lost_landmarks, FactorIndices
         //
         if( exist && factors.size() > 0 )
         {
-            for( int k = 1; k < factors.size(); k ++)
+            for( size_t k = 1; k < factors.size(); k ++)
             {
                 cout << MAGENTA << "\t" << factors.at(k) ;
                 removed_factors.push_back( factors.at(k) );
@@ -2131,7 +2134,7 @@ void GTMapping::mergeCoplanarLandmarks( std::map<int, std::set<int> > merge_list
                  frame_iter != frames_list_.end(); frame_iter++)
             {
                 Frame *frame = frame_iter->second;
-                for( int idx = 0; idx < frame->segment_planes_.size(); idx++)
+                for( size_t idx = 0; idx < frame->segment_planes_.size(); idx++)
                 {
                     PlaneType &obs = frame->segment_planes_[idx];
                     if( obs.id() == from )
@@ -2235,6 +2238,8 @@ bool GTMapping::removeLandmarksBadInlier()
         PlaneType &lm = *(it->second);
         removePlaneBadInlier( lm.cloud_voxel, radius, min_neighbors );
     }
+
+    return true;
 }
 
 void GTMapping::removePlaneBadInlier( PointCloudTypePtr &cloud_voxel, double radius, int min_neighbors )
@@ -2275,7 +2280,7 @@ void GTMapping::updateOptimizedResultMix()
         for( std::set<int>::iterator it = frames_optimized_.begin(); it != frames_optimized_.end(); it++ )
         {
             Frame *frame = frames_list_.at( *it );
-            for( int i = 0; i < frame->segment_planes_.size(); i++)
+            for( size_t i = 0; i < frame->segment_planes_.size(); i++)
             {
                 int id = frame->segment_planes_[i].id();
                 if( landmarks_list_.find( id ) != landmarks_list_.end() );  // exist
@@ -2326,7 +2331,7 @@ void GTMapping::updateOptimizedResult()
     for( std::set<int>::iterator it = frames_optimized_.begin(); it != frames_optimized_.end(); it++ )
     {
         Frame *frame = frames_list_.at( *it );
-        for( int i = 0; i < frame->segment_planes_.size(); i++)
+        for( size_t i = 0; i < frame->segment_planes_.size(); i++)
         {
             int id = frame->segment_planes_[i].id();
             if( landmarks_list_.find( id ) != landmarks_list_.end() );  // exist
@@ -2351,7 +2356,7 @@ void GTMapping::updateLandmarksInlier( int index )
         if( frames_list_.find( index ) != frames_list_.end() )
         {
             Frame *frame = frames_list_.at( index );
-            for( int i = 0; i < frame->segment_planes_.size(); i++)
+            for( size_t i = 0; i < frame->segment_planes_.size(); i++)
             {
                 int id = frame->segment_planes_[i].id();
                 if( landmarks_list_.find( id ) != landmarks_list_.end() );  // exist
@@ -2385,7 +2390,7 @@ void GTMapping::updateLandmarksInlier( int index )
 //    // Add inlier
 //    Frame *frame = frames_list_.at( index );;
 //    Eigen::Matrix4d trans = transformTFToMatrix4d( frame->pose_ );
-//    for( int idx = 0; idx < frame->segment_planes_.size(); idx++)
+//    for( size_t idx = 0; idx < frame->segment_planes_.size(); idx++)
 //    {
 //        PlaneType &obs = frame->segment_planes_[idx];
 //        if( planes_optimized_.find(obs.id()) != planes_optimized_.end() )
@@ -2401,7 +2406,7 @@ void GTMapping::updateLandmarksInlier( int index )
     {
         Frame *frame = it->second;
         Eigen::Matrix4d trans = transformTFToMatrix4d( frame->pose_ );
-        for( int idx = 0; idx < frame->segment_planes_.size(); idx++)
+        for( size_t idx = 0; idx < frame->segment_planes_.size(); idx++)
         {
             PlaneType &obs = frame->segment_planes_[idx];
             if( planes_optimized_.find(obs.id()) != planes_optimized_.end() )
@@ -2437,7 +2442,7 @@ void GTMapping::updateLandmarksInlierAll()
     {
         Frame *frame = it->second;
         Eigen::Matrix4d trans = transformTFToMatrix4d( frame->pose_ );
-        for( int idx = 0; idx < frame->segment_planes_.size(); idx++)
+        for( size_t idx = 0; idx < frame->segment_planes_.size(); idx++)
         {
             PlaneType &obs = frame->segment_planes_[idx];
             PlaneType *lm = landmarks_list_[ obs.id() ];
@@ -2468,7 +2473,7 @@ void GTMapping::updateLandmarksInlierAll()
 
 void GTMapping::updateOctoMap()
 {
-    static int node_size = 0;
+    static size_t node_size = 0;
 
     if( !publish_octomap_ )
         return;
@@ -2477,7 +2482,7 @@ void GTMapping::updateOctoMap()
     if( octree_map_->getResolution()!= octomap_resolution_ )
         octree_map_->setResolution( octomap_resolution_ );
 
-    if( !(octomap_publisher_.getNumSubscribers()) )
+    if( octomap_publisher_.getNumSubscribers() == 0 )
         return;
 
     if( frames_list_.size() <= node_size )
@@ -2486,7 +2491,7 @@ void GTMapping::updateOctoMap()
     ros::Time start_time = ros::Time::now();
     int number = 0;
     cout << BLUE << " Octree scan size: " << node_size << RESET << endl;
-    for( int idx = node_size; idx < frames_list_.size(); idx++)
+    for( size_t idx = node_size; idx < frames_list_.size(); idx++)
     {
         std::map<int, Frame*>::iterator itf = frames_list_.find( idx );
         // Add one scan
@@ -2679,7 +2684,7 @@ void GTMapping::publishFrameKeypoints( const std_vector_of_eigen_vector4f &featu
     color.Blue = 0;
     color.Alpha = 255;
     pt.rgb = color.float_value;
-    for( int i = 0; i < feature_3d.size(); i++ )
+    for( size_t i = 0; i < feature_3d.size(); i++ )
     {
         const Eigen::Vector4f &p3d = feature_3d[i];
         if( p3d(2) == 0 )
@@ -2715,7 +2720,7 @@ void GTMapping::publishMatchedKeypoints( const std_vector_of_eigen_vector4f &fea
     cloud_global->is_dense = false;
     cloud_global->height = 1;
     pcl::PointXYZRGBA pt1, pt2;
-    for( int i = 0; i < matches.size(); i++ )
+    for( size_t i = 0; i < matches.size(); i++ )
     {
         const cv::DMatch &m = matches[i];
         const Eigen::Vector4f &p3d = feature_3d[m.queryIdx];
@@ -2818,7 +2823,7 @@ void GTMapping::reset()
 
 PointCloudTypePtr GTMapping::getMapCloud( bool force )
 {
-    static int iteration = 0;
+    static size_t iteration = 0;
     if( optimized_poses_list_.size() != iteration || force == true )
     {
         iteration = optimized_poses_list_.size();
@@ -2856,7 +2861,7 @@ PointCloudTypePtr GTMapping::getMapFullCloud( bool colored )
     {
         Frame *frame = it->second;
         Eigen::Matrix4d trans = transformTFToMatrix4d( frame->pose_ );
-        for( int idx = 0; idx < frame->segment_planes_.size(); idx++)
+        for( size_t idx = 0; idx < frame->segment_planes_.size(); idx++)
         {
             PlaneType &obs = frame->segment_planes_[idx];
             PlaneType *lm = landmarks_list_[ obs.id() ];

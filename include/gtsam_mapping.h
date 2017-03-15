@@ -133,19 +133,6 @@ public:
     double getKeyFrameLinearThreshold() const { return keyframe_linear_threshold_; }
     double getKeyFrameAngularThreshold() const { return keyframe_angular_threshold_; }
 
-    // Runtimes
-    double convert_duration_;
-    double plane_match_duration_;
-    double keypoint_match_duration_;
-    double add_delete_duration_;
-    double optimize_duration_;
-    double refine_duration_;
-    double update_lm_duration_;
-    double update_inlier_duration_;
-    double update_octomap_duration_;
-    double display_duration_;
-    double total_duration_;
-
 protected:
     bool addFirstFrameMix( Frame *frame );
 
@@ -282,6 +269,7 @@ private:
 
     // ISAM2
     ISAM2Params isam2_parameters_;
+    ISAM2Params::Factorization isam2_factorization_;
     ISAM2* isam2_;
     // Create a Factor Graph and Values to hold the new data
     NonlinearFactorGraph factor_graph_; // factor graph
@@ -341,7 +329,6 @@ private:
     // ISMA2
     double isam2_relinearize_threshold_;
     int isam2_relinearize_skip_;
-    ISAM2Params::Factorization isam2_factorization_;
     //
     int min_keypoint_correspondences_;
     double keypoint_match_search_radius_;
@@ -384,6 +371,20 @@ private:
     bool publish_octomap_;
     bool publish_keypoint_cloud_;
     bool publish_optimized_path_;
+
+public:
+    // Runtimes
+    double convert_duration_;
+    double plane_match_duration_;
+    double keypoint_match_duration_;
+    double add_delete_duration_;
+    double optimize_duration_;
+    double refine_duration_;
+    double update_lm_duration_;
+    double update_inlier_duration_;
+    double update_octomap_duration_;
+    double display_duration_;
+    double total_duration_;
 };
 
 } // end of namespace plane_slam

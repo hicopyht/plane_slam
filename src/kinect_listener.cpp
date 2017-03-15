@@ -5,11 +5,11 @@ namespace plane_slam
 
 KinectListener::KinectListener() :
     private_nh_("~")
-  , plane_slam_config_server_( ros::NodeHandle( "PlaneSlam" ) )
   , tf_listener_( nh_, ros::Duration(10.0) )
-  , camera_parameters_()
+  , plane_slam_config_server_( ros::NodeHandle( "PlaneSlam" ) )
   , set_init_pose_( false )
   , save_message_pcd_(0)
+  , camera_parameters_()
 {
     private_nh_.param<bool>("verbose", verbose_, false );
     cout << WHITE << "  verbose = " << (verbose_?"true":"false") << RESET << endl;
@@ -145,6 +145,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
     if( get_odom_pose_ )
     {
         if( getTfPose( odom_pose, depth_img_msg->header.frame_id, odom_frame_, depth_img_msg->header.stamp-ros::Duration(0.033)) )
+//        if( getTfPose( odom_pose, depth_img_msg->header.frame_id, odom_frame_, ros::Time(0)) )
         {
             // Print info
             if( verbose_ )
@@ -182,6 +183,7 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
     // Get camera parameter
     CameraParameters camera;
     cvtCameraParameter( cam_info_msg, camera);
+
 
     if( get_odom_pose_ )
     {
@@ -467,7 +469,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
                                          CameraParameters & camera)
 {
     static Frame *last_frame = new Frame();
-    static bool last_frame_valid = false;
+//    static bool last_frame_valid = false;
 
     frame_count_++;
     if( verbose_ ){
@@ -483,12 +485,15 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     double frame_dura, track_dura, map_dura, display_dura;
     double total_dura;
 
+    cout << BOLDCYAN << " - frame processing..." << RESET << endl;
+
     // Get frame
     Frame *frame = depthRgbToFrame( visual_img_msg, depth_img_msg, camera );
     //
     frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
 
+    cout << BOLDCYAN << " - motion estimating..." << RESET << endl;
     // Motion from features
     trackFrameMotion( last_frame, frame );
     //
@@ -497,6 +502,8 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
 
     // Record & publish visual odometry & odometry
     recordVisualOdometry( last_frame, frame );
+
+    cout << BOLDCYAN << " - gtsam mapping..." << RESET << endl;
 
     // Mapping
     if( frame->valid_ && do_slam_ )
@@ -518,6 +525,8 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
 
     // Upate odom to map tf
 //    calculateOdomToMapTF( frame->pose_, frame->odom_pose_);
+
+    cout << BOLDCYAN << " - result displaying..." << RESET << endl;
 
     // Visualization for mapping result
     displayMappingResult( frame );
@@ -665,7 +674,7 @@ bool KinectListener::trackFrameMotionOdom( Frame* last_frame, Frame* frame )
     if( last_frame->valid_ )  // Do tracking
     {
         if( !use_odom_tracking_ )
-            tracker_->trackPlanes( *last_frame, *frame, motion, estimated_transform);
+            tracker_->track( *last_frame, *frame, motion, estimated_transform);
         else
         {
             motion.setTransform4d( estimated_transform );
@@ -893,7 +902,7 @@ void KinectListener::storeKeyFrame( Frame* &last_frame, Frame* &frame )
 void KinectListener::debugFrame( Frame* frame )
 {
     // Debug frame
-    if( save_message_pcd_ && save_message_pcd_ == frame->header_.seq )
+    if( save_message_pcd_ && (uint32_t)save_message_pcd_ == frame->header_.seq )
     {
         std::string time_str = timeToStr();
         stringstream ss;
@@ -902,7 +911,7 @@ void KinectListener::debugFrame( Frame* frame )
         save_message_pcd_ = 0;
 
         cout << " planes size: ";
-        for( int i = 0; i < frame->segment_planes_.size(); i++)
+        for( size_t i = 0; i < frame->segment_planes_.size(); i++)
         {
             cout << " " << frame->segment_planes_[i].cloud->points.size();
         }
@@ -932,7 +941,7 @@ void KinectListener::savePlaneLandmarks( const std::string &filename )
 
     // Save Landmarks
     std::map<int, PlaneType*> landmarks = gt_mapping_->getLandmark();
-    fprintf( yaml, "# landmarks, size %d\n\n", landmarks.size() );
+    fprintf( yaml, "# landmarks, size %d\n\n", (int)landmarks.size() );
     for( std::map<int, PlaneType*>::const_iterator it = landmarks.begin();
          it != landmarks.end(); it++)
     {
@@ -940,7 +949,7 @@ void KinectListener::savePlaneLandmarks( const std::string &filename )
         if( !lm->valid )
             continue;
         fprintf( yaml, "%f %f %f %f %d %d %s\n", lm->coefficients[0], lm->coefficients[1],
-                lm->coefficients[2], lm->coefficients[3], it->first, lm->cloud_voxel->size(), lm->semantic_label.c_str() );
+                lm->coefficients[2], lm->coefficients[3], it->first, (int)lm->cloud_voxel->size(), lm->semantic_label.c_str() );
 //        cout << WHITE << " - save lm: " << BLUE << it->first << WHITE << " points: " << BLUE << lm->cloud_voxel->size() << RESET << endl;
     }
     fprintf( yaml, "\n");
@@ -957,9 +966,9 @@ void KinectListener::savePathToFile( const std::vector<geometry_msgs::PoseStampe
     FILE* yaml = std::fopen( filename.c_str(), "w" );
     fprintf( yaml, "# %s\n", filename.c_str() );
     fprintf( yaml, "# pose format: T(xyz) Q(xyzw) seq\n" );
-    fprintf( yaml, "# poses: %d\n", poses.size() );
+    fprintf( yaml, "# poses: %d\n", (int)poses.size() );
     // Save Path
-    for( int i = 0; i < poses.size(); i++)
+    for( size_t i = 0; i < poses.size(); i++)
     {
         const geometry_msgs::PoseStamped &pose = poses[i];
         fprintf( yaml, "%d %f %f %f %f %f %f %f \n", pose.header.seq, pose.pose.position.x, pose.pose.position.y, pose.pose.position.z,
@@ -981,7 +990,7 @@ void KinectListener::saveKeypointLandmarks( const std::string &filename )
 
     // Save location
     std::map<int, KeyPoint*> keypoints = gt_mapping_->getKeypointLandmark();
-    fprintf( yaml, "# keypoints, size %d\n", keypoints.size() );
+    fprintf( yaml, "# keypoints, size %d\n", (int)keypoints.size() );
     fprintf( yaml, "# location:\n");
     for( std::map<int, KeyPoint*>::const_iterator it = keypoints.begin();
          it != keypoints.end(); it++)
@@ -1001,7 +1010,7 @@ void KinectListener::saveKeypointLandmarks( const std::string &filename )
         KeyPoint *kp = it->second;
         if( !kp->initialized )
             continue;
-        for( int i = 0; i < 4; i++ )
+        for( size_t i = 0; i < 4; i++ )
         {
             uint8_t *ch = (uint8_t *)(kp->descriptor);
             fprintf( yaml, "%d %d %d %d %d %d %d %d ", *ch, *(ch+1), *(ch+2), *(ch+3), *(ch+4), *(ch+5), *(ch+6), *(ch+7));
@@ -1022,13 +1031,13 @@ void KinectListener::saveRuntimes( const std::string &filename )
     fprintf( yaml, "# runtimes file: %s\n", filename.c_str() );
     fprintf( yaml, "# format: frame tracking mapping total refined removed\n" );
     fprintf( yaml, "# frame size: %d\n", frame_count_ );
-    fprintf( yaml, "# key frame size: %d\n", runtimes_.size() );
+    fprintf( yaml, "# key frame size: %d\n", (int)runtimes_.size() );
 
     Runtime avg_time;
     Runtime max_time( -1, true, 0, 0, 0, 0);
     Runtime min_time( -1, true, 1e6, 1e6, 1e6, 1e6);
     int count = 0;
-    for( int i = 0; i < runtimes_.size(); i++)
+    for( size_t i = 0; i < runtimes_.size(); i++)
     {
         Runtime &runtime = runtimes_[i];
 //        if( !runtime.key_frame )
@@ -1054,7 +1063,7 @@ void KinectListener::saveRuntimes( const std::string &filename )
 
     // Average
     avg_time /= count;
-    fprintf( yaml, "# average time:\n", count);
+    fprintf( yaml, "# average time:\n");
     fprintf( yaml, "%f %f %f %f\n", avg_time.frame,
              avg_time.tracking,
              avg_time.mapping,
@@ -1120,10 +1129,10 @@ void KinectListener::saveFrameRuntimes(const std::string &filename)
     FILE* yaml = std::fopen( filename.c_str(), "w" );
     fprintf( yaml, "# frame runtimes file: %s\n", filename.c_str() );
     fprintf( yaml, "# format: seq cvt downsample segment extract total nplanes nkeypoints\n" );
-    fprintf( yaml, "# frame size: %d\n", (frame_sequences_.back() - frame_sequences_.front() + 1) );
-    fprintf( yaml, "# size: %d\n", frame_sequences_.size() );
+    fprintf( yaml, "# frame size: %d\n", (int)(frame_sequences_.back() - frame_sequences_.front() + 1) );
+    fprintf( yaml, "# size: %d\n", (int)frame_sequences_.size() );
 
-    for( int i = 0; i < frame_sequences_.size(); i++)
+    for( size_t i = 0; i < frame_sequences_.size(); i++)
     {
         fprintf( yaml, "%d %f %f %f %f %f %d %d\n", frame_sequences_[i],
                  pointcloud_cvt_durations_[i], pointcloud_downsample_durations_[i],
@@ -1146,10 +1155,10 @@ void KinectListener::saveMappingRuntimes(const std::string &filename)
     fprintf( yaml, "# mapping runtimes file: %s\n", filename.c_str() );
     fprintf( yaml, "# format: seq convert p_m kp_m add&delete optimize refine lm inlier octomap display total\n" );
     fprintf( yaml, "# frame size: %d\n", (mapping_sequences_.back() - mapping_sequences_.front() + 1) );
-    fprintf( yaml, "# size: %d\n", mapping_sequences_.size() );
+    fprintf( yaml, "# size: %d\n", (int)mapping_sequences_.size() );
 
 
-    for( int i = 0; i < mapping_sequences_.size(); i++)
+    for( size_t i = 0; i < mapping_sequences_.size(); i++)
     {
         fprintf( yaml, "%d %f %f %f %f %f %f %f %f %f %f %f\n",
                  mapping_sequences_[i], mapping_convert_durations_[i], mapping_plane_match_durations_[i],
@@ -1172,7 +1181,7 @@ void KinectListener::saveKeyKrameSequence( const std::string &filename )
 
     // Save key frame sequences
     std::map<int, Frame*> frames_list = gt_mapping_->getFrames();
-    fprintf( yaml, "# size: %d\n", frames_list.size());
+    fprintf( yaml, "# size: %d\n", (int)frames_list.size());
     for( std::map<int, Frame*>::iterator it = frames_list.begin();
          it != frames_list.end(); it++)
     {
@@ -1239,25 +1248,6 @@ void KinectListener::cvtCameraParameter( const sensor_msgs::CameraInfoConstPtr &
 //    camera.height = 480;
 
 }
-
-//bool KinectListener::getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time &time)
-//{
-//    // get transform
-//    tf::StampedTransform trans;
-//    try{
-//        tf_listener_.lookupTransform(camera_frame, odom_frame_, time, trans);
-//    }catch (tf::TransformException &ex)
-//    {
-//        ROS_WARN("%s",ex.what());
-//        odom_pose.setIdentity();
-//        return false;
-//    }
-//    odom_pose.setOrigin( trans.getOrigin() );
-//    odom_pose.setRotation( trans.getRotation() );
-
-//    return true;
-//}
-
 
 bool KinectListener::getOdomPose( tf::Transform &odom_pose, const std::string &camera_frame, const ros::Time& t)
 {

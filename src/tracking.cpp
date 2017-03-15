@@ -4,9 +4,10 @@ namespace plane_slam
 {
 
 Tracking::Tracking( ros::NodeHandle &nh, Viewer * viewer )
-    : nh_(nh),
-      viewer_(viewer),
-      tracking_config_server_( ros::NodeHandle(nh_, "Tracking") )
+    : nh_(nh)
+    , tracking_config_server_( ros::NodeHandle(nh_, "Tracking") )
+    , verbose_(false)
+    , viewer_(viewer)
 {
     tracking_config_callback_ = boost::bind(&Tracking::trackingReconfigCallback, this, _1, _2);
     tracking_config_server_.setCallback(tracking_config_callback_);
@@ -189,7 +190,7 @@ bool Tracking::solveRelativeTransformPlanes( const Frame &source,
 
     return_inlier.clear();
 
-    const unsigned int pairs_num = pairs.size();
+    const int pairs_num = pairs.size();
 
     // Estimate transformation using all the plane correspondences
     RESULT_OF_MOTION best_transform;
@@ -288,7 +289,7 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
     double inlier_error;
     double max_dist_m = ransac_inlier_max_mahal_distance_;
     bool valid_tf;
-    for( int n = 0; n < max_iterations && good_matches.size() >= sample_size; n++)
+    for( size_t n = 0; n < max_iterations && good_matches.size() >= sample_size; n++)
     {
         double refined_error = 1e6;
         std::vector<cv::DMatch> refined_matches;
@@ -298,7 +299,7 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
 
         real_iterations++;
 //        cout << "Iteration = " << real_iterations << endl;
-        for( int refine = 0; refine < 20; refine ++)
+        for( size_t refine = 0; refine < 20; refine ++)
         {
             Eigen::Matrix4f transformation = solveRtPcl( source.feature_locations_3d_,
                                                          target.feature_locations_3d_,
@@ -312,7 +313,7 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
             computeCorrespondenceInliersAndError( good_matches, transformation, source.feature_locations_3d_, target.feature_locations_3d_,
                                                   min_inlier_threshold, inlier, inlier_error, max_dist_m );
 
-            if( inlier.size() < min_inlier_threshold || inlier_error > max_dist_m)
+            if( inlier.size() < (size_t)min_inlier_threshold || inlier_error > max_dist_m)
                 break;
 
 //            cout << BOLDBLUE << " - refine = " << refine << ", relative transform: " << RESET << endl;
@@ -341,7 +342,7 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
             //Acceptable && superior to previous iterations?
             if (refined_error <= rmse &&
                 refined_matches.size() >= matches.size() &&
-                refined_matches.size() >= min_inlier_threshold)
+                refined_matches.size() >= (size_t)min_inlier_threshold)
             {
                 rmse = refined_error;
                 resulting_transformation = refined_transformation;
@@ -359,7 +360,7 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
         if( verbose_ )
             cout << BOLDRED << "No valid iteration, try identity." << RESET << endl;
         //ransac iteration with identity
-        Eigen::Matrix4f trans = Eigen::Matrix4f::Identity();//hypothesis
+//        Eigen::Matrix4f trans = Eigen::Matrix4f::Identity();//hypothesis
         std::vector<cv::DMatch> inlier; //result
         double refined_error = 1e6;
         std::vector<cv::DMatch> refined_matches;
@@ -377,7 +378,7 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
         }
 
         // refine
-        for( int refine = 0; refine < 20; refine ++)
+        for( size_t refine = 0; refine < 20; refine ++)
         {
             if( inlier.size() < sample_size )
                 break;
@@ -394,7 +395,7 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
             computeCorrespondenceInliersAndError( good_matches, transformation, source.feature_locations_3d_, target.feature_locations_3d_,
                                                   min_inlier_threshold, inlier, inlier_error, max_dist_m );
 
-            if( inlier.size() < min_inlier_threshold || inlier_error > max_dist_m)
+            if( inlier.size() < (size_t)min_inlier_threshold || inlier_error > max_dist_m)
                 break;
 
             if( verbose_ ){
@@ -423,7 +424,7 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
         {
             if (refined_error <= rmse &&
                 refined_matches.size() >= matches.size() &&
-                refined_matches.size() >= min_inlier_threshold)
+                refined_matches.size() >= (size_t)min_inlier_threshold)
             {
                 rmse = refined_error;
                 resulting_transformation = refined_transformation;
@@ -440,8 +441,8 @@ bool Tracking::solveRelativeTransformPointsRansac( const Frame &source,
     result.setTransform4f( resulting_transformation );    // save result
     result.rmse = rmse;
     result.inlier = matches.size();
-    result.valid = matches.size() >= min_inlier_threshold;
-    return ( matches.size() >= min_inlier_threshold );
+    result.valid = (matches.size() >= (size_t)min_inlier_threshold);
+    return ( matches.size() >= (size_t)min_inlier_threshold );
 }
 
 bool Tracking::solveRelativeTransformPointsRansac( const std_vector_of_eigen_vector4f &source_feature_3d,
@@ -478,7 +479,7 @@ bool Tracking::solveRelativeTransformPointsRansac( const std_vector_of_eigen_vec
     double inlier_error;
     double max_dist_m = ransac_inlier_max_mahal_distance_;
     bool valid_tf;
-    for( int n = 0; n < max_iterations && good_matches.size() >= sample_size; n++)
+    for( size_t n = 0; n < max_iterations && good_matches.size() >= sample_size; n++)
     {
         double refined_error = 1e6;
         std::vector<cv::DMatch> refined_matches;
@@ -488,13 +489,13 @@ bool Tracking::solveRelativeTransformPointsRansac( const std_vector_of_eigen_vec
 
         real_iterations++;
 //        cout << "Iteration = " << real_iterations << endl;
-        for( int refine = 0; refine < 20; refine ++)
+        for( size_t refine = 0; refine < 20; refine ++)
         {
             Eigen::Matrix4f transformation = solveRtPcl( source_feature_3d,
                                                          target_feature_3d,
                                                          inlier, valid_tf );
 
-//            for( int mi = 0; mi < inlier.size(); mi++)
+//            for( size_t mi = 0; mi < inlier.size(); mi++)
 //            {
 //                cv::DMatch &mm = inlier[mi];
 //                cout << BLUE << "  -(" << source_feature_3d[mm.queryIdx](0)
@@ -514,7 +515,7 @@ bool Tracking::solveRelativeTransformPointsRansac( const std_vector_of_eigen_vec
             computeCorrespondenceInliersAndError( good_matches, transformation, source_feature_3d, target_feature_3d,
                                                   min_inlier_threshold, inlier, inlier_error, max_dist_m );
 
-            if( inlier.size() < min_inlier_threshold || inlier_error > max_dist_m)
+            if( inlier.size() < (size_t)min_inlier_threshold || inlier_error > max_dist_m)
                 break;
 
 //            cout << BOLDBLUE << " - refine = " << refine << ", relative transform: " << RESET << endl;
@@ -543,7 +544,7 @@ bool Tracking::solveRelativeTransformPointsRansac( const std_vector_of_eigen_vec
             //Acceptable && superior to previous iterations?
             if (refined_error <= rmse &&
                 refined_matches.size() >= matches.size() &&
-                refined_matches.size() >= min_inlier_threshold)
+                refined_matches.size() >= (size_t)min_inlier_threshold)
             {
                 rmse = refined_error;
                 resulting_transformation = refined_transformation;
@@ -560,7 +561,7 @@ bool Tracking::solveRelativeTransformPointsRansac( const std_vector_of_eigen_vec
     {
         cout << BOLDRED << "No valid iteration, try identity." << RESET << endl;
         //ransac iteration with identity
-        Eigen::Matrix4f trans = Eigen::Matrix4f::Identity();//hypothesis
+//        Eigen::Matrix4f trans = Eigen::Matrix4f::Identity();//hypothesis
         std::vector<cv::DMatch> inlier; //result
         double refined_error = 1e6;
         std::vector<cv::DMatch> refined_matches;
@@ -578,7 +579,7 @@ bool Tracking::solveRelativeTransformPointsRansac( const std_vector_of_eigen_vec
         }
 
         // refine
-        for( int refine = 0; refine < 20; refine ++)
+        for( size_t refine = 0; refine < 20; refine ++)
         {
             if( inlier.size() < sample_size )
                 break;
@@ -595,7 +596,7 @@ bool Tracking::solveRelativeTransformPointsRansac( const std_vector_of_eigen_vec
             computeCorrespondenceInliersAndError( good_matches, transformation, source_feature_3d, target_feature_3d,
                                                   min_inlier_threshold, inlier, inlier_error, max_dist_m );
 
-            if( inlier.size() < min_inlier_threshold || inlier_error > max_dist_m)
+            if( inlier.size() < (size_t)min_inlier_threshold || inlier_error > max_dist_m)
                 break;
 
             cout << BOLDBLUE << " - refine = " << refine << ", relative transform: " << RESET << endl;
@@ -622,7 +623,7 @@ bool Tracking::solveRelativeTransformPointsRansac( const std_vector_of_eigen_vec
         {
             if (refined_error <= rmse &&
                 refined_matches.size() >= matches.size() &&
-                refined_matches.size() >= min_inlier_threshold)
+                refined_matches.size() >= (size_t)min_inlier_threshold)
             {
                 rmse = refined_error;
                 resulting_transformation = refined_transformation;
@@ -637,8 +638,8 @@ bool Tracking::solveRelativeTransformPointsRansac( const std_vector_of_eigen_vec
     result.setTransform4f( resulting_transformation );    // save result
     result.rmse = rmse;
     result.inlier = matches.size();
-    result.valid = matches.size() >= min_inlier_threshold;
-    return ( matches.size() >= min_inlier_threshold );
+    result.valid = (matches.size() >= (size_t)min_inlier_threshold);
+    return ( matches.size() >= (size_t)min_inlier_threshold );
 }
 
 
@@ -697,8 +698,8 @@ bool Tracking::solveRelativeTransformPlanesPointsRansac( const Frame &source,
     bool valid_tf;
 //    cout << BLUE << " min_inlier = " << min_inlier_threshold << ", iterations = " << ransac_iterations_ << RESET << endl;
     //
-    unsigned int max_iterations = ransac_iterations_; // Size of sample plane/point size dependent or not?
-    for( int n = 0; n < max_iterations; n++)
+    size_t max_iterations = ransac_iterations_; // Size of sample plane/point size dependent or not?
+    for( size_t n = 0; n < max_iterations; n++)
     {
         real_iterations ++;
         // Compute transformation
@@ -837,7 +838,7 @@ bool Tracking::solveRelativeTransformPnP( const Frame& source,
 //    cout << " Rot: " << endl << result.rotation << endl;
 
 //    target.kp_inlier_.clear();
-//    for( int i = 0; i < inlier.rows; i++)
+//    for( size_t i = 0; i < inlier.rows; i++)
 //    {
 //        target.kp_inlier_.push_back( );
 //    }
@@ -939,7 +940,7 @@ bool Tracking::solveRelativeTransform( const Frame &source,
     /// case 4: Using ICP
     if( !best_transform.valid && good_matches.size() >= 20 )
     {
-        best_transform.valid = solveRelativeTransformIcp( source, target, best_transform );
+//        best_transform.valid = solveRelativeTransformIcp( source, target, best_transform );
     }
 
     if( best_transform.valid && validRelativeTransform(best_transform) )
@@ -1071,8 +1072,8 @@ void Tracking::solveRt( const std::vector<PlaneCoefficients> &before,
                               const std::vector<Eigen::Vector3d>& to_points,
                               RESULT_OF_MOTION &result)
 {
-    const int num_points = from_points.size();
-    const int num_planes = before.size();
+    const size_t num_points = from_points.size();
+    const size_t num_planes = before.size();
 
 //    cout << " solveRT, planes = " << num_planes << ", points = " << num_points << RESET << endl;
 
@@ -1083,12 +1084,12 @@ void Tracking::solveRt( const std::vector<PlaneCoefficients> &before,
     // Rotation
     Eigen::MatrixXd froms(3, num_points), tos(3, num_points);
     Eigen::MatrixXd src(3, num_planes), dst(3, num_planes);
-    for( int i = 0; i < num_points; i++)
+    for( size_t i = 0; i < num_points; i++)
     {
         tos.col(i) = from_points[i];
         froms.col(i) = to_points[i];
     }
-    for( int i = 0; i < num_planes; i++)
+    for( size_t i = 0; i < num_planes; i++)
     {
         src.col(i) = after[i].head<3>();
         dst.col(i) = before[i].head<3>();
@@ -1156,14 +1157,14 @@ void Tracking::solveRt( const std::vector<PlaneCoefficients> &before,
     /// 2: For planes
     Eigen::MatrixXd A2( num_planes, 3 );
     Eigen::VectorXd b2( num_planes );
-    for( int i = 0; i < num_planes; i++)
+    for( size_t i = 0; i < num_planes; i++)
     {
         A2.row(i) = wi * before[i].head<3>().transpose();
         b2(i) = after[i](3) - before[i](3);
     }
     /// 3:  ( A1 A2 )^T * t = ( b1 b2)^T
-    Eigen::MatrixXd AA;( 3 + num_planes, 3 );
-    Eigen::VectorXd bb;( 3 + num_planes );
+    Eigen::MatrixXd AA;//( 3 + num_planes, 3 );
+    Eigen::VectorXd bb;//( 3 + num_planes );
     if( num_points != 0 )
     {
         AA = Eigen::MatrixXd( 3 + num_planes, 3);
@@ -1200,7 +1201,7 @@ Eigen::Matrix4f Tracking::solveRt( const std_vector_of_eigen_vector4f &query_poi
         return Eigen::Matrix4f();
     }
     Eigen::MatrixXf src(3,3), dst(3,3);
-    for( int i = 0; i < 3; i++)
+    for( size_t i = 0; i < 3; i++)
     {
         const cv::DMatch &m = matches[i];
         src.col(i) = query_points[m.queryIdx].head<3>();
@@ -1217,7 +1218,7 @@ void Tracking::solveRt( const std::vector<Eigen::Vector3d>& from_points,
     ROS_ASSERT( from_points.size() >= 3 && to_points.size() >=3 );
 
     Eigen::MatrixXd src(3,3), dst(3,3);
-    for( int i = 0; i < 3; i++)
+    for( size_t i = 0; i < 3; i++)
     {
         src.col(i) = from_points[i];
         dst.col(i) = to_points[i];
@@ -1238,7 +1239,7 @@ void Tracking::solveRt( const std::vector<PlaneCoefficients> &before,
     // algorithm: "Least-squares estimation of transformation parameters between two point patterns", Shinji Umeyama, PAMI 1991, DOI: 10.1109/34.88573
     Eigen::MatrixXd A(3, 3), B(3, 3); // A = RB, A === dst, B === src
     Eigen::VectorXd distance( 3 );
-    for(int i = 0; i < 3; i++ )
+    for(size_t i = 0; i < 3; i++ )
     {
         const Eigen::Vector3d to = before[i].head<3>();
         const Eigen::Vector3d from = after[i].head<3>();
@@ -1344,8 +1345,7 @@ Eigen::Matrix4f Tracking::solveRtPlanesPoints( const std::vector<PlaneType> &las
     if( !pairs.size() || ! matches.size() || (pairs.size() + matches.size()) != 3)
     {
         valid = false;
-        ROS_ERROR("Invalid number of pairs and matches to solve RT, pairs = %d, matches = %d ",
-                  pairs.size(), matches.size() );
+        ROS_ERROR_STREAM("Invalid number of pairs and matches to solve RT, pairs = " << pairs.size() << ", matches = %d " << matches.size() );
         return Eigen::Matrix4f::Identity();
     }
 
@@ -1355,12 +1355,12 @@ Eigen::Matrix4f Tracking::solveRtPlanesPoints( const std::vector<PlaneType> &las
     std::vector<Eigen::Vector3d> to_points;
 
     // solve RT
-    for( int i = 0; i < pairs.size(); i++)
+    for( size_t i = 0; i < pairs.size(); i++)
     {
         before.push_back( last_planes[pairs[i].ilm].coefficients );
         after.push_back( planes[pairs[i].iobs].coefficients );
     }
-    for( int i = 0; i < matches.size(); i++)
+    for( size_t i = 0; i < matches.size(); i++)
     {
         from_points.push_back( last_feature_3d[matches[i].queryIdx].head<3>().cast<double>() );
         to_points.push_back( feature_3d[matches[i].trainIdx].head<3>().cast<double>() );
@@ -1461,7 +1461,7 @@ void Tracking::matchImageFeatures( const Frame& source,
 
     uint64_t* query_value =  reinterpret_cast<uint64_t*>(source.feature_descriptors_.data);
     uint64_t* search_array = reinterpret_cast<uint64_t*>(target.feature_descriptors_.data);
-    for(unsigned int i = 0; i < source.feature_locations_2d_.size(); ++i, query_value += 4)
+    for(size_t i = 0; i < source.feature_locations_2d_.size(); ++i, query_value += 4)
     {   //ORB feature = 32*8bit = 4*64bit
         int result_index = -1;
         int hd = bruteForceSearchORB(query_value, search_array, target.feature_locations_2d_.size(), result_index);
@@ -1526,7 +1526,7 @@ void Tracking::matchImageFeatures( const cv::Mat &feature_descriptor,
     vector< cv::DMatch > matches;
 
     uint64_t* query_value =  reinterpret_cast<uint64_t*>(feature_descriptor.data);
-    for(unsigned int i = 0; i < kp_inlier.size(); ++i )
+    for(size_t i = 0; i < kp_inlier.size(); ++i )
     {
         const cv::DMatch &m = kp_inlier[i];
         uint64_t* query_index = query_value + m.trainIdx * 4;
@@ -1583,7 +1583,7 @@ void Tracking::matchImageFeatures( const Frame &frame,
 
     uint64_t* query_value =  reinterpret_cast<uint64_t*>(frame.feature_descriptors_.data);
     const int size = frame.feature_locations_2d_.size();
-    for(unsigned int i = 0; i < size; ++i, query_value += 4)
+    for(int i = 0; i < size; ++i, query_value += 4)
     {
         int result_index = -1;
         int hd = bruteForceSearchORB(query_value, keypoints_list, predicted_keypoints, result_index);
@@ -1650,7 +1650,7 @@ void Tracking::computeCorrespondenceInliersAndError( const std::vector<cv::DMatc
 
     //parallelization is detrimental here
     //#pragma omp parallel for reduction (+: mean_error)
-    for(int i=0; i < all_matches_size; ++i)
+    for(size_t i=0; i < all_matches_size; ++i)
     //BOOST_FOREACH(const cv::DMatch& m, all_matches)
     {
         const cv::DMatch& m = matches[i];
@@ -1709,7 +1709,7 @@ void Tracking::computePairInliersAndError( const Eigen::Matrix4d &transform,
 
     double direction_squared_sum = 0;
     double distance_squared_sum = 0;
-    for( int i = 0; i < pairs.size(); i++)
+    for( size_t i = 0; i < pairs.size(); i++)
     {
         const PlaneType &plane = planes[ pairs[i].iobs ];
         const PlaneType &last_plane = last_planes[ pairs[i].ilm ];
@@ -1825,9 +1825,9 @@ void Tracking::saveRuntimes(const std::string &filename)
     fprintf( yaml, "# tracking runtimes file: %s\n", filename.c_str() );
     fprintf( yaml, "# format: [kp_match] [plane_match] [total_match] [solve_rt] [display] [total] nplanes nkeypoints\n" );
     fprintf( yaml, "# frame size: %d\n", (track_sequences_.back() - track_sequences_.front() + 1) );
-    fprintf( yaml, "# size: %d\n", track_sequences_.size() );
+    fprintf( yaml, "# size: %d\n", (int)track_sequences_.size() );
 
-    for( int i = 0; i < track_sequences_.size(); i++)
+    for( size_t i = 0; i < track_sequences_.size(); i++)
     {
         fprintf( yaml, "%d %f %f %f %f %f %f %d %d\n", track_sequences_[i], kp_match_durations_[i],
                  plane_match_durations_[i], match_total_durations_[i],

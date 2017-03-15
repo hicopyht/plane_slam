@@ -556,7 +556,7 @@ void getPointCloudFromIndices( const PointCloudTypePtr &input,
                                PointCloudTypePtr &output)
 {
     output->clear();
-    for(int i = 0; i < indices.indices.size(); i++)
+    for(size_t i = 0; i < indices.indices.size(); i++)
     {
         output->points.push_back( input->points[ indices.indices[i] ]);
     }
@@ -570,7 +570,7 @@ void getPointCloudFromIndices( const PointCloudTypePtr &input,
                                PointCloudTypePtr &output)
 {
     output->clear();
-    for(int i = 0; i < indices.size(); i++)
+    for(size_t i = 0; i < indices.size(); i++)
     {
         output->points.push_back( input->points[ indices[i] ]);
     }
@@ -860,7 +860,7 @@ static inline int hamming_distance_orb32x8_popcountll(const uint64_t* v1, const 
 int bruteForceSearchORB(const uint64_t* v, const uint64_t* search_array, const unsigned int& size, int& result_index)
 {
     //constexpr unsigned int howmany64bitwords = 4;//32*8/64;
-    const unsigned int howmany64bitwords = 4;//32*8/64;
+//    const unsigned int howmany64bitwords = 4;//32*8/64;
     result_index = -1;//impossible
     int min_distance = 1 + 256;//More than maximum distance
     for(unsigned int i = 0; i < size-1; i+=1, search_array+=4)
@@ -878,8 +878,8 @@ int bruteForceSearchORB(const uint64_t* v, const uint64_t* search_array, const u
 int bruteForceSearchORB(const uint64_t* v, const std::map<int, KeyPoint*> &keypoints_list,
                         const std::map<int, gtsam::Point3> &predicted_keypoints, int& result_index)
 {
-    //constexpr unsigned int howmany64bitwords = 4;//32*8/64;
-    const unsigned int howmany64bitwords = 4;//32*8/64;
+    //const unsigned int howmany64bitwords = 4;//32*8/64;
+//    const unsigned int howmany64bitwords = 4;//32*8/64;
     result_index = -1;//impossible
     int min_distance = 1 + 256;//More than maximum distance
     for( std::map<int, gtsam::Point3>::const_iterator it = predicted_keypoints.begin();
