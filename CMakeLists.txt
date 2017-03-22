@@ -178,7 +178,12 @@ if(BUILD_PLANE_SLAM)
     add_executable(plane_slam_bagfile src/plane_slam_bagfile.cpp)
     add_dependencies(plane_slam_bagfile ${PROJECT_NAME}_gencfg)
     target_link_libraries(plane_slam_bagfile  ${PROJECT_NAME})
-endif()
+
+    ## Declare a C++ executable
+    add_executable(plane_slam_images src/plane_slam_images.cpp)
+    add_dependencies(plane_slam_images ${PROJECT_NAME}_gencfg)
+    target_link_libraries(plane_slam_images  ${PROJECT_NAME})
+endif(BUILD_PLANE_SLAM)
 
 
 #add_executable(pcd_publisher tools/pcd_publisher.cpp)

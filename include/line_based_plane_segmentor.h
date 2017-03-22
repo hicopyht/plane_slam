@@ -17,6 +17,7 @@ public:
     void updateLineBasedPlaneSegmentParameters();
     void operator()(PointCloudTypePtr &input, std::vector<PlaneType> &planes,
                     CameraParameters &camera_parameters);
+    line_based_plane_segment::LineBasedPlaneSegmentation &segmentor() {return plane_segmentor_; }
 
 protected:
     void lineBasedSegmentReconfigCallback( plane_slam::LineBasedSegmentConfig &config, uint32_t level);

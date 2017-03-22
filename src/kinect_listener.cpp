@@ -128,6 +128,8 @@ void KinectListener::noCloudCallback (const sensor_msgs::ImageConstPtr& visual_i
 
     setBagPause(true);
 
+    cout << BOLDRED << "[Encoding]: rgb = " << visual_img_msg->encoding << " " << "depth = " << depth_img_msg->encoding <<  endl;
+
     camera_frame_ = depth_img_msg->header.frame_id;
 
     skip = (skip + 1) % skip_message_;
@@ -485,7 +487,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     double frame_dura, track_dura, map_dura, display_dura;
     double total_dura;
 
-    cout << BOLDCYAN << " - frame processing..." << RESET << endl;
+//    cout << BOLDCYAN << " - frame processing..." << RESET << endl;
 
     // Get frame
     Frame *frame = depthRgbToFrame( visual_img_msg, depth_img_msg, camera );
@@ -493,7 +495,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     frame_dura = (ros::Time::now() - step_time).toSec() * 1000.0f;
     step_time = ros::Time::now();
 
-    cout << BOLDCYAN << " - motion estimating..." << RESET << endl;
+//    cout << BOLDCYAN << " - motion estimating..." << RESET << endl;
     // Motion from features
     trackFrameMotion( last_frame, frame );
     //
@@ -503,7 +505,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     // Record & publish visual odometry & odometry
     recordVisualOdometry( last_frame, frame );
 
-    cout << BOLDCYAN << " - gtsam mapping..." << RESET << endl;
+//    cout << BOLDCYAN << " - gtsam mapping..." << RESET << endl;
 
     // Mapping
     if( frame->valid_ && do_slam_ )
@@ -526,7 +528,7 @@ void KinectListener::trackDepthRgbImage( const sensor_msgs::ImageConstPtr &visua
     // Upate odom to map tf
 //    calculateOdomToMapTF( frame->pose_, frame->odom_pose_);
 
-    cout << BOLDCYAN << " - result displaying..." << RESET << endl;
+//    cout << BOLDCYAN << " - result displaying..." << RESET << endl;
 
     // Visualization for mapping result
     displayMappingResult( frame );

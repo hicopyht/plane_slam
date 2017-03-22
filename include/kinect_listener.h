@@ -125,6 +125,8 @@ public:
 
     inline void setInitPose( tf::Transform init_tf ) { init_pose_ = init_tf; set_init_pose_ = true; }
 
+    LineBasedPlaneSegmentor* &getLineBasedPlaneSegmentor() { return line_based_plane_segmentor_;}
+
     // Hz <= 15
     inline void setBagPause(bool pause)
     {

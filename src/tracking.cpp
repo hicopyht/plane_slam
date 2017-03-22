@@ -952,6 +952,9 @@ bool Tracking::solveRelativeTransform( const Frame &source,
     icp_dura = (ros::Time::now() - start_time).toSec() * 1000;
     start_time = ros::Time::now();
 
+    // For tracking runtimes analyze
+//    return false;
+
 //    // print info
     if( verbose_ )
         cout << GREEN << " Transformation from ICP: valid = " << (best_transform.valid?"true":"false") << RESET << endl;
